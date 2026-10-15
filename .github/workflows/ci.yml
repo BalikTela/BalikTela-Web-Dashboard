@@ -18,3 +18,4 @@ jobs:
       - run: npm run typecheck:api
       - run: npm test
       - run: npm run build:render
+      - run: npx tsx scripts/test-authentication.ts

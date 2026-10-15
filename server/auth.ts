@@ -39,7 +39,7 @@ export function securitySubjectHash(value: string) {
 }
 
 export function passwordPolicyError(password: string) {
-  if (isDefaultDemoPassword(password)) return 'Choose a private password. The published demo password cannot be used on deployed dashboards.';
+  if (isDefaultDemoPassword(password)) return 'Choose a private password. The published demo password cannot be used for this dashboard.';
   if (password.length < 12) return 'Use at least 12 characters.';
   if (!/[a-z]/.test(password) || !/[A-Z]/.test(password)) return 'Include uppercase and lowercase letters.';
   if (!/\d/.test(password)) return 'Include at least one number.';

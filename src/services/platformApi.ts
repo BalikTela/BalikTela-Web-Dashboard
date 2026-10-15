@@ -41,7 +41,10 @@ async function refreshAccessToken() {
         body: '{}',
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) { clearToken(); throw new Error(payload.message ?? 'Your session has expired.'); }
+      if (!response.ok) {
+        if ([401, 403].includes(response.status)) { const hadSession = Boolean(accessToken || csrfToken); clearToken(); if (hadSession) window.dispatchEvent(new Event('baliktela:auth-expired')); }
+        throw new Error(payload.message ?? 'Your session has expired.');
+      }
       storeToken(payload.accessToken ?? payload.token, payload.csrfToken);
     })().finally(() => { refreshPromise = null; });
   }
@@ -76,8 +79,10 @@ export const platformApi = {
   login: (email: string, password: string) => request<AuthenticationResult>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, client: 'web' }) }),
   register: (body: Record<string, unknown>) => request<RegistrationResult>('/auth/register', { method: 'POST', body: JSON.stringify({ ...body, client: 'web' }) }),
   forgotPassword: (email: string) => request<{ message: string; demoResetToken?: string }>('/auth/password/forgot', { method: 'POST', body: JSON.stringify({ email, client: 'web' }) }),
-  resolveEmailLink: (credentials: { accessToken?: string; refreshToken?: string; tokenHash?: string; type?: string }) => request<{ email: string; intent: 'invite' | 'recovery' | 'confirmation'; requiresPassword: boolean; accessToken?: string; refreshToken?: string }>('/auth/link/resolve', { method: 'POST', body: JSON.stringify(credentials) }, false),
-  resetPassword: (credentials: { token?: string; accessToken?: string; refreshToken?: string }, password: string) => request<{ message: string; email?: string }>('/auth/password/reset', { method: 'POST', body: JSON.stringify({ ...credentials, password }) }, false),
+  resolveEmailLink: (credentials: { accessToken?: string; refreshToken?: string; tokenHash?: string; type?: string }) => request<{ email: string; intent: 'invite' | 'recovery' | 'confirmation'; requiresPassword: boolean; setupToken?: string }>('/auth/link/resolve', { method: 'POST', body: JSON.stringify(credentials) }, false),
+  requestSetupCode: (email: string) => request<{ message: string }>('/auth/setup/request', { method: 'POST', body: JSON.stringify({ email }) }, false),
+  verifySetupCode: (email: string, code: string, purpose: 'invite' | 'recovery') => request<{ email: string; setupToken: string; intent: 'invite' | 'recovery'; expiresInSeconds: number }>('/auth/setup/verify', { method: 'POST', body: JSON.stringify({ email, code, purpose }) }, false),
+  resetPassword: (credentials: { token?: string; setupToken?: string; accessToken?: string; refreshToken?: string }, password: string) => request<{ message: string; email?: string }>('/auth/password/reset', { method: 'POST', body: JSON.stringify({ ...credentials, password }) }, false),
   changePassword: (currentPassword: string, password: string) => request<{ message: string }>('/auth/password/change', { method: 'POST', body: JSON.stringify({ currentPassword, password }) }),
   verifyEmail: (token: string) => request<{ message: string }>('/auth/email/verify', { method: 'POST', body: JSON.stringify({ token }) }),
   resendEmailVerification: (email?: string) => email

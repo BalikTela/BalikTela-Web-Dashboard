@@ -7,11 +7,13 @@ export function readAuthLink(href: string) {
   const refreshToken = hash.get('refresh_token') || '';
   const tokenHash = query.get('token_hash') || '';
   const legacyToken = query.get('resetToken') || '';
+  const isSetup = query.get('auth') === 'setup';
+  const setupPurpose = query.get('purpose') === 'recovery' ? 'recovery' as const : 'invite' as const;
   const providerError = hash.has('error') || hash.has('error_code') || query.has('error') || query.has('error_code');
-  const isCallback = ['complete', 'invite', 'recovery'].includes(query.get('auth') ?? '') || Boolean(type || accessToken || refreshToken || tokenHash || legacyToken || providerError || query.has('code'));
+  const isCallback = isSetup || ['complete', 'invite', 'recovery'].includes(query.get('auth') ?? '') || Boolean(type || accessToken || refreshToken || tokenHash || legacyToken || providerError || query.has('code'));
   const supportedType = ['invite', 'recovery', 'signup', 'email'].includes(type);
   const hasCredentials = Boolean((accessToken && refreshToken) || (tokenHash && supportedType) || legacyToken);
   const error = providerError ? 'This email link has expired or has already been used. Request a new link.'
-    : isCallback && !hasCredentials ? 'This email link is incomplete. Open the full link from your invitation, or request a new password setup email.' : '';
-  return { isCallback, type, accessToken, refreshToken, tokenHash, legacyToken, hasCredentials, error };
+    : isCallback && !isSetup && !hasCredentials ? 'This email link is incomplete. Open the full link from your invitation, or request a new password setup email.' : '';
+  return { isCallback, isSetup, setupPurpose, type, accessToken, refreshToken, tokenHash, legacyToken, hasCredentials, error };
 }

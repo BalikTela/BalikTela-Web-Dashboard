@@ -6,7 +6,7 @@ The repository root contains the contents of `BalikTela Dev`, not the parent wor
 
 - Never upload `.env`, `.env.supabase`, `.env.atlas`, database passwords, or private keys. They are ignored by Git.
 - Rotate any Supabase secret or database password previously shared in chat or screenshots. Put replacement credentials only in local ignored files and Render's environment settings.
-- Replace the public default passwords on existing Supabase demo accounts, especially administrators. Production rejects the published demo password and does not display demo sign-in shortcuts. This is not a substitute for rotating those passwords in Supabase Auth, which is also used by mobile.
+- The six published demo identities in the current project have been retired in shared Supabase Auth. Preserve that state; do not rerun demo identity/data provisioning against the shared database. For a different environment, use the gated retirement command in `docs/Authentication.md` after verifying a private administrator.
 - Keep sample data labeled as demo. The build does not seed, migrate, or modify the database.
 - The checked-in Supabase migrations must already be applied. Coordinate schema changes with the mobile developer; do not reseed the shared database.
 
@@ -39,10 +39,13 @@ No frontend Supabase environment variables or direct PostgreSQL password are req
 
 ## Supabase authentication settings
 
-1. In Supabase Authentication URL Configuration, set the Site URL to the deployed dashboard URL and allow the exact redirect URL `https://YOUR-SERVICE.onrender.com/?auth=complete`.
-2. Keep localhost redirects only while local development needs them. Add the equivalent callback if using a custom domain.
+1. In Supabase Authentication URL Configuration, preserve the shared Site URL and existing mobile redirects. Add `https://YOUR-SERVICE.onrender.com/**` to the Redirect URLs allowlist so both `/?auth=complete` and `/?auth=setup` work, including recovery parameters.
+2. Keep localhost redirects only while local development needs them. Add the equivalent HTTPS origin if using a custom domain. Never deploy with `CLIENT_ORIGIN=http://localhost:5173`.
 3. Configure production SMTP for invitations, email confirmation, and recovery. Production does not return development invitation links or challenge tokens.
 4. Sign in using an approved account with a private password. Verify refresh after reload, logout, and role-specific navigation. Do not create a new shared-password administrator for the deployment.
+5. Apply `20261015110000_auth_password_session_revocation.sql` after the existing authentication migrations. This additive trigger revokes old web sessions when the shared Supabase password changes, including from mobile; installing it does not change existing credentials.
+
+On October 15, 2026, the six published demo identities were deactivated, their Supabase identities banned and passwords randomized, and web sessions revoked. The primary and existing private personal administrators were preserved. This also retires those demo logins on mobile without deleting sample history. The optional fixed backup uses normal Supabase authentication, a privately supplied password, and the owner-only command documented in `docs/Authentication.md`; never add a hard-coded password or bypass. Do not set backup provisioning/password or demo-retirement variables on Render. Rotate server secrets previously posted in chat as well; do not commit replacement values.
 
 ## Verification and maintenance
 

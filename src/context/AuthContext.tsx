@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AccessSummary, PlatformUser } from '../platformTypes';
 import { clearToken, getStoredToken, platformApi, storeToken } from '../services/platformApi';
 
@@ -24,19 +24,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [storageMode, setStorageMode] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const authRevision = useRef(0);
 
   useEffect(() => {
-    platformApi.me().then(({ user: current, access: currentAccess, storage }) => { setUser(current); setAccess(currentAccess); setStorageMode(storage); }).catch(() => { clearToken(); setAccess(null); }).finally(() => setIsLoading(false));
+    let cancelled = false;
+    const revision = authRevision.current;
+    const expired = () => {
+      authRevision.current++;
+      clearToken(); setUser(null); setAccess(null); setStorageMode(''); setIsLoading(false);
+      setError('Your session expired or was revoked. Sign in again.');
+    };
+    window.addEventListener('baliktela:auth-expired', expired);
+    // A delayed bootstrap response must not replace a later login or restore a signed-out user.
+    const stillCurrent = () => !cancelled && authRevision.current === revision;
+    platformApi.me().then(({ user: current, access: currentAccess, storage }) => {
+      if (stillCurrent()) { setUser(current); setAccess(currentAccess); setStorageMode(storage); }
+    }).catch(() => {
+      if (stillCurrent()) { clearToken(); setUser(null); setAccess(null); }
+    }).finally(() => { if (!cancelled) setIsLoading(false); });
+    return () => { cancelled = true; window.removeEventListener('baliktela:auth-expired', expired); };
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
     user, access, storageMode, isLoading, error,
     async login(email, password) {
+      authRevision.current++;
       setError('');
       try { const result = await platformApi.login(email, password); storeToken(result.accessToken, result.csrfToken); setUser(result.user); setAccess(result.access); setStorageMode(result.storage); }
       catch (reason) { const message = reason instanceof Error ? reason.message : 'Unable to sign in.'; setError(message); throw reason; }
     },
     async register(body) {
+      authRevision.current++;
       setError('');
       try {
         const result = await platformApi.register(body);
@@ -46,17 +64,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       catch (reason) { const message = reason instanceof Error ? reason.message : 'Unable to create account.'; setError(message); throw reason; }
     },
     async logout() {
+      authRevision.current++;
       try { if (getStoredToken()) await platformApi.logout(); }
-      catch { /* Local sign-out must still complete when the API is unavailable. */ }
+      catch { setError('Server sign-out could not be confirmed. Reconnect and sign out again before leaving a shared device.'); }
       finally { clearToken(); setUser(null); setAccess(null); setStorageMode(''); }
     },
     async logoutAll() {
+      authRevision.current++;
       try { if (getStoredToken()) await platformApi.logoutAll(); }
-      catch { /* Local sign-out still completes if the API becomes unavailable. */ }
+      catch { setError('Sign-out on other devices could not be confirmed. Reconnect and retry.'); }
       finally { clearToken(); setUser(null); setAccess(null); setStorageMode(''); }
     },
     async changePassword(currentPassword, password) {
       await platformApi.changePassword(currentPassword, password);
+      authRevision.current++;
       clearToken(); setUser(null); setAccess(null); setStorageMode('');
     },
     updateUser(updated) { setUser(updated); },

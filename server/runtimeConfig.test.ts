@@ -24,8 +24,9 @@ test('Render origin is automatic and a custom HTTPS origin takes precedence', ()
   assert.throws(() => validateProductionEnvironment({ ...production, RENDER_EXTERNAL_URL: '' }), /CLIENT_ORIGIN/);
 });
 
-test('public demo password is rejected only in production', () => {
+test('public demo password is rejected in production and all Supabase-connected environments', () => {
   assert.equal(isDefaultDemoPassword('BalikTelaDemo2026!', production), true);
   assert.equal(isDefaultDemoPassword('private-assigned-password', production), false);
   assert.equal(isDefaultDemoPassword('BalikTelaDemo2026!', { NODE_ENV: 'development' }), false);
+  assert.equal(isDefaultDemoPassword('BalikTelaDemo2026!', { NODE_ENV: 'development', SUPABASE_URL: production.SUPABASE_URL }), true);
 });

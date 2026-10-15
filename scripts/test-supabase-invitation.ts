@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { chromium } from 'playwright-core';
 import { SupabaseStore } from '../server/supabaseStore.js';
 import { provisionedUserMutation } from '../server/provisioning.js';
+import { securitySubjectHash } from '../server/auth.js';
 import type { UserRecord } from '../server/types.js';
 
 if (process.env.SUPABASE_INVITATION_TEST !== 'true') throw new Error('Set SUPABASE_INVITATION_TEST=true to authorize isolated invitation test identities. No emails are sent.');
@@ -17,11 +18,13 @@ const base = process.env.INVITATION_UI_URL ?? 'http://127.0.0.1:5173';
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
 const authIds: string[] = [];
 const profileIds: string[] = [];
+const testEmails: string[] = [];
 const checks: string[] = [];
 try {
-  for (const format of ['fragment', 'token-hash']) {
+  for (const format of ['fragment', 'token-hash', 'email-code', 'recovery-code']) {
     const suffix = randomUUID().slice(0, 8);
     const email = `baliktela.invitation.${suffix}@example.test`;
+    testEmails.push(email);
     const { data, error } = await client.auth.admin.generateLink({ type: 'invite', email, options: { redirectTo: `${base}/?auth=complete` } });
     if (error || !data.user) throw new Error(`Could not generate isolated invitation: ${error?.message ?? 'no identity'}`);
     authIds.push(data.user.id);
@@ -46,13 +49,37 @@ try {
       const target = new URL(redirect);
       assert.ok(new URLSearchParams(target.hash.slice(1)).get('access_token'), 'Verification must issue invitation credentials.');
       callback = `${base}/${target.search}${target.hash}`;
-    } else callback = `${base}/?auth=complete&type=invite&token_hash=${encodeURIComponent(data.properties.hashed_token)}`;
+    } else if (format.includes('code')) callback = `${base}/?auth=setup${format === 'recovery-code' ? '&purpose=recovery' : ''}`;
+    else callback = `${base}/?auth=complete&type=invite&token_hash=${encodeURIComponent(data.properties.hashed_token)}`;
 
     const context = await browser.newContext({ viewport: { width: format === 'fragment' ? 1440 : 375, height: 900 } });
     const page = await context.newPage();
     // Simulate the administrator's already-open browser session without creating another live account.
     await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'EXISTING-ADMIN', fullName: 'Existing administrator', role: 'Administrator', scope: { aggregateOnly: false } }, access: { permissions: ['analytics.read'] }, storage: 'supabase' } }));
     await page.goto(callback).catch(() => { throw new Error('Could not open the invitation callback (credentials redacted).'); });
+    let setupToken = '';
+    if (format.includes('code')) {
+      let code = data.properties.email_otp;
+      if (format === 'recovery-code') {
+        const generated = await client.auth.admin.generateLink({ type: 'recovery', email });
+        if (generated.error) throw new Error('Could not generate a no-email recovery code.');
+        code = generated.data.properties.email_otp;
+      }
+      await page.getByRole('heading', { name: 'Set up your account' }).waitFor({ timeout: 60_000 });
+      await page.getByLabel('Email address', { exact: true }).fill(email);
+      await page.getByLabel('Code from email').fill(code);
+      const verification = page.waitForResponse(response => response.url().endsWith('/api/auth/setup/verify'));
+      await page.getByRole('button', { name: 'Verify code', exact: true }).click();
+      const result = await verification;
+      assert.equal(result.status(), 200, 'The native email code must authorize password setup.');
+      const payload = await result.json();
+      setupToken = payload.setupToken;
+      assert.ok(setupToken);
+      assert.equal(payload.accessToken, undefined, 'Code verification must not expose a provider or dashboard session.');
+      assert.equal(result.headers()['set-cookie'], undefined);
+      const replay = await context.request.post(`${base}/api/auth/setup/verify`, { data: { email, code, purpose: format === 'recovery-code' ? 'recovery' : 'invite' } });
+      assert.equal(replay.status(), 400, 'Native codes must be single-use.');
+    }
     await page.getByRole('heading', { name: 'Create your password', exact: true }).waitFor({ timeout: 60_000 });
     assert.equal((await store.findById('users', mutation.record.id))?.passwordChangedAt, null, 'Confirming email must not mark a password as initialized.');
     const password = `Invitation-${randomUUID()}!`;
@@ -65,6 +92,10 @@ try {
     assert.ok(saved?.emailVerifiedAt);
     assert.equal(saved?.accountStatus, 'Pending verification');
     assert.equal(saved?.verification, 'Pending demo review');
+    if (setupToken) {
+      const replay = await context.request.post(`${base}/api/auth/password/reset`, { data: { setupToken, password } });
+      assert.equal(replay.status(), 400, 'The password-only grant must be single-use.');
+    }
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await page.getByRole('heading', { name: 'Account approval is pending', exact: true }).waitFor({ timeout: 60_000 });
@@ -72,7 +103,8 @@ try {
     const replay = await context.request.post(`${base}/api/auth/link/resolve`, { data: { tokenHash: data.properties.hashed_token, type: 'invite' } });
     assert.equal(replay.status(), 400, 'Consumed invitation tokens must not be accepted twice.');
     await context.close();
-    checks.push(`${format}: real invitation verification, private password creation, restricted sign-in, and replay rejection`);
+    checks.push(`${format}: real invitation/code verification, private password creation, restricted sign-in, and replay rejection`);
+    console.log(`Passed isolated ${format} authentication checks (credentials redacted).`);
   }
 } finally {
   await browser.close();
@@ -93,6 +125,11 @@ try {
   }
   for (const authId of authIds) {
     const { error } = await client.auth.admin.deleteUser(authId);
+    if (error) throw error;
+  }
+  if (testEmails.length) {
+    const ids = testEmails.flatMap(email => ['setup-send-email:', 'setup-verify-email:'].map(prefix => `ARL-email_verification-${securitySubjectHash(`${prefix}${email}`)}`));
+    const { error } = await client.from('auth_rate_limits').delete().in('id', ids);
     if (error) throw error;
   }
 }

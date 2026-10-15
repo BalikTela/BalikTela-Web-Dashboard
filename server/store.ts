@@ -122,6 +122,7 @@ export class MemoryStore implements Store {
   }
 
   async createAuthChallenge(challenge: AuthChallengeRecord) {
+    if (this.challenges.has(challenge.id) || [...this.challenges.values()].some(item => item.tokenHash === challenge.tokenHash)) throw new MutationConflict();
     this.challenges.set(challenge.id, challenge);
     return challenge;
   }

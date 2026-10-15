@@ -46,19 +46,14 @@ export class SupabaseIdentity {
   }
 
   async inviteInstitutionalUser(email: string, profileId: string, role: string, fullName: string) {
-    const metadata = { profile_id: profileId, role, full_name: fullName };
+    const metadata = { profile_id: profileId, role, full_name: fullName, invitation_channel: 'web' };
     const administrator = this.admin();
     const { data, error } = await administrator.auth.admin.inviteUserByEmail(email, {
-      redirectTo: this.redirectUrl,
+      redirectTo: `${clientOrigin()}/?auth=setup`,
       data: metadata,
     });
-    if (!error && data.user) return { ...identity(data.user), delivery: 'email' as const, actionLink: null };
-    if (process.env.NODE_ENV === 'production' && process.env.AUTH_DEMO_DELIVERY !== 'true') throw authError(error?.message ?? 'Supabase did not create the invitation.');
-    const partial = await this.findByEmail(email);
-    if (partial) await administrator.auth.admin.deleteUser(partial.id);
-    const generated = await administrator.auth.admin.generateLink({ type: 'invite', email, options: { redirectTo: this.redirectUrl, data: metadata } });
-    if (generated.error || !generated.data.user) throw authError(generated.error?.message ?? error?.message ?? 'Supabase did not create the invitation.');
-    return { ...identity(generated.data.user), delivery: 'generated' as const, actionLink: generated.data.properties.action_link };
+    if (error || !data.user) throw emailDeliveryError(error);
+    return identity(data.user);
   }
 
   async resendVerification(email: string) {
@@ -71,17 +66,40 @@ export class SupabaseIdentity {
     if (error) throw authError(error.message);
   }
 
-  async setPasswordFromEmailLink(accessToken: string, refreshToken: string, password: string) {
-    const { client } = await this.emailLinkSession({ accessToken, refreshToken });
-    const { data, error } = await client.auth.updateUser({ password });
-    if (error || !data.user) throw authError(error?.message ?? 'Unable to update the password.');
-    await client.auth.signOut({ scope: 'global' });
+  async requestSetupCode(email: string) {
+    const { error } = await this.publicClient().auth.resetPasswordForEmail(email, { redirectTo: `${clientOrigin()}/?auth=setup&purpose=recovery` });
+    if (error) throw emailDeliveryError(error);
+  }
+
+  async verifySetupCode(authUserId: string, email: string, code: string, purpose: 'invite' | 'recovery') {
+    const invalid = () => authError('The code is invalid, expired, or already used. Request a new code.');
+    const { data: current, error: lookupError } = await this.admin().auth.admin.getUserById(authUserId);
+    const sentAt = purpose === 'invite' ? current.user?.invited_at : current.user?.recovery_sent_at;
+    const issued = Date.parse(sentAt ?? '');
+    if (lookupError || !Number.isFinite(issued) || issued > Date.now() || Date.now() - issued > 10 * 60 * 1000) throw invalid();
+    const client = this.publicClient();
+    const { data, error } = await client.auth.verifyOtp({ email, token: code, type: purpose });
+    if (error || !data.user || !data.session) throw invalid();
+    // Never expose the provider session: this proof authorizes password setup only.
+    const { error: signOutError } = await client.auth.signOut({ scope: 'local' });
+    if (signOutError || data.user.id !== authUserId || !data.user.email_confirmed_at) throw invalid();
+    return identity(data.user);
+  }
+
+  async setPasswordAfterCode(authUserId: string, password: string) {
+    const { data, error } = await this.admin().auth.admin.updateUserById(authUserId, { password });
+    if (error || !data.user) throw authError('Unable to save the password. Request a new code and try again.');
     return identity(data.user);
   }
 
   async resolveEmailLink(credentials: EmailLinkCredentials) {
-    const { user, session } = await this.emailLinkSession(credentials);
-    return { ...identity(user), accessToken: session.access_token, refreshToken: session.refresh_token };
+    const { client, user, session } = await this.emailLinkSession(credentials);
+    const { data, error } = await client.auth.getClaims(session.access_token);
+    if (error || !data) throw authError('This email link cannot be verified. Request a new setup code.');
+    const passwordProofSessionId = recentPasswordEmailProof(data.claims);
+    const { error: signOutError } = await client.auth.signOut({ scope: 'local' });
+    if (signOutError) throw authError('This email link cannot be completed. Request a new setup code.');
+    return { ...identity(user), passwordProofSessionId };
   }
 
   private async emailLinkSession(credentials: EmailLinkCredentials) {
@@ -115,29 +133,6 @@ export class SupabaseIdentity {
     if (error) throw authError(error.message);
   }
 
-  async ensureDemoUser(email: string, password: string, profileId: string, role: string, fullName: string) {
-    const existing = await this.findByEmail(email);
-    if (existing) {
-      const { data, error } = await this.admin().auth.admin.updateUserById(existing.id, { password, email_confirm: true, user_metadata: { ...existing.user_metadata, profile_id: profileId, role, full_name: fullName } });
-      if (error || !data.user) throw authError(error?.message ?? 'Unable to update the demo identity.');
-      return identity(data.user);
-    }
-    const { data, error } = await this.admin().auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { profile_id: profileId, role, full_name: fullName } });
-    if (error || !data.user) throw authError(error?.message ?? 'Unable to create the demo identity.');
-    return identity(data.user);
-  }
-
-  private async findByEmail(email: string) {
-    for (let page = 1; page <= 100; page += 1) {
-      const { data, error } = await this.admin().auth.admin.listUsers({ page, perPage: 100 });
-      if (error) throw authError(error.message);
-      const user = data.users.find((item) => item.email?.toLowerCase() === email.toLowerCase());
-      if (user) return user;
-      if (data.users.length < 100) return null;
-    }
-    return null;
-  }
-
   private publicClient() {
     if (!this.enabled) throw new Error('Supabase Auth is not configured.');
     return createClient(this.url, this.publishableKey, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } });
@@ -153,8 +148,32 @@ function identity(user: User): IdentityResult {
   return { authUserId: user.id, email: user.email?.toLowerCase() ?? '', emailConfirmedAt: user.email_confirmed_at ?? null };
 }
 
+export function recentPasswordEmailProof(claims: { session_id?: unknown; amr?: unknown }, now = Date.now()) {
+  if (typeof claims.session_id !== 'string' || !claims.session_id || !Array.isArray(claims.amr)) return null;
+  return claims.amr.some(entry => entry && ['invite', 'recovery', 'otp'].includes(entry.method)
+    && typeof entry.timestamp === 'number' && entry.timestamp * 1000 <= now
+    && now - entry.timestamp * 1000 <= 30 * 60 * 1000) ? claims.session_id : null;
+}
+
 function authError(message: string) {
   const error = new Error(message);
   error.name = 'SupabaseAuthError';
   return error;
+}
+
+function emailDeliveryError(provider: { code?: string; status?: number } | null) {
+  const code = provider?.code ?? (provider?.status ? `http_${provider.status}` : 'unknown');
+  const rateLimited = ['over_email_send_rate_limit', 'over_request_rate_limit'].includes(code) || provider?.status === 429;
+  const timedOut = code === 'request_timeout' || provider?.status === 504 || provider?.status === 408;
+  const messages: Record<string, string> = {
+    email_address_not_authorized: 'Supabase refused this recipient. Check that custom SMTP is enabled and the email provider permits sending to this address. Without custom SMTP, only Supabase organization member addresses are allowed.',
+    email_address_invalid: 'Supabase rejected this email address. Use a valid recipient address supported by your email provider.',
+    email_exists: 'This email already has a Supabase identity. Use account setup to request a recovery code; do not delete the existing identity.',
+    user_already_exists: 'This email already has a Supabase identity. Use account setup to request a recovery code; do not delete the existing identity.',
+    email_provider_disabled: 'Email authentication is disabled in Supabase. Check Authentication provider settings.',
+  };
+  const message = timedOut ? 'The Supabase email request timed out. Check the SMTP hostname, port, provider availability, and Auth logs. Delivery is not confirmed; check provider logs before retrying.'
+    : rateLimited ? 'Supabase or the email provider has rate-limited this email request. Wait before retrying and check Auth rate limits.'
+    : messages[code] ?? 'Supabase could not send the email. Check Supabase Auth logs and your SMTP provider logs for sender verification, SMTP credentials, and email-template errors. No email delivery was confirmed.';
+  return Object.assign(authError(message), { code, status: timedOut ? 504 : rateLimited ? 429 : ['email_exists', 'user_already_exists'].includes(code) ? 409 : 400 });
 }

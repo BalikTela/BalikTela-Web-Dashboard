@@ -17,6 +17,7 @@ import { calculateOperationalMass, canIssueReward } from './domain.js';
 import { buildDashboardAnalytics, loadDashboardAnalyticsSnapshot, type DashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
 import { AsyncTtlCache, dashboardAnalyticsCacheKey } from './asyncCache.js';
 import { SupabaseIdentity } from './supabaseIdentity.js';
+import { createPasswordSetupGrant, registerSetupRoutes } from './authSetup.js';
 import { provisionedUserMutation } from './provisioning.js';
 import { clientOrigin, isDefaultDemoPassword, validateProductionEnvironment } from './runtimeConfig.js';
 import { serveWebApp } from './webApp.js';
@@ -52,6 +53,12 @@ app.disable('x-powered-by');
 if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 app.use(cors({ origin: clientOrigin(), credentials: true }));
 app.use(express.json({ limit: '1mb' }));
+app.use('/api/auth', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
 // DELETE retains the record and follows the same authorization and lifecycle rules as PATCH.
 app.use((req,_res,next)=>{
   if(req.method==='DELETE') {
@@ -85,11 +92,12 @@ app.use((req, res, next) => {
 });
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', storage: store.mode, timestamp: new Date().toISOString() }));
+registerSetupRoutes(app, { store, identity, enabled: usesSupabaseAuth });
 
 app.post('/api/auth/login', async (req, res) => {
   const email = String(req.body.email ?? '').trim().toLowerCase();
   const password = String(req.body.password ?? '');
-  if (isDefaultDemoPassword(password)) return res.status(401).json({ message: 'The public demo password is disabled on deployed dashboards. Use your assigned account password.' });
+  if (isDefaultDemoPassword(password)) return res.status(401).json({ message: 'The published demo password is disabled. Use your private account password.' });
   const limiter = rateLimitIdentity('login', email);
   const currentLimit = await store.findRateLimit(limiter.id);
   if (currentLimit?.lockedUntil && new Date(currentLimit.lockedUntil).getTime() > Date.now()) {
@@ -116,6 +124,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
   await store.clearRateLimit(limiter.id);
   if (['Suspended','Deactivated'].includes(user.accountStatus)) return res.status(403).json({ message: 'This account is suspended or deactivated. Contact a BalikTela administrator.' });
+  if (usesSupabaseAuth && !user.passwordChangedAt) return res.status(403).json({ message: 'Complete your invitation with the email setup code and create a private password before signing in.' });
   const authentication = await startSession(user, req.body.client);
   const { session } = authentication;
   if (session.client === 'web') setRefreshCookie(res, authentication.refreshToken, session.expiresAt);
@@ -192,7 +201,13 @@ app.post('/api/auth/link/resolve', async (req, res) => {
   await store.update('users', user.id, { authUserId: result.authUserId, emailVerifiedAt: result.emailConfirmedAt });
   const intent = req.body.type === 'recovery' ? 'recovery' : req.body.type === 'invite' || !user.passwordChangedAt ? 'invite' : 'confirmation';
   const requiresPassword = intent !== 'confirmation';
-  res.json({ email: user.email, intent, requiresPassword, ...(requiresPassword ? { accessToken: result.accessToken, refreshToken: result.refreshToken } : {}) });
+  let setupToken: string | undefined;
+  if (requiresPassword) {
+    if (!result.passwordProofSessionId) return res.status(400).json({ message: 'A recent invitation or recovery email is required to set a password. Request a new setup code.' });
+    try { setupToken = await createPasswordSetupGrant(store, user.id, result.passwordProofSessionId); }
+    catch { return res.status(400).json({ message: 'This email link was already used or could not be completed. Request a new setup code.' }); }
+  }
+  res.json({ email: user.email, intent, requiresPassword, ...(setupToken ? { setupToken } : {}) });
 });
 
 app.post('/api/auth/password/reset', async (req, res) => {
@@ -201,18 +216,22 @@ app.post('/api/auth/password/reset', async (req, res) => {
   const passwordError = passwordPolicyError(password);
   if (passwordError) return res.status(400).json({ message: passwordError });
   const consumedAt = new Date().toISOString();
-  if (usesSupabaseAuth) {
-    const link = await identity.resolveEmailLink({ accessToken: req.body.accessToken, refreshToken: req.body.refreshToken });
-    const user = await store.findOne('users', (record) => record.authUserId === link.authUserId || (!record.authUserId && record.email === link.email));
-    if (!user) return res.status(400).json({ message: 'The account profile linked to this authentication request no longer exists.' });
-    if (['Suspended','Deactivated'].includes(user.accountStatus)) return res.status(403).json({ message: 'This account is not available. Contact an administrator.' });
-    const result = await identity.setPasswordFromEmailLink(link.accessToken, link.refreshToken, password);
-    const accountStatus = user.role === 'Consumer' && user.accountStatus==='Pending verification' ? 'Active' as const : user.accountStatus;
-    await store.commit([{ name: 'users', previous: user, record: { ...user, authUserId: result.authUserId, passwordHash: null, passwordChangedAt: consumedAt, emailVerifiedAt: result.emailConfirmedAt ?? consumedAt, accountStatus } }]);
-    const revokedSessions = await store.revokeUserSessions(user.id, consumedAt);
-    await audit(user.id, 'auth.password.updated.from_link', 'User', user.id, `Password initialized or recovered through Supabase Auth; ${revokedSessions} application session(s) revoked.`);
-    return res.json({ email: user.email, message: user.role !== 'Consumer' && user.accountStatus === 'Pending verification' ? 'Password created. Your email is confirmed. An administrator must approve your institutional access before you can use the dashboard.' : 'Password updated. Sign in with your private password.' });
+  if (usesSupabaseAuth && req.body.setupToken) {
+    const challenge = await store.consumeAuthChallenge(hashSessionToken(String(req.body.setupToken)), 'password_reset', consumedAt);
+    if (!challenge) return res.status(400).json({ message: 'Password setup has expired or was already completed. Request a new code.' });
+    const user = await store.findById('users', challenge.userId);
+    if (!user?.authUserId || !user.emailVerifiedAt || ['Suspended', 'Deactivated'].includes(user.accountStatus)) return res.status(400).json({ message: 'This account is unavailable. Contact an administrator.' });
+    await identity.setPasswordAfterCode(user.authUserId, password);
+    // The Auth trigger may already have written the password timestamp; reload before the optimistic commit.
+    const current = await store.findById('users', user.id);
+    if (!current || ['Suspended', 'Deactivated'].includes(current.accountStatus)) return res.status(400).json({ message: 'This account is unavailable. Contact an administrator.' });
+    const accountStatus = current.role === 'Consumer' && current.accountStatus === 'Pending verification' ? 'Active' as const : current.accountStatus;
+    await store.commit([{ name: 'users', previous: current, record: { ...current, passwordHash: null, passwordChangedAt: consumedAt, accountStatus } }]);
+    const revoked = await store.revokeUserSessions(current.id, consumedAt);
+    await audit(current.id, 'auth.password.updated.from_code', 'User', current.id, `Private password saved after single-use email code; ${revoked} application session(s) revoked.`);
+    return res.json({ email: current.email, message: current.role !== 'Consumer' && current.accountStatus === 'Pending verification' ? 'Password created. Administrator approval is still required before dashboard access.' : 'Password updated. Sign in with your private password.' });
   }
+  if (usesSupabaseAuth) return res.status(400).json({ message: 'Verify your email link or setup code before creating a password.' });
   const token = String(req.body.token ?? '');
   const challenge = await store.consumeAuthChallenge(hashSessionToken(token), 'password_reset', consumedAt);
   if (!challenge) return res.status(400).json({ message: 'This password-reset link is invalid, expired, or already used.' });
@@ -263,6 +282,11 @@ app.post('/api/auth/email/resend', requireAuth, permit('profile.read'), async (r
   if (currentLimit?.lockedUntil && new Date(currentLimit.lockedUntil).getTime() > Date.now()) return res.status(429).json({ message: 'Verification was requested recently. Try again later.' });
   const requestState = await store.recordRateLimitFailure(limiter.id, 'email_verification', limiter.subjectHash, new Date().toISOString(), challengeRequestWindowSeconds, challengeRequestLimit, challengeRequestWindowSeconds);
   if (requestState.lockedUntil) return res.status(429).json({ message: 'Verification request limit reached. Try again later.' });
+  if (usesSupabaseAuth) {
+    await identity.resendVerification(user.email);
+    await audit(user.id, 'auth.email.verification.requested', 'User', user.id, 'Supabase email confirmation request accepted.');
+    return res.json({ message: 'Supabase accepted the confirmation email request. Check your inbox and spam folder.' });
+  }
   const challenge = await issueAuthChallenge(user, 'email_verification', req.body.client);
   await audit(user.id, 'auth.email.verification.requested', 'User', user.id, 'Email-verification challenge requested.');
   res.json({ message: 'Email-verification instructions have been prepared.', demoEmailVerificationToken: demoDelivery ? challenge.token : undefined });
@@ -434,7 +458,7 @@ app.post('/api/users', requireAuth, permit('users.manage'), async (req: Authenti
     await saveManagement(store,req.actor!,[mutation],'user.institutional.invited',user.id,`${role} invitation pending verification.`);
   }
   catch (error) { if (invitation) await identity.deleteUser(invitation.authUserId).catch(() => undefined); throw error; }
-  if (usesSupabaseAuth) return res.status(201).json({ user: publicUser(user), message: invitation?.delivery === 'email' ? 'Invitation sent. The recipient must confirm the email and create a password before approval.' : 'Development invitation created. Configure production SMTP before deployment.', demoInvitationLink: demoDelivery ? invitation?.actionLink : undefined });
+  if (usesSupabaseAuth) return res.status(201).json({ user: publicUser(user), message: 'Supabase accepted the invitation email request. Ask the recipient to check their inbox and spam folder for the setup code. Administrator approval is still required after password creation.' });
   const verificationChallenge = await issueAuthChallenge(user, 'email_verification', 'web');
   const invitationChallenge = await issueAuthChallenge(user, 'password_reset', 'web');
   res.status(201).json({ user: publicUser(user), temporaryPassword: password, demoEmailVerificationToken: demoDelivery ? verificationChallenge.token : undefined, demoInvitationLink: demoDelivery ? `${clientOrigin()}/?auth=invite&resetToken=${encodeURIComponent(invitationChallenge.token)}` : undefined });

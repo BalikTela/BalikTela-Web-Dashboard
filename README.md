@@ -14,27 +14,26 @@ Deployment: [Render Setup](docs/Render_Deployment.md). The repository includes `
 - Node.js and Express for API services
 - Supabase PostgreSQL for shared persistent platform data
 - Chart.js for dashboard visualizations
-- bcrypt password hashing and database-backed signed JWT sessions
+- Supabase Auth for credentials and database-backed signed JWT application sessions
 
 ## Local setup
 
 1. Install dependencies with `npm install`.
 2. Copy `.env.example` to `.env` and set a production-quality `JWT_SECRET`.
-3. Configure `SUPABASE_URL` and the server-only `SUPABASE_SECRET_KEY`. Apply the checked-in migration under `supabase/migrations` before starting the API.
+3. Configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SECRET_KEY`. Apply the checked-in migrations under `supabase/migrations` before starting the API.
 4. Run `npm run dev` to start both the web dashboard and authentication API.
 
 Keep local credentials in `.env` or an ignored `.env.supabase` profile. The secret key must never be placed in frontend variables or shared with a browser/mobile bundle.
 
 Without Supabase or legacy MongoDB credentials, the API intentionally uses an in-memory demo store. This keeps the prototype reviewable, but records reset whenever the API restarts.
 
-## Demo access
+## Account access
 
-Local development only. Production hides these shortcuts and rejects the published default password. Rotate existing shared demo credentials in Supabase Auth before public deployment.
+Sign in with your approved private account. Institutional accounts are invited by an administrator and choose their own password through the email setup flow. Login fields are never prefilled with shared credentials.
 
-- Email: `admin@baliktela.demo`
-- Password: `BalikTelaDemo2026!`
+The six published demo identities have been deactivated and banned in the shared Supabase project; their linked sample history is preserved. Demo login shortcuts and the old identity provisioning command have been removed. Seed accounts remain only as isolated test fixtures, not deployable credentials.
 
-Producer, recycler, and consumer demo accounts use the same password and are listed in `server/seed.ts`.
+For the owner-only backup administrator command and private password rotation, see [Authentication](docs/Authentication.md#private-administrators-and-emergency-access). There is no hard-coded password or backdoor.
 
 ## Verification
 
@@ -57,6 +56,6 @@ The seed command refuses to run when the target already contains users. Seeding 
 
 Login and registration create a canonical Supabase PostgreSQL record in `sessions`. Access JWTs are short-lived and held only in web memory. Web refresh credentials rotate through an `HttpOnly`, `SameSite=Lax` cookie and require a matching CSRF header; mobile and API clients receive their rotating refresh credential in JSON for secure device storage. PostgreSQL stores only SHA-256 hashes, retains a bounded history for replay detection, and atomically revokes a session when a used refresh credential is replayed. Users can review active sessions, revoke another session, sign out the current session, or sign out all devices. Administrator changes to account verification, role, status, or scope revoke affected active sessions. `AUTH_ACCESS_TTL_SECONDS` defaults to 15 minutes and `AUTH_REFRESH_TTL_SECONDS` defaults to 30 days.
 
-Password recovery and email verification use single-use, hashed challenges in `auth_challenges`; reset credentials default to 30 minutes and verification credentials to 24 hours. Successful password changes and resets revoke every active session. `auth_rate_limits` stores only a server-derived subject hash and enforces configurable login lockouts and challenge-request throttles. Institutional approval requires verified email ownership and replacement of the temporary password. Development can expose challenge tokens through API responses with `AUTH_DEMO_DELIVERY=true`; production must leave that disabled and connect the same challenge issuance flow to an approved email provider.
+Supabase sends confirmation and recovery emails through the configured SMTP provider. Institutional invitees verify a native one-time email code and receive a single-use, password-only authorization stored as a hash in `auth_challenges`; no temporary password is emailed. Approval requires verified email ownership and a privately initialized password. Successful password changes revoke every application session, including native password changes made from mobile. `auth_rate_limits` stores only a server-derived subject hash and enforces login lockouts and challenge throttles. Keep `AUTH_DEMO_DELIVERY=false` for shared Supabase and deployment; isolated memory tests use their own fixtures. See [Invitation Setup](docs/Invitation_Setup.md) for hosted email templates and redirects.
 
 Environmental impact factors, trust indicators, organization records, and activities remain clearly labeled demonstration data pending research and expert validation.

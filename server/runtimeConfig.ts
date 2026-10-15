@@ -18,5 +18,5 @@ export function validateProductionEnvironment(env: Environment = process.env) {
 }
 
 export function isDefaultDemoPassword(password: string, env: Environment = process.env) {
-  return env.NODE_ENV === 'production' && password === 'BalikTelaDemo2026!';
+  return (env.NODE_ENV === 'production' || Boolean(env.SUPABASE_URL)) && password === 'BalikTelaDemo2026!';
 }

@@ -2,8 +2,9 @@ import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 
 const baseUrl = process.env.RESPONSIVE_AUDIT_URL ?? 'http://127.0.0.1:5173';
-const email = process.env.RESPONSIVE_AUDIT_EMAIL ?? 'admin@baliktela.demo';
-const password = process.env.RESPONSIVE_AUDIT_PASSWORD ?? 'BalikTelaDemo2026!';
+const email = process.env.RESPONSIVE_AUDIT_EMAIL;
+const password = process.env.RESPONSIVE_AUDIT_PASSWORD;
+if (!email || !password) throw new Error('Supply RESPONSIVE_AUDIT_EMAIL and RESPONSIVE_AUDIT_PASSWORD privately. Published demo logins have been retired.');
 const outputDirectory = process.env.RESPONSIVE_AUDIT_OUTPUT ?? '/tmp/baliktela-responsive';
 const executablePath = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const viewports = [
@@ -33,6 +34,8 @@ try {
     const context = await browser.newContext({ viewport });
     const page = await context.newPage();
     await page.goto(baseUrl, { waitUntil: 'networkidle' });
+    await page.getByLabel('Email address', { exact: true }).fill(email);
+    await page.getByLabel('Password', { exact: true }).fill(password);
     const loginLayout = await inspectLayout(page);
     results.push({ viewport: viewport.name, page: 'login', passed: loginLayout.documentWidth <= loginLayout.viewportWidth + 1 && loginLayout.overflowingText.length === 0, ...loginLayout });
     if (viewport.name === 'mobile' || viewport.name === 'wide') {

@@ -8,13 +8,15 @@ const recipient = { id: 'UI-INVITEE', fullName: 'Invited Researcher', role: 'Res
 const checks = [];
 try {
   for (const viewport of [{ width: 1440, height: 900 }, { width: 375, height: 812 }]) {
-    for (const scenario of ['fragment', 'missing-type', 'token-hash', 'recovery', 'confirmation', 'expired', 'incomplete']) {
+    for (const scenario of ['fragment', 'missing-type', 'token-hash', 'recovery', 'confirmation', 'expired', 'incomplete', 'setup-invite', 'setup-recovery', 'setup-resend', 'setup-wrong', 'setup-limited']) {
       const context = await browser.newContext({ viewport });
       const page = await context.newPage();
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
       let resolutions = 0;
       let updates = 0;
+      let attempts = 0;
+      let resends = 0;
       await page.route('**/api/**', async route => {
         const path = new URL(route.request().url()).pathname;
         let body;
@@ -24,11 +26,23 @@ try {
           const supplied = route.request().postDataJSON();
           if (scenario === 'token-hash') assert.equal(supplied.tokenHash, 'test-once');
           const intent = scenario === 'recovery' ? 'recovery' : scenario === 'confirmation' ? 'confirmation' : 'invite';
-          body = { email: 'invited@example.test', intent, requiresPassword: intent !== 'confirmation', accessToken: 'verified-access', refreshToken: 'verified-refresh' };
+          body = { email: 'invited@example.test', intent, requiresPassword: intent !== 'confirmation', setupToken: 'password-only-once' };
+        } else if (path === '/api/auth/setup/request') {
+          resends++;
+          body = { message: 'If an eligible account exists, a new code has been requested.' };
+        } else if (path === '/api/auth/setup/verify') {
+          attempts++;
+          const supplied = route.request().postDataJSON();
+          assert.equal(supplied.email, 'invited@example.test');
+          assert.equal(supplied.purpose, ['setup-recovery', 'setup-resend'].includes(scenario) ? 'recovery' : 'invite');
+          if (scenario === 'setup-limited' || (scenario === 'setup-wrong' && attempts === 1)) {
+            return route.fulfill({ status: scenario === 'setup-limited' ? 429 : 400, json: { message: scenario === 'setup-limited' ? 'Too many code attempts. Wait 15 minutes before trying again.' : 'The code is invalid, expired, or already used. Request a new code.' } });
+          }
+          body = { email: supplied.email, setupToken: 'password-only-once', intent: scenario === 'setup-recovery' ? 'recovery' : 'invite', expiresInSeconds: 600 };
         } else if (path === '/api/auth/password/reset') {
           updates++;
           const supplied = route.request().postDataJSON();
-          assert.equal(supplied.accessToken, 'verified-access');
+          assert.equal(supplied.setupToken, 'password-only-once'); assert.equal(supplied.accessToken, undefined);
           assert.equal(supplied.password, 'PrivateInvitation2026!');
           body = { email: 'invited@example.test', message: 'Password created. Administrator approval is still required.' };
         } else if (path === '/api/auth/login') body = { user: recipient, access: { permissions: ['profile.read'] }, accessToken: 'fixture-app-token', csrfToken: 'fixture-csrf', storage: 'ui-fixture' };
@@ -43,26 +57,54 @@ try {
         confirmation: '?auth=complete#access_token=test-access&refresh_token=test-refresh&type=signup',
         expired: '?auth=complete#error=access_denied&error_code=otp_expired',
         incomplete: '?auth=complete',
+        'setup-invite': '?auth=setup',
+        'setup-recovery': '?auth=setup&purpose=recovery',
+        'setup-resend': '?auth=setup',
+        'setup-wrong': '?auth=setup',
+        'setup-limited': '?auth=setup',
       }[scenario];
       await page.goto(`${base}/${suffix}`);
+      if (scenario.startsWith('setup-')) {
+        await page.getByRole('heading', { name: 'Set up your account' }).waitFor();
+        await page.getByLabel('Email address', { exact: true }).fill('invited@example.test');
+        if (scenario === 'setup-resend') {
+          await page.getByRole('button', { name: 'Request a new code', exact: true }).click();
+          await page.getByRole('button', { name: /Request another code in/ }).waitFor();
+          assert.equal(await page.getByRole('button', { name: /Request another code in/ }).isDisabled(), true);
+          assert.equal(await page.getByLabel('Email type').inputValue(), 'recovery');
+          assert.equal(resends, 1);
+        }
+        await page.getByLabel('Code from email').fill('123456');
+        if (scenario === 'setup-invite') await page.screenshot({ path: `/tmp/baliktela-setup-${viewport.width}.png`, fullPage: true });
+        await page.getByRole('button', { name: 'Verify code', exact: true }).click();
+        if (scenario === 'setup-wrong' || scenario === 'setup-limited') {
+          await page.getByRole('alert').waitFor();
+          assert.equal(await page.getByLabel('Create password', { exact: true }).count(), 0);
+          assert.equal(updates, 0);
+          if (scenario === 'setup-wrong') await page.getByRole('button', { name: 'Verify code', exact: true }).click();
+        }
+      }
       if (['expired', 'incomplete'].includes(scenario)) {
         await page.getByRole('heading', { name: 'Email link unavailable' }).waitFor();
         assert.equal(resolutions, 0);
+      } else if (scenario === 'setup-limited') {
+        assert.equal(attempts, 1);
       } else if (scenario === 'confirmation') {
         await page.getByText('Email confirmed. Sign in with the password you chose during registration.', { exact: true }).waitFor();
         assert.equal(await page.locator('input[type=password]').count(), 0);
       } else {
-        const label = scenario === 'recovery' ? 'New password' : 'Create password';
+        const isRecovery = ['recovery', 'setup-recovery'].includes(scenario);
+        const label = isRecovery ? 'New password' : 'Create password';
         await page.getByLabel(label, { exact: true }).waitFor();
         assert.equal(await page.getByRole('heading', { name: 'Overview', exact: true }).count(), 0);
         await page.getByLabel(label, { exact: true }).fill('PrivateInvitation2026!');
         await page.getByLabel('Confirm password', { exact: true }).fill('MismatchedPassword2026!');
-        await page.getByRole('button', { name: scenario === 'recovery' ? 'Update password' : 'Create password', exact: true }).click();
+        await page.getByRole('button', { name: isRecovery ? 'Update password' : 'Create password', exact: true }).click();
         await page.getByRole('alert').filter({ hasText: 'Password confirmation does not match.' }).waitFor();
         assert.equal(updates, 0);
         await page.getByLabel('Confirm password', { exact: true }).fill('PrivateInvitation2026!');
         if (scenario === 'fragment') await page.screenshot({ path: `/tmp/baliktela-invitation-${viewport.width}.png`, fullPage: true });
-        await page.getByRole('button', { name: scenario === 'recovery' ? 'Update password' : 'Create password', exact: true }).click();
+        await page.getByRole('button', { name: isRecovery ? 'Update password' : 'Create password', exact: true }).click();
         await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
         assert.equal(updates, 1);
         assert.equal(await page.locator('input[type=email]').inputValue(), 'invited@example.test');
@@ -70,7 +112,9 @@ try {
         await page.getByRole('button', { name: 'Sign in', exact: true }).click();
         await page.getByRole('heading', { name: 'Account approval is pending', exact: true }).waitFor();
       }
-      if (!['expired', 'incomplete'].includes(scenario)) assert.equal(resolutions, 1, 'One-time tokens must not be consumed twice by StrictMode.');
+      if (scenario.startsWith('setup-')) assert.equal(resolutions, 0, 'A setup URL is not a provider callback.');
+      else if (!['expired', 'incomplete'].includes(scenario)) assert.equal(resolutions, 1, 'One-time tokens must not be consumed twice by StrictMode.');
+      assert.equal(await page.evaluate(() => JSON.stringify(localStorage).includes('password-only-once')), false);
       assert.equal(new URL(page.url()).hash, '');
       assert.equal(new URL(page.url()).search, '');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);

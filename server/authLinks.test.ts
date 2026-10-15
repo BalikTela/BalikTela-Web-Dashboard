@@ -2,6 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readAuthLink } from '../src/lib/authLinks.js';
 
+test('setup entry opens without URL credentials and preserves the requested code type', () => {
+  for (const suffix of ['?auth=setup', '?auth=setup&purpose=recovery']) {
+    const link = readAuthLink(`https://dashboard.example.test/${suffix}`);
+    assert.equal(link.isCallback, true);
+    assert.equal(link.isSetup, true);
+    assert.equal(link.hasCredentials, false);
+    assert.equal(link.error, '');
+    assert.equal(link.setupPurpose, suffix.includes('recovery') ? 'recovery' : 'invite');
+  }
+});
+
 test('invitation and recovery callbacks are recognized with fragment or query types', () => {
   for (const suffix of [
     '?auth=complete#access_token=test-access&refresh_token=test-refresh&type=invite',

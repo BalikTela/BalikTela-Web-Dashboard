@@ -27,6 +27,7 @@ try {
       });
       await page.goto(base);
       await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
+      assert.equal(await page.getByRole('button', { name: 'Create participant account', exact: true }).count(), 0);
       assert.equal(await page.getByLabel('Email address', { exact: true }).inputValue(), '');
       assert.equal(await page.getByLabel('Password', { exact: true }).inputValue(), '');
       assert.equal(await page.getByText('Demo access', { exact: true }).count(), 0);

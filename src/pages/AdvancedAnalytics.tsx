@@ -1,3 +1,4 @@
+import { percentage } from '../../shared/metrics';
 import { useState } from 'react';
 import { FacilityUtilizationChart, RegionalBarChart, WasteTrendChart } from '../components/Charts';
 import { SectionHeader } from '../components/SectionHeader';
@@ -38,7 +39,7 @@ function Diagnostic({ data }: { data: Data }) {
     <div className="section-enter space-y-6">
       <div className="stagger-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <DiagnosticMetric label="Waste recovered" value={`${data.impactMetrics.diversionRate}%`} detail="Reused + recycled / generated in selected period" />
-        <DiagnosticMetric label="Transactions completed" value={`${Math.round((completed / Math.max(data.transactions.length, 1)) * 100)}%`} detail={`${completed} of ${data.transactions.length} sample records`} />
+        <DiagnosticMetric label="Transactions completed" value={data.transactions.length ? `${percentage(completed, data.transactions.length)}%` : 'Not available'} detail={`${completed} of ${data.transactions.length} sample records`} />
         <DiagnosticMetric label="Highest utilization" value={`${highUtilization?.utilization ?? 0}%`} detail={highUtilization?.name ?? 'No matching facility'} warning />
         <DiagnosticMetric label="Lowest recovery" value={`${lowRecovery?.recoveryRate ?? 0}%`} detail={lowRecovery?.category ?? 'No matching category'} warning />
       </div>

@@ -1,3 +1,4 @@
+import { formatMass, percentage } from '../../shared/metrics';
 import { BarChart3, CircleGauge, PackageCheck, Recycle, Scale } from 'lucide-react';
 import { CategoryDoughnut, RegionalBarChart, WasteTrendChart } from '../components/Charts';
 import { SectionHeader } from '../components/SectionHeader';
@@ -15,12 +16,12 @@ export function WasteAnalytics({ data }: { data: Data }) {
   return (
     <div className="space-y-5">
       <section className="stagger-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Generated waste" value={formatKilograms(flow.generatedKg)} detail={data.metadata.periodLabel} icon={Scale} />
-        <SummaryCard label="Collected" value={formatKilograms(flow.collectedKg)} detail={`${ratio(flow.collectedKg, flow.generatedKg)}% collection coverage`} icon={PackageCheck} tone="blue" />
-        <SummaryCard label="Recovered" value={formatKilograms(flow.recycledKg + flow.reusedKg)} detail={`${data.impactMetrics.diversionRate}% of generated waste`} icon={Recycle} tone="emerald" />
+        <SummaryCard label="Generated waste" value={formatMass(flow.generatedKg)} detail={data.metadata.periodLabel} icon={Scale} />
+        <SummaryCard label="Collected" value={formatMass(flow.collectedKg)} detail={flow.generatedKg > 0 ? `${percentage(flow.collectedKg, flow.generatedKg)}% collection coverage` : 'No generated mass denominator'} icon={PackageCheck} tone="blue" />
+        <SummaryCard label="Recovered" value={formatMass(flow.recycledKg + flow.reusedKg)} detail={flow.generatedKg > 0 ? `${data.impactMetrics.diversionRate}% of generated waste` : 'No generated mass denominator'} icon={Recycle} tone="emerald" />
         <SummaryCard label="Lowest recovery" value={`${lowest?.recoveryRate ?? 0}%`} detail={lowest?.category ?? 'No matching category'} icon={CircleGauge} tone="amber" />
       </section>
-      <ImpactSummary data={data.impactMetrics} periodLabel={data.metadata.periodLabel} />
+      <ImpactSummary data={data.impactMetrics} periodLabel={data.metadata.periodLabel} generatedKg={flow.generatedKg} sortedKg={flow.sortedKg} />
       <div className="grid gap-5 xl:grid-cols-2">
       <Panel>
         <SectionHeader title="Waste Stream Performance" eyebrow="Generated / collected / recycled / reused" />
@@ -49,6 +50,3 @@ export function WasteAnalytics({ data }: { data: Data }) {
     </div>
   );
 }
-
-function formatKilograms(kilograms: number) { return `${Math.round(kilograms).toLocaleString()} kg`; }
-function ratio(value: number, total: number) { return total ? Math.round((value / total) * 100) : 0; }

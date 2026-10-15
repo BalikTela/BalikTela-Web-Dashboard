@@ -1,6 +1,6 @@
 import {
   BarChart3, ChevronRight, CircleUserRound, ClipboardList, Factory, FileText, Home, LineChart, LogOut,
-  MapPinned, Menu, Recycle, ListChecks, Settings, UserRoundCog, UsersRound, X,
+  MapPinned, Menu, ListChecks, Settings, UserRoundCog, UsersRound, X,
   PackageSearch, Activity, ShieldAlert, Landmark, Building2, History,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -9,6 +9,7 @@ import { cn } from '../lib/utils';
 import { Button } from './ui/button';
 import { useAuth } from '../context/AuthContext';
 import { canAccessPage } from '../access';
+import balikTelaLogo from '../assets/auth/baliktelaph.png';
 
 const navigation: Array<{ key: PageKey; label: string; icon: React.ComponentType<{ size?: number; className?: string }>; section: 'Workspace' | 'Manage' }> = [
   { key: 'overview', label: 'Overview', icon: Home, section: 'Workspace' },
@@ -63,9 +64,8 @@ export function Layout({ activePage, onPageChange, children }: { activePage: Pag
     <div className="min-h-screen overflow-x-clip bg-[#f5f7f6] text-foreground">
       {mobileOpen ? <button className="overlay-enter fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-sm xl:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation" /> : null}
       <aside className={cn('fixed inset-y-0 left-0 z-50 flex w-[min(15rem,calc(100vw-2.5rem))] -translate-x-full flex-col border-r border-[#dfe5e2] bg-[#fbfcfb] transition-transform duration-200 xl:w-60 xl:translate-x-0', mobileOpen && 'translate-x-0')}>
-        <div className="flex h-[72px] items-center gap-3 border-b border-[#e8ecea] px-5">
-          <div className="grid h-9 w-9 place-items-center rounded-md bg-[#193c31] text-white"><Recycle size={18} strokeWidth={2.1} /></div>
-          <div className="min-w-0"><p className="text-[15px] font-semibold leading-5 text-[#17201d]">BalikTela</p><p className="truncate text-[11px] text-[#718079]">Circular Textile Network</p></div>
+        <div className="flex h-[104px] shrink-0 items-center justify-center gap-3 border-b border-[#e8ecea] px-5">
+          <button type="button" onClick={() => navigate('overview')} aria-label="BalikTelaPH overview" className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"><img src={balikTelaLogo} alt="BalikTelaPH" width={1254} height={1254} className="h-[88px] w-[88px] object-contain" /></button>
           <Button variant="ghost" size="icon" className="ml-auto xl:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X size={18} /></Button>
         </div>
         <div className="flex-1 overflow-y-auto px-3 py-6">
@@ -94,7 +94,7 @@ export function Layout({ activePage, onPageChange, children }: { activePage: Pag
         </header>
         <main className="mx-auto w-full min-w-0 max-w-[2304px] px-3 py-4 sm:px-6 sm:py-7 xl:px-8 2xl:px-10">
           {children}
-          <footer className="mt-8 border-t border-slate-200 py-5 text-center text-xs text-slate-500">Prototype dashboard — sample data for demonstration purposes. Organization names and activities are demo/sample records.</footer>
+          <footer className="mt-8 border-t border-slate-200 py-5 text-center text-xs text-slate-500">Prototype dashboard — sample data for demonstration purposes. Organization names and activities are demo/sample records. Weights are metric tons (t); 1 t = 1,000 kg.</footer>
         </main>
       </div>
     </div>

@@ -14,7 +14,7 @@ export function MaterialBatchEditor({ batch, action='edit', onClose }: { batch?:
     {key:'wasteForm',label:'Waste form',type:'select',options:['Garments','Offcuts','Fabric rolls','Fiber','Mixed textiles','Other']},
     {key:'condition',label:'Condition',type:'select',options:['Reusable','Recyclable','For assessment']},
     {key:'circularPathway',label:'Pathway',type:'select',options:['Reuse','Repair','Redistribution','Upcycling','Recycling','For assessment']},
-    {key:'declaredWeightKg',label:'Declared weight (kg)',type:'number',min:0.001,required:true},
+    {key:'declaredWeightKg',label:'Declared weight (t)',type:'number',unit:'t',min:0.001,required:true},
     {key:'weightStatus',label:'Weight evidence',type:'select',options:['Estimated','Measured','Verified']},
     {key:'city',label:'City',required:true},{key:'region',label:'Region',required:true},
     {key:'method',label:'Measurement method',required:true},

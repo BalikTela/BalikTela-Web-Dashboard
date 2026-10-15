@@ -1,49 +1,64 @@
-import { Factory, MapPin, Recycle, TriangleAlert } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowUpRight, MapPin } from 'lucide-react';
+import { formatMass, percentage } from '../../shared/metrics';
+import { GeographicMap } from '../components/GeographicMap';
 import { RegionalBarChart } from '../components/Charts';
-import { PhilippinesMapMock } from '../components/PhilippinesMapMock';
-import { SectionHeader } from '../components/SectionHeader';
+import { EmptyBlock } from '../components/StateBlock';
+import { geographicMetrics, geographicValue, rankedRegions, type GeographicMetric } from '../lib/geography';
 import type { getDashboardData } from '../services/dashboardService';
-import { Panel } from '../components/Panel';
-import { SummaryCard } from '../components/SummaryCard';
 
 type Data = Awaited<ReturnType<typeof getDashboardData>>;
 
 export function Geographic({ data }: { data: Data }) {
-  const highGap = [...data.regionalActivity].sort((a, b) => b.wasteGapKg - a.wasteGapKg);
-  const collectionPoints = data.regionalActivity.reduce((sum, item) => sum + item.collectionPoints, 0);
-  const recyclers = data.regionalActivity.reduce((sum, item) => sum + item.recyclers, 0);
-  const recycled = data.regionalActivity.reduce((sum, item) => sum + item.recyclingKg, 0);
-  return (
-    <div className="space-y-5">
-      <section className="stagger-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Regions covered" value={data.regionalActivity.length.toString()} detail="Current pilot footprint" icon={MapPin} />
-        <SummaryCard label="Collection points" value={collectionPoints.toString()} detail="Across participating cities" icon={Factory} tone="blue" />
-        <SummaryCard label="Recycler network" value={recyclers.toString()} detail="Mapped processing partners" icon={Recycle} tone="emerald" />
-        <SummaryCard label="Largest coverage gap" value={`${Math.round(highGap[0]?.wasteGapKg ?? 0).toLocaleString()} kg`} detail={highGap[0]?.region ?? 'No matching region'} icon={TriangleAlert} tone="amber" />
+  const [metric, setMetric] = useState<GeographicMetric>('collectionKg');
+  const [selection, setSelection] = useState<string | null>(null);
+  const regions = data.regionalActivity;
+  const selected = regions.some(region => region.region === selection) ? selection : null;
+  const ordered = rankedRegions(regions, metric);
+  const metricLabel = geographicMetrics.find(item => item.key === metric)!.label;
+  const total = regions.reduce((sum, region) => sum + geographicValue(region, metric), 0);
+  const collected = regions.reduce((sum, region) => sum + region.collectionKg, 0);
+  const recycled = regions.reduce((sum, region) => sum + region.recyclingKg, 0);
+  const recoveryGap = regions.reduce((sum, region) => sum + region.wasteGapKg, 0);
+  const collectionPoints = regions.reduce((sum, region) => sum + region.collectionPoints, 0);
+  const recyclers = regions.reduce((sum, region) => sum + region.recyclers, 0);
+  const highestGap = rankedRegions(regions, 'wasteGapKg')[0];
+
+  return <div className="geo-page">
+    <section aria-label="Geographic activity map" className="min-w-0">
+      <header className="geo-section-header">
+        <div><h2>Regional material flows</h2><p>Collection, recycling, and recovery coverage</p></div>
+        <div className="geo-period"><span className="geo-sample-label">Sample data</span><span>{data.metadata.periodLabel}</span></div>
+      </header>
+      <GeographicMap regions={regions} metric={metric} onMetricChange={setMetric} selectedRegion={selected} onSelectRegion={setSelection} />
+    </section>
+
+    <section className="geo-summary" aria-label="Geographic summary">
+      <article className="geo-summary-primary"><p>Collected material</p><strong>{formatMass(collected)}</strong><span>Across {regions.length} represented regions</span></article>
+      <article><p>Verified recycling</p><strong>{formatMass(recycled)}</strong><span>Completed recycling outcomes</span></article>
+      <article><p>Recovery gap</p><strong>{formatMass(recoveryGap)}</strong><span>Outside reuse and recycling outcomes</span></article>
+      <article><p>Regional network</p><strong>{collectionPoints.toLocaleString()}<span> collection points</span></strong><span>{recyclers} recycler involvements across regions</span></article>
+    </section>
+
+    <div className="geo-analysis-grid">
+      <section className="geo-analysis-section" aria-label="Regional breakdown">
+        <header className="geo-section-header"><div><h2>Regional breakdown</h2><p>Ranked by {metricLabel.toLowerCase()} mass</p></div><span className="geo-count">{regions.length} regions</span></header>
+        {ordered.length ? <div className="overflow-x-auto"><table className="geo-region-table">
+          <thead><tr><th>Region</th><th>Collected</th><th>Recycled</th><th>Recovery gap</th><th>Share of {metricLabel.toLowerCase()}</th></tr></thead>
+          <tbody>{ordered.map(region => <tr key={region.region} data-selected={selected === region.region}>
+            <td><button type="button" className="geo-region-button" aria-pressed={selected === region.region} aria-label={`Locate ${region.region}`} onClick={() => setSelection(selected === region.region ? null : region.region)}><MapPin size={14} aria-hidden="true" /><span>{region.region}</span><ArrowUpRight size={13} aria-hidden="true" /></button><p>{region.collectionPoints} collection points · {region.recyclers} recyclers</p></td>
+            <td>{formatMass(region.collectionKg)}</td><td>{formatMass(region.recyclingKg)}</td><td>{formatMass(region.wasteGapKg)}</td>
+            <td><div className="geo-share"><span className={metric === 'wasteGapKg' ? 'geo-share-track geo-share-gap' : 'geo-share-track'}><span style={{ width: `${percentage(geographicValue(region, metric), total)}%` }} /></span><span>{total > 0 ? `${percentage(geographicValue(region, metric), total)}%` : 'Not available'}</span></div></td>
+          </tr>)}</tbody>
+        </table></div> : <EmptyBlock label="No regions match the current filters." />}
+        <p className="geo-method-note">Share = regional {metricLabel.toLowerCase()} mass / total {metricLabel.toLowerCase()} mass in the current filter scope. Locations indicate regions, not participant addresses.</p>
       </section>
-      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-        <Panel>
-          <SectionHeader title="Philippines Textile Activity" eyebrow="Producers, collection points, recyclers, and textile activity" />
-          <PhilippinesMapMock regions={data.regionalActivity} />
-        </Panel>
-        <div className="space-y-5">
-          <Panel>
-            <SectionHeader title="Regional Performance" eyebrow={`${Math.round(recycled).toLocaleString()} kg total recycled in the sample period`} />
-            <div className="h-72"><RegionalBarChart data={data.regionalActivity} /></div>
-          </Panel>
-          <Panel>
-            <SectionHeader title="High Waste / Low Coverage" eyebrow="Sample targeting list" />
-            <div className="space-y-3">
-              {highGap.map((item) => (
-                <article key={item.region} className="rounded-lg bg-slate-50 p-4">
-                  <div className="flex items-center justify-between gap-3"><p className="font-semibold text-textile-ink">{item.region}</p><p className="text-sm font-semibold text-amber-700">{item.wasteGapKg.toLocaleString()} kg gap</p></div>
-                  <p className="mt-1 text-sm text-textile-ink/58">{item.producers} producers · {item.collectionPoints} collection points · {item.recyclers} recyclers</p>
-                </article>
-              ))}
-            </div>
-          </Panel>
-        </div>
-      </div>
+
+      <section className="geo-analysis-section" aria-label="Regional comparison">
+        <header className="geo-section-header"><div><h2>Collection and recycling</h2><p>Matching regions · metric tons (t)</p></div></header>
+        {regions.length ? <div className="geo-comparison-chart"><RegionalBarChart data={regions} /></div> : <EmptyBlock label="No regional activity to compare." />}
+        {highestGap ? <div className="geo-priority"><span className="geo-priority-indicator" /><div><p>Largest recovery gap</p><strong>{highestGap.region}</strong></div><span className="tabular-nums">{formatMass(highestGap.wasteGapKg)}</span></div> : null}
+      </section>
     </div>
-  );
+  </div>;
 }

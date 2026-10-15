@@ -6,10 +6,11 @@ import { useDashboardData } from './hooks/useDashboardData';
 import { AuthPage } from './pages/AuthPage';
 import { useAuth } from './context/AuthContext';
 import { Button } from './components/ui/button';
-import { LoaderCircle, Recycle, ShieldX } from 'lucide-react';
+import { LoaderCircle, ShieldX } from 'lucide-react';
 import type { Filters } from './types';
 import { canAccessPage } from './access';
 import { readAuthLink } from './lib/authLinks';
+import { AuthLayout } from './components/AuthLayout';
 
 export type PageKey = 'overview' | 'listings' | 'materials' | 'operations' | 'waste' | 'transactions' | 'stakeholders' | 'facilities' | 'geographic' | 'advanced' | 'quality' | 'governance' | 'reports' | 'organizations' | 'users' | 'audit' | 'profile' | 'settings';
 
@@ -49,7 +50,7 @@ function App() {
 
   if (emailCallback) return <AuthPage onAuthenticated={() => setEmailCallback(false)} />;
 
-  if (authLoading) return <div className="grid min-h-screen place-items-center bg-[#f5f7f6] text-sm text-[#66736e]">Restoring secure session…</div>;
+  if (authLoading) return <AuthLayout><div className="auth-session-status" role="status"><LoaderCircle size={20} className="animate-spin" aria-hidden="true" />Restoring secure session…</div></AuthLayout>;
   if (!user) return <AuthPage />;
 
   const isDashboardUser = access?.permissions.includes('analytics.read');
@@ -129,7 +130,7 @@ function DashboardWorkspace() {
 function DashboardAccessBoundary() {
   const { user, logout } = useAuth();
   const pending = user?.accountStatus === 'Pending verification';
-  return <main className="grid min-h-screen place-items-center bg-[#f5f7f6] p-6"><section className="w-full max-w-lg rounded-md border border-[#dfe5e2] bg-white p-7"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-md bg-[#193c31] text-white"><Recycle size={19} /></span><div><p className="font-semibold text-[#17201d]">BalikTela Web Dashboard</p><p className="text-xs text-[#718079]">Institutional management and analytics</p></div></div><div className="mt-8 border-y border-[#dfe5e2] py-6"><ShieldX size={20} className="text-amber-700" /><h1 className="mt-4 text-xl font-semibold text-[#17201d]">{pending ? 'Account approval is pending' : 'Dashboard access is not assigned to this role'}</h1><p className="mt-2 text-sm leading-6 text-[#66736e]">{pending ? `${user?.fullName}, your email and password are registered. A system administrator must verify your organization and approve your institutional access.` : `${user?.fullName}, participant exchange, communication, rewards, and engagement activity belongs to the BalikTela mobile application. This web dashboard is reserved for authorized management, monitoring, analytics, governance, and research roles.`}</p></div><Button className="mt-6" variant="outline" onClick={logout}>Sign out</Button></section></main>;
+  return <AuthLayout><section className="auth-form auth-boundary"><ShieldX size={24} className="text-amber-700" aria-hidden="true" /><h1 className="auth-title mt-5">{pending ? 'Account approval is pending' : 'Dashboard access is not assigned to this role'}</h1><p className="auth-description">{pending ? `${user?.fullName}, your email and password are registered. A system administrator must verify your organization and approve your institutional access.` : `${user?.fullName}, participant exchange, communication, rewards, and engagement activity belongs to the BalikTela mobile application. This web dashboard is reserved for authorized management, monitoring, analytics, governance, and research roles.`}</p><Button className="mt-7 w-full" variant="outline" onClick={logout}>Sign out</Button></section></AuthLayout>;
 }
 
 export default App;

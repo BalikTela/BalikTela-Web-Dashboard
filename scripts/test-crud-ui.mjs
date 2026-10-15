@@ -36,6 +36,7 @@ try {
     await dialog().getByLabel('Record classification').selectOption('Demo');
     await dialog().getByLabel('Change reason').fill('Browser acceptance registration');
     await save();
+    await page.getByLabel('Search registry', {exact:true}).fill(name);
     const row=()=>page.getByRole('row').filter({hasText:name});
     await row().waitFor();
     await page.getByRole('button',{name:`Edit ${name}`,exact:true}).click();
@@ -53,7 +54,7 @@ try {
     await page.getByRole('button',{name:'Facility',exact:true}).click();
     await dialog().getByLabel('Facility name').fill(`CRUD Browser Facility ${width} (demo)`);
     await dialog().getByLabel('City',{exact:true}).fill('Manila');
-    await dialog().getByLabel('Monthly capacity (kg)').fill('1000');
+    await dialog().getByLabel('Monthly capacity (t)').fill('1');
     await dialog().getByLabel('Change reason').fill('Browser facility registration');
     await page.screenshot({path:`/tmp/baliktela-crud/${width}-facility-editor.png`});
     const modalOverflow=await dialog().evaluate(element=>element.scrollWidth>element.clientWidth+1);
@@ -62,7 +63,7 @@ try {
     await navigate('Material Registry');
     await page.getByRole('button',{name:'Register batch',exact:true}).click();
     await dialog().getByLabel('Source user').selectOption('USR-PROD-01');
-    await dialog().getByLabel('Declared weight (kg)').fill('15');
+    await dialog().getByLabel('Declared weight (t)').fill('0.015');
     await dialog().getByLabel('City',{exact:true}).fill('Manila');
     await dialog().getByLabel('Measurement method').fill('Browser scale');
     await dialog().getByLabel('Synthetic/demo record').check();
@@ -78,14 +79,14 @@ try {
     await dialog().getByLabel('Reason',{exact:true}).fill('Browser restore check');await save();
     await page.getByLabel('Batch visibility').selectOption('Active');
     await page.getByRole('button',{name:`Edit ${batchId}`,exact:true}).click();
-    await dialog().getByLabel('Declared weight (kg)').fill('16');
+    await dialog().getByLabel('Declared weight (t)').fill('0.016');
     await dialog().getByLabel('Measurement method').fill('Browser corrected reading');
     await dialog().getByLabel('Registration / correction reason').fill('Browser correction');await save();
     await navigate('Recovery Monitoring');
     await page.getByRole('button',{name:'Record operation',exact:true}).click();
-    await dialog().getByLabel('Input weight (kg)').fill('9');
-    await dialog().getByLabel('Output weight (kg)').fill('8');
-    await dialog().getByLabel('Residual weight (kg)').fill('1');
+    await dialog().getByLabel('Input weight (t)').fill('0.009');
+    await dialog().getByLabel('Output weight (t)').fill('0.008');
+    await dialog().getByLabel('Residual weight (t)').fill('0.001');
     await dialog().getByLabel('Operational note').fill('Browser recovery registration');
     const recoveryPromise=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/recovery-records'&&response.request().method()==='POST');
     await save();const recovery=await (await recoveryPromise).json();
@@ -109,7 +110,7 @@ try {
     const transfer=transfers.find(item=>item.offerId===offer.id);
     await page.getByRole('button',{name:'Transfers',exact:true}).click();
     await page.getByRole('button',{name:`Manage ${transfer.id}`,exact:true}).click();
-    await dialog().getByLabel('Measured weight (kg)').fill('10');
+    await dialog().getByLabel('Measured weight (t)').fill('0.01');
     await dialog().getByLabel('Measurement method').fill('Browser scale');
     await dialog().getByLabel('Event location').fill('Manila');
     await dialog().getByLabel('Reason / event note').fill('Browser handover');await save();

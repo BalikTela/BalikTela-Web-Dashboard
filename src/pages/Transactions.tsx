@@ -1,3 +1,5 @@
+import { PaginatedRecords } from '../components/PaginatedRecords';
+import { formatMass, percentage } from '../../shared/metrics';
 import { CheckCircle2, Clock3, Search, Scale, Waypoints } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SectionHeader } from '../components/SectionHeader';
@@ -27,8 +29,8 @@ export function Transactions({ data }: { data: Data }) {
     <>
       <section className="stagger-grid mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label="Sample audit records" value={data.transactions.length.toLocaleString()} detail={data.metadata.periodLabel} icon={Waypoints} />
-        <SummaryCard label="Sample material traced" value={`${totalWeight.toLocaleString()} kg`} detail="Subset of aggregate platform activity" icon={Scale} tone="blue" />
-        <SummaryCard label="Audit records completed" value={`${Math.round((completed / Math.max(data.transactions.length, 1)) * 100)}%`} detail={`${completed} of ${data.transactions.length} matching sample records`} icon={CheckCircle2} tone="emerald" />
+        <SummaryCard label="Sample material traced" value={`${formatMass(totalWeight)}`} detail="Subset of aggregate platform activity" icon={Scale} tone="blue" />
+        <SummaryCard label="Audit records completed" value={data.transactions.length ? `${percentage(completed, data.transactions.length)}%` : 'Not available'} detail={`${completed} of ${data.transactions.length} matching sample records`} icon={CheckCircle2} tone="emerald" />
         <SummaryCard label="Open sample workflows" value={`${data.transactions.length - completed}`} detail="Sorting, transit, or validation" icon={Clock3} tone="amber" />
       </section>
       <div className="mb-5"><BarterActivity data={data.barterMetrics} periodLabel={data.metadata.periodLabel} /></div>
@@ -44,7 +46,7 @@ export function Transactions({ data }: { data: Data }) {
           }
         />
         {rows.length ? (
-          <div className="overflow-x-auto scrollbar-thin">
+          <PaginatedRecords rows={rows} resetKey={JSON.stringify([query, data.metadata.periodLabel])}>{pageRows =><div className="overflow-x-auto scrollbar-thin">
             <table className="w-full min-w-[990px] table-fixed border-collapse text-left text-sm">
               <colgroup>
                 <col className="w-[8%]" /><col className="w-[7%]" /><col className="w-[14%]" /><col className="w-[15%]" /><col className="w-[8%]" />
@@ -54,7 +56,7 @@ export function Transactions({ data }: { data: Data }) {
                 <tr><th className="py-2">ID</th><th>Date</th><th>Source</th><th>Destination</th><th>Type</th><th>Category</th><th>Weight</th><th>Location</th><th>Status</th><th>Evidence</th></tr>
               </thead>
               <tbody className="divide-y divide-textile-thread">
-                {rows.map((item) => (
+                {pageRows.map((item) => (
                 <tr key={item.id} className="data-row cursor-pointer transition-colors hover:bg-slate-50" onClick={() => setSelected(item)}>
                     <td className="break-words py-3 pr-3 font-medium text-emerald-700">{item.id}</td>
                     <td className="pr-3">{item.date}</td>
@@ -62,7 +64,7 @@ export function Transactions({ data }: { data: Data }) {
                     <td className="pr-3">{item.destination}</td>
                     <td className="pr-3">{item.type}</td>
                     <td className="pr-3">{item.textileCategory}</td>
-                    <td className="pr-3">{item.weightKg.toLocaleString()} kg</td>
+                    <td className="pr-3">{formatMass(item.weightKg)}</td>
                     <td className="pr-3">{item.location}</td>
                     <td className="pr-3"><StatusBadge status={item.status} /></td>
                     <td className="text-textile-ink/65">{item.status === 'Completed' ? 'Lifecycle recorded' : 'Outcome pending'}</td>
@@ -70,7 +72,7 @@ export function Transactions({ data }: { data: Data }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}</PaginatedRecords>
         ) : <EmptyBlock />}
       </Panel>
       <TransactionDrawer transaction={selected} onClose={() => setSelected(null)} />

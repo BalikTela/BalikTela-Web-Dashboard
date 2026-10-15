@@ -1,14 +1,15 @@
+import { formatMass } from '../../shared/metrics';
 import { ChevronRight } from 'lucide-react';
 import type { CircularFlowMetrics } from '../types';
 
 export function CircularFlow({ data }: { data: CircularFlowMetrics }) {
   const stages = [
-    { label: 'Generated', value: formatKilograms(data.generatedKg), color: 'bg-slate-400' },
-    { label: 'Collected', value: formatKilograms(data.collectedKg), color: 'bg-emerald-700' },
-    { label: 'Sorted', value: formatKilograms(data.sortedKg), color: 'bg-emerald-700' },
-    { label: 'Reused / Bartered', value: formatKilograms(data.reusedKg), color: 'bg-emerald-700' },
-    { label: 'Recycled', value: formatKilograms(data.recycledKg), color: 'bg-emerald-700' },
-    { label: 'Residual / uncollected', value: formatKilograms(data.residualKg), color: 'bg-amber-500' },
+    { label: 'Generated', value: formatMass(data.generatedKg), color: 'bg-slate-400' },
+    { label: 'Collected', value: formatMass(data.collectedKg), color: 'bg-emerald-700' },
+    { label: 'Sorted', value: formatMass(data.sortedKg), color: 'bg-emerald-700' },
+    { label: 'Reused / Bartered', value: formatMass(data.reusedKg), color: 'bg-emerald-700' },
+    { label: 'Recycled', value: formatMass(data.recycledKg), color: 'bg-emerald-700' },
+    { label: 'Residual / uncollected', value: formatMass(data.residualKg), color: 'bg-amber-500' },
   ];
   return (
     <div className="stagger-grid grid overflow-hidden rounded-md border border-b-0 border-r-0 border-slate-200 bg-white sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
@@ -22,5 +23,3 @@ export function CircularFlow({ data }: { data: CircularFlowMetrics }) {
     </div>
   );
 }
-
-function formatKilograms(kilograms: number) { return `${Math.round(kilograms).toLocaleString()} kg`; }

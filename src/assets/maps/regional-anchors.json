@@ -1,0 +1,26 @@
+{
+  "source": "Natural Earth populated places; indicative regional reference locations, not participant addresses",
+  "revision": "ca96624a56bd078437bca8184e78163e5039ad19",
+  "anchors": {
+    "Metro Manila": {
+      "city": "Manila",
+      "latitude": 14.606105,
+      "longitude": 120.980271
+    },
+    "Central Visayas": {
+      "city": "Cebu",
+      "latitude": 10.321922,
+      "longitude": 123.898129
+    },
+    "Western Visayas": {
+      "city": "Iloilo",
+      "latitude": 10.705043,
+      "longitude": 122.545016
+    },
+    "Davao Region": {
+      "city": "Davao",
+      "latitude": 7.111963,
+      "longitude": 125.62805
+    }
+  }
+}

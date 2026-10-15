@@ -6,7 +6,7 @@ export function TransferAdmin({transfer,onClose}:{transfer:Transfer;onClose:()=>
   const next=transfer.status==='Reserved'?'handover':transfer.status==='Handed over'?'receipt':transfer.status==='Received'?'validate':transfer.status==='Validated'?'complete':transfer.status==='Disputed'?'resolve':'';
   const fields: EditorField[]=[
     {key:'action',label:'Lifecycle action',type:'select',options:[next,'cancel','reject',...(transfer.status==='Disputed'?[]:['dispute'])].filter(Boolean)},
-    {key:'weightKg',label:'Measured weight (kg)',type:'number',min:0.001,required:true,when:values=>['handover','receipt','validate'].includes(String(values.action))},
+    {key:'weightKg',label:'Measured weight (t)',type:'number',unit:'t',min:0.001,required:true,when:values=>['handover','receipt','validate'].includes(String(values.action))},
     {key:'method',label:'Measurement method',required:true,when:values=>['handover','receipt','validate'].includes(String(values.action))},
     {key:'circularOutcome',label:'Confirmed outcome',type:'select',options:['Reuse','Repair','Redistribution','Upcycling','Recycling'],when:values=>values.action==='complete'},
     {key:'discrepancyReason',label:'Receipt discrepancy reason',type:'textarea',when:values=>values.action==='receipt'},
@@ -16,7 +16,7 @@ export function TransferAdmin({transfer,onClose}:{transfer:Transfer;onClose:()=>
 }
 export function OfferAdmin({offer,onClose}:{offer:BarterOffer;onClose:()=>void}) {
   const fields: EditorField[]=[{key:'action',label:'Action',type:'select',options:['edit','accept','decline']},
-    {key:'quantityKg',label:'Requested weight (kg)',type:'number',min:0.001,required:true,when:values=>values.action==='edit'},
+    {key:'quantityKg',label:'Requested weight (t)',type:'number',unit:'t',min:0.001,required:true,when:values=>values.action==='edit'},
     {key:'terms',label:'Terms',type:'textarea',required:true,when:values=>values.action==='edit'},
     {key:'offeredCredits',label:'Proposed credits',type:'number',min:0,required:true,when:values=>values.action==='edit'},
     {key:'reason',label:'Administrative reason',type:'textarea',required:true}];

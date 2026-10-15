@@ -14,6 +14,7 @@ import {
 import { createSeedData } from './seed.js';
 import { createStore } from './store.js';
 import { calculateOperationalMass, canIssueReward } from './domain.js';
+import { formatMass, hasDiscrepancy, percentage, toTons } from '../shared/metrics.js';
 import { buildDashboardAnalytics, loadDashboardAnalyticsSnapshot, type DashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
 import { AsyncTtlCache, dashboardAnalyticsCacheKey } from './asyncCache.js';
 import { SupabaseIdentity } from './supabaseIdentity.js';
@@ -799,7 +800,7 @@ app.get('/api/analytics/operations', requireAuth, permit('analytics.read'), asyn
       batchCount: scopedBatches.length, declaredKg, measuredKg: sum(measurements.filter((item) => item.status === 'Measured').map((item) => item.weightKg)),
       verifiedKg, receivedKg, completedTransfers: completed.length, activeTransfers: transfers.filter((item) => !['Completed', 'Cancelled', 'Rejected'].includes(item.status)).length,
       diversionRate: mass.diversionRate,
-      denominator: 'Verified kilograms in completed transfers / unique declared batch kilograms in scope',
+      denominator: 'Verified mass in completed transfers / unique declared batch mass in scope',
     },
     massBalance: { declaredKg, handedOverKg: mass.handedOverKg, receivedKg, verifiedKg, discrepancyKg: mass.discrepancyKg },
     quality: { estimatedBatches: scopedBatches.filter((item) => item.weightStatus === 'Estimated').length, measuredBatches: scopedBatches.filter((item) => item.weightStatus === 'Measured').length, verifiedBatches: scopedBatches.filter((item) => item.weightStatus === 'Verified').length, discrepancyFlags: transfers.filter((item) => Math.abs(item.discrepancyKg ?? 0) > 0.01).length },
@@ -830,10 +831,10 @@ app.get('/api/data-quality', requireAuth, permit('dataQuality.read'), async (req
   const issues = [
     ...batches.filter((item) => item.weightStatus === 'Estimated').map((item) => ({ id: `DQ-${item.id}-EST`, severity: 'Warning', category: 'Unverified measurement', entityType: 'Material batch', entityId: actor.scope.aggregateOnly ? 'De-identified batch' : item.id, description: `${item.materialCategory} has an estimated weight without measured or verified evidence.`, status: 'Open' })),
     ...batches.filter((item) => item.currentStatus === 'Reserved' && Date.now() - new Date(item.updatedAt).getTime() > 7 * 86400000).map((item) => ({ id: `DQ-${item.id}-STALE`, severity: 'Warning', category: 'Stale workflow', entityType: 'Material batch', entityId: actor.scope.aggregateOnly ? 'De-identified batch' : item.id, description: 'Reserved material has no lifecycle update for more than seven days.', status: 'Open' })),
-    ...transfers.filter((item) => Math.abs(item.discrepancyKg ?? 0) / Math.max(item.handoverWeightKg ?? item.agreedWeightKg, 1) * 100 >= threshold).map((item) => ({ id: `DQ-${item.id}-VAR`, severity: 'Critical', category: 'Mass discrepancy', entityType: 'Transfer', entityId: actor.scope.aggregateOnly ? 'De-identified transfer' : item.id, description: `${Math.abs(item.discrepancyKg ?? 0).toFixed(1)} kg discrepancy exceeds the ${threshold}% threshold.`, status: item.status === 'Completed' ? 'Documented' : 'Open' })),
+    ...transfers.filter((item) => hasDiscrepancy(item.discrepancyKg, item.handoverWeightKg ?? item.agreedWeightKg, threshold)).map((item) => ({ id: `DQ-${item.id}-VAR`, severity: 'Critical', category: 'Mass discrepancy', entityType: 'Transfer', entityId: actor.scope.aggregateOnly ? 'De-identified transfer' : item.id, description: `${formatMass(Math.abs(item.discrepancyKg ?? 0))} discrepancy meets or exceeds the ${threshold}% threshold of handover mass (agreed mass when handover is absent).`, status: item.status === 'Completed' ? 'Documented' : 'Open' })),
     ...transfers.filter((item) => item.status === 'Completed' && item.verifiedWeightKg === null).map((item) => ({ id: `DQ-${item.id}-VERIFY`, severity: 'Critical', category: 'Invalid completion', entityType: 'Transfer', entityId: actor.scope.aggregateOnly ? 'De-identified transfer' : item.id, description: 'Completed transfer has no verified weight.', status: 'Open' })),
   ];
-  res.json({ thresholdPercent: threshold, summary: { totalIssues: issues.length, critical: issues.filter((item) => item.severity === 'Critical').length, warnings: issues.filter((item) => item.severity === 'Warning').length, validationCoveragePercent: batches.length ? Math.round(batches.filter((item) => item.weightStatus === 'Verified').length / batches.length * 100) : 0 }, issues });
+  res.json({ thresholdPercent: threshold, summary: { totalIssues: issues.length, critical: issues.filter((item) => item.severity === 'Critical').length, warnings: issues.filter((item) => item.severity === 'Warning').length, validationCoveragePercent: percentage(batches.filter((item) => item.weightStatus === 'Verified').length, batches.length) }, issues });
 });
 
 app.get('/api/audit-records', requireAuth, permit('audit.read'), async (req: AuthenticatedRequest, res) => {
@@ -874,7 +875,7 @@ app.get('/api/governance', requireAuth, permit('governance.read'), async (req: A
 app.get('/api/reports', requireAuth, permit('reports.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
   res.json({ reports: [
-    { id: 'material-flow', name: 'Material Flow Summary', description: 'Declared, handed-over, received, and verified kilograms with denominator notes.', formats: ['CSV'], available: true },
+    { id: 'material-flow', name: 'Material Flow Summary', description: 'Material mass in metric tons (t), with reporting scope and denominator notes.', formats: ['CSV'], available: true },
     { id: 'data-quality', name: 'Data Quality Summary', description: 'Measurement status, discrepancies, and validation coverage.', formats: ['CSV'], available: true },
     { id: 'organizations', name: 'Organization Participation', description: actor.scope.aggregateOnly ? 'De-identified participation totals.' : 'Authorized organization activity.', formats: ['CSV'], available: true },
     { id: 'environmental-impact', name: 'Environmental Methodology Status', description: 'Methodology status only; no environmental equivalents are calculated.', formats: ['CSV'], available: true },
@@ -887,8 +888,8 @@ app.get('/api/reports/:reportId/export', requireAuth, permit('reports.export'), 
   const batches = scopeAnalyticalBatches(actor, await store.all('materialBatches')); const transfers = (await store.all('transfers')).filter((item) => batches.some((batch) => batch.id === item.batchId));
   let rows: string[][]; let headers: string[];
   if (reportId === 'data-quality') { headers = ['Metric', 'Value']; rows = [['Estimated batches', String(batches.filter((item) => item.weightStatus === 'Estimated').length)], ['Measured batches', String(batches.filter((item) => item.weightStatus === 'Measured').length)], ['Verified batches', String(batches.filter((item) => item.weightStatus === 'Verified').length)], ['Transfer discrepancy flags', String(transfers.filter((item) => Math.abs(item.discrepancyKg ?? 0) > 0.01).length)]]; }
-  else if (reportId === 'environmental-impact') { headers = ['Indicator', 'Status']; rows = [['Environmental impact', 'Disabled pending approved methodology'], ['Predictive analytics', 'Non-production'], ['Mass denominator', 'Verified completed kg / unique declared batch kg']]; }
-  else { headers = ['Reporting period', 'Batch ID', 'Material category', 'Weight status', 'Declared kg', 'Current kg', 'Current status']; rows = batches.map((item) => ['Sep 1-21, 2026 demo', actor.scope.aggregateOnly ? 'De-identified' : item.id, item.materialCategory, item.weightStatus, String(item.declaredWeightKg), String(item.currentWeightKg), item.currentStatus]); }
+  else if (reportId === 'environmental-impact') { headers = ['Indicator', 'Status']; rows = [['Environmental impact', 'Disabled pending approved methodology'], ['Predictive analytics', 'Non-production'], ['Mass denominator', 'Verified completed mass / unique declared batch mass']]; }
+  else { headers = ['Reporting period', 'Batch ID', 'Material category', 'Weight status', 'Declared (t)', 'Current (t)', 'Current status']; rows = batches.map((item) => ['Sep 1-21, 2026 demo', actor.scope.aggregateOnly ? 'De-identified' : item.id, item.materialCategory, item.weightStatus, String(toTons(item.declaredWeightKg)), String(toTons(item.currentWeightKg)), item.currentStatus]); }
   const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\n'); await audit(actor.id, 'report.exported', 'Report', reportId, `${rows.length} CSV rows exported under ${actor.role} scope.`);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="baliktela-${reportId}-demo.csv"`); res.send(csv);
 });

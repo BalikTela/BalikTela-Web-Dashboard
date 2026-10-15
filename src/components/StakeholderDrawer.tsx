@@ -1,3 +1,4 @@
+import { formatMass } from '../../shared/metrics';
 import { CheckCircle2, ChevronRight, Leaf, ShieldCheck, X } from 'lucide-react';
 import type { Stakeholder, Transaction } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -18,10 +19,10 @@ export function StakeholderDrawer({ stakeholder, transactions, onClose }: { stak
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <Metric label="Participation" value={`${stakeholder.participation}%`} detail="Demo program engagement rate" />
-          <Metric label="Recovered activity" value={`${stakeholder.recoveredKg.toLocaleString()} kg`} detail="Within the selected filters" />
+          <Metric label="Completion rate" value={stakeholder.transactions ? `${stakeholder.participation}%` : 'Not available'} detail="Completed linked transfers / all linked transfers" />
+          <Metric label="Recovered activity" value={`${formatMass(stakeholder.recoveredKg)}`} detail="Within the selected filters" />
           <Metric label="Transactions" value={stakeholder.transactions.toLocaleString()} detail="Derived demo activity count" />
-          <Metric label="Traceable material" value={`${tracedMaterialKg.toLocaleString()} kg`} detail="Material mass in matching sample audit records" />
+          <Metric label="Traceable material" value={`${formatMass(tracedMaterialKg)}`} detail="Material mass in matching sample audit records" />
         </div>
 
         <section className="mt-7 border-y border-slate-200 py-5">
@@ -32,7 +33,7 @@ export function StakeholderDrawer({ stakeholder, transactions, onClose }: { stak
         <section className="mt-6"><h3 className="text-sm font-semibold text-slate-900">Sustainability activity</h3><div className="mt-3 space-y-2">{stakeholder.sustainabilityActivities.map((activity) => <div key={activity} className="flex items-center gap-2 text-sm text-slate-600"><Leaf size={15} className="text-emerald-700" />{activity}</div>)}</div></section>
 
         <section className="mt-7"><div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-900">Sample transaction history</h3><p className="text-xs text-slate-500">{history.length} audit records</p></div>
-          {history.length ? <div className="mt-3 divide-y divide-slate-200 border-y border-slate-200">{history.map((item) => <article key={item.id} className="data-row flex items-start gap-3 py-3 sm:items-center"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-slate-400 sm:mt-0" /><div className="min-w-0 flex-1"><p className="break-words text-sm font-medium text-slate-900">{item.id} · {item.type}</p><p className="mt-0.5 text-xs leading-5 text-slate-500">{item.date} · {item.weightKg} kg · {item.textileCategory}</p></div><StatusBadge status={item.status} /><ChevronRight size={15} className="hidden shrink-0 text-slate-300 sm:block" /></article>)}</div> : <p className="mt-3 rounded-md border border-dashed border-slate-300 p-5 text-sm text-slate-500">No sample audit records match the selected filters.</p>}
+          {history.length ? <div className="mt-3 divide-y divide-slate-200 border-y border-slate-200">{history.map((item) => <article key={item.id} className="data-row flex items-start gap-3 py-3 sm:items-center"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-slate-400 sm:mt-0" /><div className="min-w-0 flex-1"><p className="break-words text-sm font-medium text-slate-900">{item.id} · {item.type}</p><p className="mt-0.5 text-xs leading-5 text-slate-500">{item.date} · {formatMass(item.weightKg)} · {item.textileCategory}</p></div><StatusBadge status={item.status} /><ChevronRight size={15} className="hidden shrink-0 text-slate-300 sm:block" /></article>)}</div> : <p className="mt-3 rounded-md border border-dashed border-slate-300 p-5 text-sm text-slate-500">No sample audit records match the selected filters.</p>}
         </section>
       </div>
     </div>

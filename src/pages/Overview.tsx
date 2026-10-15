@@ -1,3 +1,4 @@
+import { formatMass } from '../../shared/metrics';
 import { FacilityUtilizationChart, CategoryDoughnut, WasteTrendChart } from '../components/Charts';
 import { CircularFlow } from '../components/CircularFlow';
 import { EmptyBlock } from '../components/StateBlock';
@@ -16,9 +17,9 @@ export function Overview({ data }: { data: Data }) {
   const lowestRecovery = [...data.categoryShares].sort((a, b) => a.recoveryRate - b.recoveryRate)[0];
   const spareFacility = [...data.facilities].sort((a, b) => a.utilization - b.utilization)[0];
   const insights = [
-    highestGap ? [`${highestGap.region} has the largest filtered waste gap`, `${Math.round(highestGap.wasteGapKg).toLocaleString()} kg remains outside reuse or recycling outcomes during ${data.metadata.periodLabel}.`] : null,
-    lowestRecovery ? [`${lowestRecovery.category} has the lowest recovery rate`, `${lowestRecovery.recoveryRate}% of generated ${lowestRecovery.category.toLowerCase()} is reused or recycled in the filtered period.`] : null,
-    spareFacility ? [`${spareFacility.name} has available modeled capacity`, `${100 - spareFacility.utilization}% of filtered period capacity remains available for compatible intake.`] : null,
+    highestGap ? [`${highestGap.region} has the largest filtered waste gap`, `${formatMass(highestGap.wasteGapKg)} remains outside reuse or recycling outcomes during ${data.metadata.periodLabel}.`] : null,
+    lowestRecovery ? [`${lowestRecovery.category} has the lowest recovery rate`, `${lowestRecovery.recoveryRate}% of collected ${lowestRecovery.category.toLowerCase()} is reused or recycled in the filtered period.`] : null,
+    spareFacility ? [`${spareFacility.name}: capacity review`, spareFacility.utilization > 100 ? `${spareFacility.utilization}% utilization exceeds prorated period capacity; review intake and capacity records.` : `${Number((100 - spareFacility.utilization).toFixed(1))}% of prorated period capacity remains available for compatible intake.`] : null,
   ].filter((item): item is [string, string] => item !== null);
   if (!['Administrator', 'Government', 'Researcher'].includes(data.operations.scope.role)) return <div className="space-y-6"><OperationalSnapshot data={data} /><OperationalRoleDetail data={data} /></div>;
   return (
@@ -80,7 +81,7 @@ export function Overview({ data }: { data: Data }) {
                       <td className="py-3 font-semibold text-textile-ink">{item.id}</td>
                       <td>{item.source}</td>
                       <td>{item.type}</td>
-                      <td>{item.weightKg} kg</td>
+                      <td>{formatMass(item.weightKg)}</td>
                       <td><StatusBadge status={item.status} /></td>
                       <td className="text-textile-ink/65">{item.status === 'Completed' ? 'Lifecycle recorded' : 'Outcome pending'}</td>
                     </tr>
@@ -110,7 +111,7 @@ export function Overview({ data }: { data: Data }) {
 function OperationalRoleDetail({ data }: { data: Data }) {
   const { massBalance, quality, environmentalImpact } = data.operations;
   const stages = [['Declared', massBalance.declaredKg], ['Handed over', massBalance.handedOverKg], ['Received', massBalance.receivedKg], ['Verified completion', massBalance.verifiedKg]] as const;
-  return <><section className="surface-panel rounded-md p-5"><SectionHeader title="Organization Material Evidence" eyebrow="Role-scoped operational records from the shared backend" /><div className="grid gap-px overflow-hidden rounded-md border border-[#dfe5e2] bg-[#dfe5e2] sm:grid-cols-2 xl:grid-cols-4">{stages.map(([label, value]) => <div key={label} className="bg-white p-4"><p className="text-xs text-[#66736e]">{label}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{value.toLocaleString()} kg</p></div>)}</div><p className="mt-4 text-xs text-[#718079]">Recorded discrepancy balance: {massBalance.discrepancyKg > 0 ? '+' : ''}{massBalance.discrepancyKg.toLocaleString()} kg. Variances remain documented rather than silently removed.</p></section><section className="grid gap-5 lg:grid-cols-2"><div className="border-y border-[#dfe5e2] py-5"><h3 className="text-sm font-semibold">Measurement quality</h3><div className="mt-4 grid grid-cols-3 gap-3"><Quality label="Estimated" value={quality.estimatedBatches} /><Quality label="Measured" value={quality.measuredBatches} /><Quality label="Verified" value={quality.verifiedBatches} /></div></div><div className="border-y border-[#dfe5e2] py-5"><h3 className="text-sm font-semibold">Environmental methodology</h3><p className="mt-3 text-sm text-amber-800">{environmentalImpact.status}. This organization view reports material mass and lifecycle evidence only.</p></div></section></>;
+  return <><section className="surface-panel rounded-md p-5"><SectionHeader title="Organization Material Evidence" eyebrow="Role-scoped operational records from the shared backend" /><div className="grid gap-px overflow-hidden rounded-md border border-[#dfe5e2] bg-[#dfe5e2] sm:grid-cols-2 xl:grid-cols-4">{stages.map(([label, value]) => <div key={label} className="bg-white p-4"><p className="text-xs text-[#66736e]">{label}</p><p className="mt-2 text-2xl font-semibold tabular-nums">{formatMass(value)}</p></div>)}</div><p className="mt-4 text-xs text-[#718079]">Recorded discrepancy balance: {massBalance.discrepancyKg > 0 ? '+' : ''}{formatMass(massBalance.discrepancyKg)}. Variances remain documented rather than silently removed.</p></section><section className="grid gap-5 lg:grid-cols-2"><div className="border-y border-[#dfe5e2] py-5"><h3 className="text-sm font-semibold">Measurement quality</h3><div className="mt-4 grid grid-cols-3 gap-3"><Quality label="Estimated" value={quality.estimatedBatches} /><Quality label="Measured" value={quality.measuredBatches} /><Quality label="Verified" value={quality.verifiedBatches} /></div></div><div className="border-y border-[#dfe5e2] py-5"><h3 className="text-sm font-semibold">Environmental methodology</h3><p className="mt-3 text-sm text-amber-800">{environmentalImpact.status}. This organization view reports material mass and lifecycle evidence only.</p></div></section></>;
 }
 function Quality({ label, value }: { label: string; value: number }) { return <div><p className="text-[10px] uppercase text-[#8b9893]">{label}</p><p className="mt-1 text-xl font-semibold">{value}</p></div>; }
 
@@ -128,8 +129,8 @@ function OperationalSnapshot({ data, supporting = false }: { data: Data; support
   };
   const [title, description] = copy[role] ?? ['Authorized workspace', 'Role-scoped BalikTela operational indicators.'];
   const metrics = [
-    ['Declared material', `${operations.metrics.declaredKg.toLocaleString()} kg`, `${operations.metrics.batchCount} unique material batches`],
-    ['Verified completion', `${operations.metrics.verifiedKg.toLocaleString()} kg`, `${operations.metrics.completedTransfers} completed transfers`],
+    ['Declared material', `${formatMass(operations.metrics.declaredKg)}`, `${operations.metrics.batchCount} unique material batches`],
+    ['Verified completion', `${formatMass(operations.metrics.verifiedKg)}`, `${operations.metrics.completedTransfers} completed transfers`],
     ['Active transfers', operations.metrics.activeTransfers.toLocaleString(), 'Reserved through validation'],
     ['Data quality flags', operations.quality.discrepancyFlags.toLocaleString(), `${operations.quality.estimatedBatches} estimated batches`],
   ];

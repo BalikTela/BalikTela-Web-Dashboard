@@ -1,4 +1,4 @@
-import type { BarterMetrics, CategoryShare, CircularFlowMetrics, EngagementMetrics, Facility, ImpactMetrics, Kpi, RegionActivity, Stakeholder, StakeholderType, Transaction, WastePoint } from './types';
+import type { BarterMetrics, CategoryShare, CircularFlowMetrics, EngagementMetrics, Facility, ImpactMetrics, Kpi, RegionActivity, Stakeholder, StakeholderType, Transaction, WastePoint } from './types.js';
 
 export type WeightStatus = 'Estimated' | 'Measured' | 'Verified';
 export type CircularPathway = 'Reuse' | 'Repair' | 'Redistribution' | 'Upcycling' | 'Recycling' | 'For assessment';

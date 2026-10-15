@@ -1,3 +1,4 @@
+import { formatMass } from '../../shared/metrics';
 import { AlertTriangle, Check, Clock3, MapPin, X } from 'lucide-react';
 import type { LifecycleEvent, Transaction } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -22,7 +23,7 @@ export function TransactionDrawer({ transaction, onClose }: { transaction: Trans
           <Detail label="Source" value={transaction.source} />
           <Detail label="Destination" value={transaction.destination} />
           <Detail label="Location" value={transaction.location} />
-          <Detail label="Weight" value={`${transaction.weightKg.toLocaleString()} kg`} />
+          <Detail label="Weight" value={`${formatMass(transaction.weightKg)}`} />
           <div className="flex items-center justify-between gap-3 sm:col-span-2"><span className="text-slate-500">Status</span><StatusBadge status={transaction.status} /></div>
           <div className="border-t border-slate-200 pt-3 sm:col-span-2"><Detail label="Environmental impact" value="Disabled pending approved methodology" /></div>
         </div>

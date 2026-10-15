@@ -44,3 +44,15 @@ test('rate-limit subjects are normalized and server-derived', () => {
   assert.equal(securitySubjectHash(' Admin@Example.com '), securitySubjectHash('admin@example.com'));
   assert.notEqual(securitySubjectHash('admin@example.com'), securitySubjectHash('other@example.com'));
 });
+
+test('production cannot initialize a password that deployed sign-in rejects', () => {
+  const original = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  try {
+    assert.match(passwordPolicyError('BalikTelaDemo2026!') ?? '', /private password/);
+    assert.equal(passwordPolicyError('PrivateChosenPassword2026!'), null);
+  } finally {
+    if (original === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = original;
+  }
+});

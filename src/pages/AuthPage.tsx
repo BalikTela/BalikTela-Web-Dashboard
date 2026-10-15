@@ -1,10 +1,11 @@
 import { ArrowLeft, ArrowRight, CheckCircle2, Eye, EyeOff, Recycle, ShieldCheck } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Select } from '../components/ui/select';
 import { useAuth } from '../context/AuthContext';
 import { platformApi } from '../services/platformApi';
+import { readAuthLink } from '../lib/authLinks';
 
 const demoAccounts = [
   { label: 'System Administrator', email: 'admin@baliktela.demo' },
@@ -15,36 +16,47 @@ const demoAccounts = [
 ];
 const showDemoAccess = import.meta.env.DEV;
 
-type Mode = 'login' | 'register' | 'forgot' | 'password' | 'complete';
+type Mode = 'login' | 'register' | 'forgot' | 'password' | 'complete' | 'checking' | 'invalid';
 
-function linkState() {
-  const query = new URLSearchParams(window.location.search);
-  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-  const type = hash.get('type') ?? '';
-  const accessToken = hash.get('access_token') ?? '';
-  const refreshToken = hash.get('refresh_token') ?? '';
-  const legacyToken = query.get('resetToken') ?? '';
-  const passwordLink = Boolean(legacyToken || (accessToken && refreshToken && ['recovery', 'invite'].includes(type)));
-  const completed = query.get('auth') === 'complete' || type === 'signup';
-  return { type, accessToken, refreshToken, legacyToken, mode: passwordLink ? 'password' as const : completed ? 'complete' as const : 'login' as const };
-}
-
-export function AuthPage() {
+export function AuthPage({ onAuthenticated }: { onAuthenticated?: () => void }) {
   const { login, register, error: loginError } = useAuth();
-  const [link] = useState(linkState);
-  const [mode, setMode] = useState<Mode>(link.mode);
+  const [link] = useState(() => readAuthLink(window.location.href));
+  const [mode, setMode] = useState<Mode>(link.isCallback ? link.error ? 'invalid' : link.legacyToken ? 'password' : 'checking' : 'login');
+  const [linkType, setLinkType] = useState(link.type);
+  const [emailCredentials, setEmailCredentials] = useState<{ accessToken?: string; refreshToken?: string }>({});
+  const resolution = useRef<ReturnType<typeof platformApi.resolveEmailLink> | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ email: showDemoAccess ? 'admin@baliktela.demo' : '', password: showDemoAccess ? 'BalikTelaDemo2026!' : '' });
+  const [form, setForm] = useState({ email: showDemoAccess && !link.isCallback ? 'admin@baliktela.demo' : '', password: showDemoAccess && !link.isCallback ? 'BalikTelaDemo2026!' : '' });
   const [registration, setRegistration] = useState({ fullName: '', email: '', password: '', confirm: '', city: '', region: 'Metro Manila', consent: false });
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [message, setMessage] = useState(link.mode === 'complete' ? 'Email confirmation completed. You may now sign in.' : '');
-  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState(link.error);
+
+  useEffect(() => {
+    if (!link.isCallback) return;
+    clearAuthUrl();
+    if (link.error || link.legacyToken) return;
+    let cancelled = false;
+    // React StrictMode repeats effects; consume a one-time email token only once.
+    resolution.current ??= platformApi.resolveEmailLink({ accessToken: link.accessToken, refreshToken: link.refreshToken, tokenHash: link.tokenHash, type: link.type });
+    resolution.current.then(result => {
+      if (cancelled) return;
+      setForm({ email: result.email, password: '' });
+      setEmailCredentials({ accessToken: result.accessToken, refreshToken: result.refreshToken });
+      setLinkType(result.intent === 'confirmation' ? 'signup' : result.intent);
+      setMode(result.requiresPassword ? 'password' : 'complete');
+      setMessage(result.requiresPassword ? '' : 'Email confirmed. Sign in with the password you chose during registration.');
+    }).catch(reason => {
+      if (!cancelled) { setError(reason instanceof Error ? reason.message : 'Unable to verify this email link.'); setMode('invalid'); }
+    });
+    return () => { cancelled = true; };
+  }, [link]);
 
   const submitLogin = async (event: FormEvent) => {
     event.preventDefault(); setSubmitting(true); setError('');
-    try { await login(form.email, form.password); }
+    try { await login(form.email, form.password); onAuthenticated?.(); }
     catch { /* Context exposes a safe authentication error. */ }
     finally { setSubmitting(false); }
   };
@@ -76,8 +88,9 @@ export function AuthPage() {
     if (newPassword !== confirmPassword) { setError('Password confirmation does not match.'); return; }
     setSubmitting(true);
     try {
-      const result = await platformApi.resetPassword({ token: link.legacyToken || undefined, accessToken: link.accessToken || undefined, refreshToken: link.refreshToken || undefined }, newPassword);
-      setMessage(result.message); setMode('login'); setNewPassword(''); setConfirmPassword(''); clearAuthUrl();
+      const result = await platformApi.resetPassword({ token: link.legacyToken || undefined, ...emailCredentials }, newPassword);
+      setForm(current => ({ email: result.email ?? current.email, password: '' }));
+      setEmailCredentials({}); setMessage(result.message); setMode('login'); setNewPassword(''); setConfirmPassword(''); clearAuthUrl();
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to set the password.'); }
     finally { setSubmitting(false); }
   };
@@ -103,7 +116,10 @@ export function AuthPage() {
       <section className="flex items-center justify-center p-5 sm:p-10 xl:p-16 2xl:p-20">
         <div className="auth-form w-full max-w-md xl:max-w-lg 2xl:max-w-xl">
           <div className="mb-8 flex items-center gap-3 lg:hidden"><span className="grid h-9 w-9 place-items-center rounded-md bg-[#193c31] text-white"><Recycle size={18} /></span><p className="font-semibold text-[#17201d]">BalikTela</p></div>
-          <div className="mb-7 2xl:mb-9"><p className="text-xs font-medium text-emerald-700 2xl:text-sm">SECURE PLATFORM ACCESS</p><h2 className="mt-2 text-2xl font-semibold text-[#17201d] 2xl:mt-3 2xl:text-3xl">{titleFor(mode, link.type)}</h2><p className="mt-2 text-sm leading-6 text-[#66736e] 2xl:mt-3 2xl:text-base 2xl:leading-7">{descriptionFor(mode, link.type)}</p></div>
+          <div className="mb-7 2xl:mb-9"><p className="text-xs font-medium text-emerald-700 2xl:text-sm">SECURE PLATFORM ACCESS</p><h2 className="mt-2 text-2xl font-semibold text-[#17201d] 2xl:mt-3 2xl:text-3xl">{titleFor(mode, linkType)}</h2><p className="mt-2 text-sm leading-6 text-[#66736e] 2xl:mt-3 2xl:text-base 2xl:leading-7">{descriptionFor(mode, linkType)}</p></div>
+
+          {mode === 'checking' ? <p role="status" className="text-sm text-[#66736e]">Verifying your secure email link...</p> : null}
+          {mode === 'invalid' ? <div className="space-y-4"><Alert tone="error">{error}</Alert><Button className="w-full" onClick={() => switchMode('forgot')}>Request password setup email</Button><BackButton onClick={() => switchMode('login')} /></div> : null}
 
           {mode === 'login' ? <form className="space-y-4 2xl:space-y-5" onSubmit={submitLogin}>
             {showDemoAccess ? <Field label="Demo workspace"><Select value={demoAccounts.some((account) => account.email === form.email) ? form.email : ''} onChange={(event) => setForm({ ...form, email: event.target.value, password: 'BalikTelaDemo2026!' })}><option value="">Use a registered account</option>{demoAccounts.map((account) => <option key={account.email} value={account.email}>{account.label}</option>)}</Select></Field> : null}
@@ -128,7 +144,7 @@ export function AuthPage() {
 
           {mode === 'forgot' ? <form className="space-y-4 2xl:space-y-5" onSubmit={submitForgot}><Field label="Email address"><Input type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></Field><Alert tone="neutral">For privacy, the response is the same whether or not an eligible account exists.</Alert>{message ? <Alert tone="success">{message}</Alert> : null}{error ? <Alert tone="error">{error}</Alert> : null}<Button className="h-10 w-full 2xl:h-11 2xl:text-[15px]" disabled={submitting}>{submitting ? 'Requesting...' : 'Send recovery email'}<ArrowRight size={16} /></Button><BackButton onClick={() => switchMode('login')} /></form> : null}
 
-          {mode === 'password' ? <form className="space-y-4 2xl:space-y-5" onSubmit={submitPassword}><PasswordField label={link.type === 'invite' ? 'Create password' : 'New password'} value={newPassword} show={showPassword} onShow={() => setShowPassword((value) => !value)} onChange={setNewPassword} autoComplete="new-password" /><Field label="Confirm password"><Input type="password" required minLength={12} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></Field><Alert tone="neutral">Use at least 12 characters with uppercase, lowercase, a number, and a symbol.</Alert>{error ? <Alert tone="error">{error}</Alert> : null}<Button className="h-10 w-full 2xl:h-11 2xl:text-[15px]" disabled={submitting}>{submitting ? 'Updating...' : link.type === 'invite' ? 'Activate invitation' : 'Update password'}<ArrowRight size={16} /></Button><BackButton onClick={() => switchMode('login')} /></form> : null}
+          {mode === 'password' ? <form className="space-y-4 2xl:space-y-5" onSubmit={submitPassword}>{form.email ? <p className="break-all text-sm text-[#53615c]">{form.email}</p> : null}<PasswordField label={linkType === 'invite' ? 'Create password' : 'New password'} value={newPassword} show={showPassword} onShow={() => setShowPassword((value) => !value)} onChange={setNewPassword} autoComplete="new-password" /><Field label="Confirm password"><Input type="password" required minLength={12} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></Field><Alert tone="neutral">Use at least 12 characters with uppercase, lowercase, a number, and a symbol.</Alert>{error ? <Alert tone="error">{error}</Alert> : null}<Button className="h-10 w-full 2xl:h-11 2xl:text-[15px]" disabled={submitting}>{submitting ? 'Updating...' : linkType === 'invite' ? 'Create password' : 'Update password'}<ArrowRight size={16} /></Button><BackButton onClick={() => switchMode('login')} /></form> : null}
 
           {mode === 'complete' ? <div className="space-y-4 2xl:space-y-5">{message ? <Alert tone="success">{message}</Alert> : null}{error ? <Alert tone="error">{error}</Alert> : null}<Button className="w-full 2xl:h-11 2xl:text-[15px]" onClick={() => switchMode('login')}>Continue to sign in<ArrowRight size={16} /></Button><Button type="button" variant="outline" className="w-full 2xl:h-11 2xl:text-[15px]" disabled={submitting} onClick={resend}>Resend confirmation email</Button></div> : null}
           <p className="mt-6 flex items-start gap-2 text-xs leading-5 text-[#718079] 2xl:mt-8 2xl:text-sm 2xl:leading-6"><ShieldCheck size={14} className="mt-0.5 shrink-0 2xl:h-4 2xl:w-4" />Credentials are managed by Supabase Auth; application access remains role and scope controlled.</p>
@@ -139,9 +155,9 @@ export function AuthPage() {
 }
 
 function clearAuthUrl() { window.history.replaceState({}, '', window.location.pathname); }
-function titleFor(mode: Mode, type: string) { return mode === 'login' ? 'Sign in to your workspace' : mode === 'register' ? 'Create participant account' : mode === 'forgot' ? 'Recover your account' : mode === 'password' ? type === 'invite' ? 'Accept your invitation' : 'Choose a new password' : 'Check your email'; }
-function descriptionFor(mode: Mode, type: string) { return mode === 'login' ? 'Your role, organization, facility, and data scope determine the information available to you.' : mode === 'register' ? 'Register with your own email. Government, research, and institutional roles are invitation-only.' : mode === 'forgot' ? 'Supabase will send a time-limited password recovery link to an eligible account.' : mode === 'password' ? type === 'invite' ? 'Create your private password. An administrator must still approve institutional access.' : 'Set a replacement password using the secure email link.' : 'Confirm your email address, then return here to sign in.'; }
+function titleFor(mode: Mode, type: string) { return mode === 'checking' ? 'Checking your email link' : mode === 'invalid' ? 'Email link unavailable' : mode === 'login' ? 'Sign in to your workspace' : mode === 'register' ? 'Create participant account' : mode === 'forgot' ? 'Recover your account' : mode === 'password' ? type === 'invite' ? 'Create your password' : 'Choose a new password' : 'Check your email'; }
+function descriptionFor(mode: Mode, type: string) { return mode === 'checking' ? 'Your account details will appear after verification.' : mode === 'invalid' ? 'A valid email link is required to confirm your account or set a password.' : mode === 'login' ? 'Your role, organization, facility, and data scope determine the information available to you.' : mode === 'register' ? 'Register with your own email. Government, research, and institutional roles are invitation-only.' : mode === 'forgot' ? 'Supabase will send a time-limited password recovery link to an eligible account.' : mode === 'password' ? type === 'invite' ? 'Your email is confirmed. Choose a private password. Institutional access still requires administrator approval.' : 'Set a replacement password using the secure email link.' : 'Confirm your email address, then return here to sign in.'; }
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="mb-1.5 block text-xs font-medium text-[#53615c] 2xl:mb-2 2xl:text-sm">{label}</span>{children}</label>; }
-function PasswordField({ label, value, show, onShow, onChange, autoComplete }: { label: string; value: string; show: boolean; onShow: () => void; onChange: (value: string) => void; autoComplete: string }) { return <Field label={label}><div className="relative"><Input type={show ? 'text' : 'password'} required minLength={12} autoComplete={autoComplete} value={value} onChange={(event) => onChange(event.target.value)} className="pr-10" /><button type="button" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" onClick={onShow} aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></Field>; }
+function PasswordField({ label, value, show, onShow, onChange, autoComplete }: { label: string; value: string; show: boolean; onShow: () => void; onChange: (value: string) => void; autoComplete: string }) { return <Field label={label}><div className="relative"><Input aria-label={label} type={show ? 'text' : 'password'} required minLength={12} autoComplete={autoComplete} value={value} onChange={(event) => onChange(event.target.value)} className="pr-10" /><button type="button" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" onClick={onShow} aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></Field>; }
 function Alert({ tone, children }: { tone: 'error' | 'success' | 'neutral'; children: React.ReactNode }) { const style = tone === 'error' ? 'border-red-200 bg-red-50 text-red-700' : tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-[#dfe5e2] bg-white text-[#66736e]'; return <p role={tone === 'error' ? 'alert' : undefined} className={`auth-alert rounded-md border p-3 text-sm leading-5 ${style}`}>{children}</p>; }
 function BackButton({ onClick }: { onClick: () => void }) { return <Button type="button" variant="ghost" className="w-full 2xl:h-11 2xl:text-[15px]" onClick={onClick}><ArrowLeft size={15} />Back to sign in</Button>; }

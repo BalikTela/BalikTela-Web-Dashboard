@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import type { NextFunction, Request, Response } from 'express';
 import type { UserRecord, UserRole } from './types.js';
+import { isDefaultDemoPassword } from './runtimeConfig.js';
 
 export interface AuthenticatedRequest extends Request {
   auth?: { userId: string; role: UserRole; sessionId: string };
@@ -38,6 +39,7 @@ export function securitySubjectHash(value: string) {
 }
 
 export function passwordPolicyError(password: string) {
+  if (isDefaultDemoPassword(password)) return 'Choose a private password. The published demo password cannot be used on deployed dashboards.';
   if (password.length < 12) return 'Use at least 12 characters.';
   if (!/[a-z]/.test(password) || !/[A-Z]/.test(password)) return 'Include uppercase and lowercase letters.';
   if (!/\d/.test(password)) return 'Include at least one number.';

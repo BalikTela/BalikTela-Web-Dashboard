@@ -181,31 +181,50 @@ app.post('/api/auth/password/forgot', async (req, res) => {
   res.status(202).json({ message: genericMessage, demoResetToken: demoDelivery ? challenge.token : undefined });
 });
 
+app.post('/api/auth/link/resolve', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!usesSupabaseAuth) return res.status(400).json({ message: 'Use the complete development invitation link, including its reset token.' });
+  const result = await identity.resolveEmailLink({ accessToken: req.body.accessToken, refreshToken: req.body.refreshToken, tokenHash: req.body.tokenHash, type: req.body.type });
+  const user = await store.findOne('users', record => record.authUserId === result.authUserId || (!record.authUserId && record.email === result.email));
+  if (!user) return res.status(400).json({ message: 'The account profile linked to this invitation no longer exists. Contact an administrator.' });
+  if (['Suspended','Deactivated'].includes(user.accountStatus)) return res.status(403).json({ message: 'This account is not available. Contact an administrator.' });
+  if (!result.emailConfirmedAt) return res.status(400).json({ message: 'Email confirmation is required. Open the confirmation link from your email.' });
+  await store.update('users', user.id, { authUserId: result.authUserId, emailVerifiedAt: result.emailConfirmedAt });
+  const intent = req.body.type === 'recovery' ? 'recovery' : req.body.type === 'invite' || !user.passwordChangedAt ? 'invite' : 'confirmation';
+  const requiresPassword = intent !== 'confirmation';
+  res.json({ email: user.email, intent, requiresPassword, ...(requiresPassword ? { accessToken: result.accessToken, refreshToken: result.refreshToken } : {}) });
+});
+
 app.post('/api/auth/password/reset', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   const password = String(req.body.password ?? '');
   const passwordError = passwordPolicyError(password);
   if (passwordError) return res.status(400).json({ message: passwordError });
   const consumedAt = new Date().toISOString();
   if (usesSupabaseAuth) {
-    const result = await identity.setPasswordFromEmailLink(String(req.body.accessToken ?? ''), String(req.body.refreshToken ?? ''), password);
-    const user = await store.findOne('users', (record) => record.authUserId === result.authUserId || record.email === result.email);
+    const link = await identity.resolveEmailLink({ accessToken: req.body.accessToken, refreshToken: req.body.refreshToken });
+    const user = await store.findOne('users', (record) => record.authUserId === link.authUserId || (!record.authUserId && record.email === link.email));
     if (!user) return res.status(400).json({ message: 'The account profile linked to this authentication request no longer exists.' });
+    if (['Suspended','Deactivated'].includes(user.accountStatus)) return res.status(403).json({ message: 'This account is not available. Contact an administrator.' });
+    const result = await identity.setPasswordFromEmailLink(link.accessToken, link.refreshToken, password);
     const accountStatus = user.role === 'Consumer' && user.accountStatus==='Pending verification' ? 'Active' as const : user.accountStatus;
-    await store.update('users', user.id, { authUserId: result.authUserId, passwordHash: null, passwordChangedAt: consumedAt, emailVerifiedAt: result.emailConfirmedAt ?? consumedAt, accountStatus });
+    await store.commit([{ name: 'users', previous: user, record: { ...user, authUserId: result.authUserId, passwordHash: null, passwordChangedAt: consumedAt, emailVerifiedAt: result.emailConfirmedAt ?? consumedAt, accountStatus } }]);
     const revokedSessions = await store.revokeUserSessions(user.id, consumedAt);
     await audit(user.id, 'auth.password.updated.from_link', 'User', user.id, `Password initialized or recovered through Supabase Auth; ${revokedSessions} application session(s) revoked.`);
-    return res.json({ message: user.role === 'Consumer' ? 'Password updated. Sign in to continue.' : 'Password created. Your institutional account remains pending until administrator approval.' });
+    return res.json({ email: user.email, message: user.role !== 'Consumer' && user.accountStatus === 'Pending verification' ? 'Password created. Your email is confirmed. An administrator must approve your institutional access before you can use the dashboard.' : 'Password updated. Sign in with your private password.' });
   }
   const token = String(req.body.token ?? '');
   const challenge = await store.consumeAuthChallenge(hashSessionToken(token), 'password_reset', consumedAt);
   if (!challenge) return res.status(400).json({ message: 'This password-reset link is invalid, expired, or already used.' });
   const user = await store.findOne('users', (record) => record.id === challenge.userId);
   if (!user) return res.status(400).json({ message: 'The account linked to this reset request no longer exists.' });
-  const accountStatus = user.role === 'Consumer' && user.accountStatus==='Pending verification' && user.emailVerifiedAt ? 'Active' as const : user.accountStatus;
-  await store.update('users', user.id, { passwordHash: await bcrypt.hash(password, 10), passwordChangedAt: consumedAt, accountStatus });
+  if (['Suspended','Deactivated'].includes(user.accountStatus)) return res.status(403).json({ message: 'This account is not available. Contact an administrator.' });
+  const emailVerifiedAt = user.emailVerifiedAt ?? (user.role !== 'Consumer' && !user.passwordChangedAt ? consumedAt : null);
+  const accountStatus = user.role === 'Consumer' && user.accountStatus==='Pending verification' && emailVerifiedAt ? 'Active' as const : user.accountStatus;
+  await store.commit([{ name: 'users', previous: user, record: { ...user, passwordHash: await bcrypt.hash(password, 10), passwordChangedAt: consumedAt, emailVerifiedAt, accountStatus } }]);
   const revokedSessions = await store.revokeUserSessions(user.id, consumedAt);
   await audit(user.id, 'auth.password.reset.completed', 'User', user.id, `Password reset completed; ${revokedSessions} active session(s) revoked.`);
-  res.json({ message: 'Password updated. Sign in with your new password.' });
+  res.json({ email: user.email, message: user.role !== 'Consumer' && user.accountStatus === 'Pending verification' ? 'Password created and email confirmed. Administrator approval is still required.' : 'Password updated. Sign in with your new password.' });
 });
 
 app.post('/api/auth/email/verify', async (req, res) => {
@@ -417,7 +436,8 @@ app.post('/api/users', requireAuth, permit('users.manage'), async (req: Authenti
   catch (error) { if (invitation) await identity.deleteUser(invitation.authUserId).catch(() => undefined); throw error; }
   if (usesSupabaseAuth) return res.status(201).json({ user: publicUser(user), message: invitation?.delivery === 'email' ? 'Invitation sent. The recipient must confirm the email and create a password before approval.' : 'Development invitation created. Configure production SMTP before deployment.', demoInvitationLink: demoDelivery ? invitation?.actionLink : undefined });
   const verificationChallenge = await issueAuthChallenge(user, 'email_verification', 'web');
-  res.status(201).json({ user: publicUser(user), temporaryPassword: password, demoEmailVerificationToken: demoDelivery ? verificationChallenge.token : undefined });
+  const invitationChallenge = await issueAuthChallenge(user, 'password_reset', 'web');
+  res.status(201).json({ user: publicUser(user), temporaryPassword: password, demoEmailVerificationToken: demoDelivery ? verificationChallenge.token : undefined, demoInvitationLink: demoDelivery ? `${clientOrigin()}/?auth=invite&resetToken=${encodeURIComponent(invitationChallenge.token)}` : undefined });
 });
 
 app.patch('/api/users/:id', requireAuth, permit('users.manage'), async (req: AuthenticatedRequest, res) => {

@@ -6,6 +6,12 @@ export interface IdentityResult {
   email: string;
   emailConfirmedAt: string | null;
 }
+export interface EmailLinkCredentials {
+  accessToken?: string;
+  refreshToken?: string;
+  tokenHash?: string;
+  type?: string;
+}
 
 export class SupabaseIdentity {
   readonly enabled: boolean;
@@ -66,13 +72,29 @@ export class SupabaseIdentity {
   }
 
   async setPasswordFromEmailLink(accessToken: string, refreshToken: string, password: string) {
-    const client = this.publicClient();
-    const { data: session, error: sessionError } = await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-    if (sessionError || !session.user) throw authError('The authentication link is invalid or expired.');
+    const { client } = await this.emailLinkSession({ accessToken, refreshToken });
     const { data, error } = await client.auth.updateUser({ password });
     if (error || !data.user) throw authError(error?.message ?? 'Unable to update the password.');
     await client.auth.signOut({ scope: 'global' });
     return identity(data.user);
+  }
+
+  async resolveEmailLink(credentials: EmailLinkCredentials) {
+    const { user, session } = await this.emailLinkSession(credentials);
+    return { ...identity(user), accessToken: session.access_token, refreshToken: session.refresh_token };
+  }
+
+  private async emailLinkSession(credentials: EmailLinkCredentials) {
+    const client = this.publicClient();
+    const tokenHash = String(credentials.tokenHash ?? '');
+    const type = String(credentials.type ?? '');
+    if (tokenHash && !['invite', 'recovery', 'signup', 'email'].includes(type)) throw authError('This email link has an unsupported verification type.');
+    if (!tokenHash && (!credentials.accessToken || !credentials.refreshToken)) throw authError('The authentication link is incomplete. Request a new link.');
+    const { data, error } = tokenHash
+      ? await client.auth.verifyOtp({ token_hash: tokenHash, type: type as 'invite' | 'recovery' | 'signup' | 'email' })
+      : await client.auth.setSession({ access_token: String(credentials.accessToken), refresh_token: String(credentials.refreshToken) });
+    if (error || !data.user || !data.session) throw authError('This email link is invalid, expired, or already used. Request a new link.');
+    return { client, user: data.user, session: data.session };
   }
 
   async changePassword(email: string, currentPassword: string, nextPassword: string) {

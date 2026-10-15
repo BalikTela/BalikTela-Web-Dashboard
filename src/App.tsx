@@ -9,6 +9,7 @@ import { Button } from './components/ui/button';
 import { LoaderCircle, Recycle, ShieldX } from 'lucide-react';
 import type { Filters } from './types';
 import { canAccessPage } from './access';
+import { readAuthLink } from './lib/authLinks';
 
 export type PageKey = 'overview' | 'listings' | 'materials' | 'operations' | 'waste' | 'transactions' | 'stakeholders' | 'facilities' | 'geographic' | 'advanced' | 'quality' | 'governance' | 'reports' | 'organizations' | 'users' | 'audit' | 'profile' | 'settings';
 
@@ -44,6 +45,9 @@ const Settings = lazy(() => pageModules.settings().then((module) => ({ default: 
 
 function App() {
   const { user, access, isLoading: authLoading } = useAuth();
+  const [emailCallback, setEmailCallback] = useState(() => readAuthLink(window.location.href).isCallback);
+
+  if (emailCallback) return <AuthPage onAuthenticated={() => setEmailCallback(false)} />;
 
   if (authLoading) return <div className="grid min-h-screen place-items-center bg-[#f5f7f6] text-sm text-[#66736e]">Restoring secure session…</div>;
   if (!user) return <AuthPage />;

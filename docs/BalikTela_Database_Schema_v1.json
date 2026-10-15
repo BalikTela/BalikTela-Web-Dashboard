@@ -1,0 +1,4190 @@
+{
+  "project": "BalikTelaPH",
+  "schemaVersion": "1.0.3",
+  "identifierStrategy": "String identifiers in MongoDB _id and all reference fields",
+  "timestampStrategy": "BSON Date values with snake_case field names",
+  "primaryMassUnit": "kg",
+  "collections": [
+    {
+      "name": "schema_versions",
+      "purpose": "Records the applied shared database contract.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "version",
+            "status",
+            "applied_at",
+            "applied_by"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "version": {
+              "bsonType": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "superseded",
+                "rolled_back"
+              ]
+            },
+            "applied_at": {
+              "bsonType": "date"
+            },
+            "applied_by": {
+              "bsonType": "string"
+            },
+            "notes": {
+              "bsonType": "string"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "version": 1
+          },
+          "name": "uq_schema_version",
+          "unique": true
+        }
+      ]
+    },
+    {
+      "name": "users",
+      "purpose": "Shared identity, authorization, stakeholder profile, and consent state.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "email",
+            "passwordHash",
+            "name",
+            "role",
+            "active",
+            "stakeholder",
+            "organization_verified",
+            "privacy_consent",
+            "research_consent",
+            "notification_enabled",
+            "account_status",
+            "scope",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "email": {
+              "bsonType": "string",
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+            },
+            "passwordHash": {
+              "bsonType": "string",
+              "minLength": 20
+            },
+            "name": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "username": {
+              "bsonType": [
+                "string",
+                "null"
+              ],
+              "maxLength": 80
+            },
+            "role": {
+              "enum": [
+                "Administrator",
+                "Government",
+                "Researcher",
+                "Producer",
+                "Recycler",
+                "Consumer",
+                "NGO",
+                "LGU/Collection Point",
+                "Upcycler"
+              ]
+            },
+            "active": {
+              "bsonType": "bool"
+            },
+            "stakeholder": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "organization_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "organization": {
+              "bsonType": "string"
+            },
+            "organization_verified": {
+              "bsonType": "bool"
+            },
+            "verification_status": {
+              "enum": [
+                "pending",
+                "verified",
+                "rejected",
+                "suspended"
+              ]
+            },
+            "account_status": {
+              "enum": [
+                "active",
+                "pending_verification",
+                "suspended",
+                "deactivated"
+              ]
+            },
+            "bio": {
+              "bsonType": "string",
+              "maxLength": 2000
+            },
+            "location": {
+              "bsonType": "string"
+            },
+            "city": {
+              "bsonType": "string"
+            },
+            "region": {
+              "bsonType": "string"
+            },
+            "phone": {
+              "bsonType": "string"
+            },
+            "avatar_uri": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "rating": {
+              "bsonType": [
+                "double",
+                "int",
+                "decimal"
+              ],
+              "minimum": 0,
+              "maximum": 5
+            },
+            "swaps": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "privacy_consent": {
+              "bsonType": "bool"
+            },
+            "research_consent": {
+              "bsonType": "bool"
+            },
+            "notification_enabled": {
+              "bsonType": "bool"
+            },
+            "scope": {
+              "bsonType": "object",
+              "additionalProperties": false,
+              "required": [
+                "organization_ids",
+                "facility_ids",
+                "regions",
+                "can_export",
+                "aggregate_only"
+              ],
+              "properties": {
+                "organization_ids": {
+                  "bsonType": "array",
+                  "items": {
+                    "bsonType": "string"
+                  },
+                  "uniqueItems": true
+                },
+                "facility_ids": {
+                  "bsonType": "array",
+                  "items": {
+                    "bsonType": "string"
+                  },
+                  "uniqueItems": true
+                },
+                "regions": {
+                  "bsonType": "array",
+                  "items": {
+                    "bsonType": "string"
+                  },
+                  "uniqueItems": true
+                },
+                "can_export": {
+                  "bsonType": "bool"
+                },
+                "aggregate_only": {
+                  "bsonType": "bool"
+                }
+              }
+            },
+            "profile": {
+              "bsonType": "object",
+              "additionalProperties": false,
+              "properties": {
+                "age_group": {
+                  "bsonType": "string"
+                },
+                "organization_size": {
+                  "bsonType": "string"
+                },
+                "production_volume_kg": {
+                  "bsonType": [
+                    "double",
+                    "int",
+                    "long",
+                    "decimal"
+                  ],
+                  "minimum": 0
+                },
+                "recycling_practices": {
+                  "bsonType": "string"
+                },
+                "accepted_textiles": {
+                  "bsonType": "array",
+                  "items": {
+                    "bsonType": "string"
+                  },
+                  "uniqueItems": true
+                },
+                "sustainability_interests": {
+                  "bsonType": "array",
+                  "items": {
+                    "bsonType": "string"
+                  },
+                  "uniqueItems": true
+                }
+              }
+            },
+            "trust_placeholder": {
+              "bsonType": [
+                "double",
+                "int",
+                "decimal"
+              ],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "last_login_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "email": 1
+          },
+          "name": "uq_users_email",
+          "unique": true
+        },
+        {
+          "key": {
+            "username": 1
+          },
+          "name": "uq_users_username_present",
+          "unique": true,
+          "partialFilterExpression": {
+            "username": {
+              "$type": "string"
+            }
+          }
+        },
+        {
+          "key": {
+            "role": 1,
+            "active": 1
+          },
+          "name": "idx_users_role_active"
+        },
+        {
+          "key": {
+            "organization_id": 1,
+            "active": 1
+          },
+          "name": "idx_users_organization_active"
+        },
+        {
+          "key": {
+            "region": 1
+          },
+          "name": "idx_users_region"
+        }
+      ]
+    },
+    {
+      "name": "organizations",
+      "purpose": "Institutional stakeholders and their verification state.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "name",
+            "type",
+            "verification_status",
+            "status",
+            "region",
+            "city",
+            "service_areas",
+            "accepted_materials",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "name": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "type": {
+              "enum": [
+                "Research institution",
+                "Government agency",
+                "Producer/Retailer",
+                "Recycler",
+                "Upcycler",
+                "NGO/Community",
+                "LGU/MRF",
+                "Collection point",
+                "Other"
+              ]
+            },
+            "verification_status": {
+              "enum": [
+                "pending",
+                "verified",
+                "rejected",
+                "suspended"
+              ]
+            },
+            "status": {
+              "enum": [
+                "active",
+                "prospective",
+                "inactive"
+              ]
+            },
+            "record_label": {
+              "enum": [
+                "operational",
+                "demo",
+                "sample"
+              ]
+            },
+            "region": {
+              "bsonType": "string"
+            },
+            "city": {
+              "bsonType": "string"
+            },
+            "address": {
+              "bsonType": "string"
+            },
+            "service_areas": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "string"
+              },
+              "uniqueItems": true
+            },
+            "accepted_materials": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "string"
+              },
+              "uniqueItems": true
+            },
+            "contact_email": {
+              "bsonType": "string"
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "name": 1
+          },
+          "name": "uq_organizations_name",
+          "unique": true
+        },
+        {
+          "key": {
+            "type": 1,
+            "status": 1
+          },
+          "name": "idx_organizations_type_status"
+        },
+        {
+          "key": {
+            "region": 1,
+            "city": 1
+          },
+          "name": "idx_organizations_location"
+        }
+      ]
+    },
+    {
+      "name": "sessions",
+      "purpose": "Revocable server-side authentication sessions.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "user_id",
+            "client",
+            "token_hash",
+            "csrf_hash",
+            "expires_at",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "user_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "client": {
+              "enum": [
+                "web",
+                "mobile",
+                "api"
+              ]
+            },
+            "token_hash": {
+              "bsonType": "string",
+              "minLength": 32
+            },
+            "used_token_hashes": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "string"
+              }
+            },
+            "csrf_hash": {
+              "bsonType": "string",
+              "minLength": 32
+            },
+            "expires_at": {
+              "bsonType": "date"
+            },
+            "revoked_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "token_hash": 1
+          },
+          "name": "uq_sessions_token_hash",
+          "unique": true
+        },
+        {
+          "key": {
+            "user_id": 1,
+            "revoked_at": 1
+          },
+          "name": "idx_sessions_user_active"
+        },
+        {
+          "key": {
+            "expires_at": 1
+          },
+          "name": "ttl_sessions_expiry",
+          "expireAfterSeconds": 0
+        }
+      ]
+    },
+    {
+      "name": "consent_history",
+      "purpose": "Immutable history of operational privacy and research consent.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "user_id",
+            "privacy",
+            "research",
+            "policy_version",
+            "recorded_by",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "user_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "privacy": {
+              "bsonType": "bool"
+            },
+            "research": {
+              "bsonType": "bool"
+            },
+            "policy_version": {
+              "bsonType": "string"
+            },
+            "recorded_by": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "source": {
+              "enum": [
+                "web",
+                "mobile",
+                "administrator"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "user_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_consent_user_history"
+        }
+      ]
+    },
+    {
+      "name": "facilities",
+      "purpose": "Approved collection, sorting, recycling, recovery, and upcycling locations.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "organization_id",
+            "name",
+            "type",
+            "address",
+            "city",
+            "region",
+            "location",
+            "categories",
+            "pathways",
+            "schedule",
+            "instructions",
+            "verification_status",
+            "status",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "organization_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "name": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "type": {
+              "enum": [
+                "Collection point",
+                "Sorting facility",
+                "MRF",
+                "Recycler",
+                "Upcycling hub",
+                "Repair hub",
+                "Donation center"
+              ]
+            },
+            "address": {
+              "bsonType": "string"
+            },
+            "city": {
+              "bsonType": "string"
+            },
+            "region": {
+              "bsonType": "string"
+            },
+            "location": {
+              "bsonType": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "coordinates"
+              ],
+              "properties": {
+                "type": {
+                  "enum": [
+                    "Point"
+                  ]
+                },
+                "coordinates": {
+                  "bsonType": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "bsonType": [
+                      "double",
+                      "int",
+                      "decimal"
+                    ]
+                  }
+                }
+              }
+            },
+            "categories": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "string"
+              },
+              "uniqueItems": true
+            },
+            "pathways": {
+              "bsonType": "array",
+              "items": {
+                "enum": [
+                  "Collection",
+                  "Reuse",
+                  "Repair",
+                  "Redistribution",
+                  "Upcycling",
+                  "Recycling",
+                  "Recovery",
+                  "Diversion",
+                  "For assessment"
+                ]
+              },
+              "uniqueItems": true
+            },
+            "schedule": {
+              "bsonType": "string"
+            },
+            "instructions": {
+              "bsonType": "string"
+            },
+            "service_areas": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "string"
+              },
+              "uniqueItems": true
+            },
+            "monthly_capacity_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0
+            },
+            "current_intake_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0
+            },
+            "is_demo": {
+              "bsonType": "bool"
+            },
+            "verification_status": {
+              "enum": [
+                "pending",
+                "verified",
+                "rejected",
+                "suspended"
+              ]
+            },
+            "status": {
+              "enum": [
+                "available",
+                "near_capacity",
+                "maintenance",
+                "onboarding",
+                "inactive"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "organization_id": 1,
+            "name": 1
+          },
+          "name": "uq_facilities_organization_name",
+          "unique": true
+        },
+        {
+          "key": {
+            "location": "2dsphere"
+          },
+          "name": "geo_facilities_location"
+        },
+        {
+          "key": {
+            "region": 1,
+            "type": 1,
+            "verification_status": 1
+          },
+          "name": "idx_facilities_region_type_verified"
+        },
+        {
+          "key": {
+            "categories": 1
+          },
+          "name": "idx_facilities_categories"
+        }
+      ]
+    },
+    {
+      "name": "facility_assignments",
+      "purpose": "Authorizes a user to operate for a facility.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "user_id",
+            "facility_id",
+            "role",
+            "active",
+            "assigned_by",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "user_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "facility_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "role": {
+              "enum": [
+                "manager",
+                "collector",
+                "receiver",
+                "verifier",
+                "processor",
+                "viewer"
+              ]
+            },
+            "active": {
+              "bsonType": "bool"
+            },
+            "assigned_by": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "user_id": 1,
+            "facility_id": 1,
+            "role": 1
+          },
+          "name": "uq_facility_assignment",
+          "unique": true
+        }
+      ]
+    },
+    {
+      "name": "collection_events",
+      "purpose": "Approved textile collection and community events.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "facility_id",
+            "title",
+            "starts_at",
+            "ends_at",
+            "description",
+            "status",
+            "created_by",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "facility_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "title": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "starts_at": {
+              "bsonType": "date"
+            },
+            "ends_at": {
+              "bsonType": "date"
+            },
+            "description": {
+              "bsonType": "string"
+            },
+            "status": {
+              "enum": [
+                "draft",
+                "pending_approval",
+                "published",
+                "completed",
+                "cancelled"
+              ]
+            },
+            "created_by": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "approved_by": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "approved_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "facility_id": 1,
+            "starts_at": 1
+          },
+          "name": "idx_collection_events_facility_start"
+        },
+        {
+          "key": {
+            "status": 1,
+            "starts_at": 1
+          },
+          "name": "idx_collection_events_status_start"
+        }
+      ]
+    },
+    {
+      "name": "event_registrations",
+      "purpose": "User registrations and attendance state for collection events.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "event_id",
+            "user_id",
+            "status",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "event_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "user_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "status": {
+              "enum": [
+                "registered",
+                "cancelled",
+                "attended",
+                "no_show"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "event_id": 1,
+            "user_id": 1
+          },
+          "name": "uq_event_registration",
+          "unique": true
+        },
+        {
+          "key": {
+            "user_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_event_registration_user"
+        }
+      ]
+    },
+    {
+      "name": "material_batches",
+      "purpose": "Authoritative textile material identity, provenance, current state, and latest mass snapshot.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "source_user_id",
+            "material_category",
+            "waste_source",
+            "waste_form",
+            "condition",
+            "intended_pathway",
+            "declared_weight_kg",
+            "current_weight_kg",
+            "weight_status",
+            "location",
+            "current_status",
+            "current_custodian_id",
+            "validation_status",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "source_user_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "source_organization_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "material_category": {
+              "bsonType": "string",
+              "minLength": 1
+            },
+            "composition": {
+              "bsonType": "string"
+            },
+            "waste_source": {
+              "enum": [
+                "Pre-consumer",
+                "Post-consumer",
+                "Obsolete inventory",
+                "Household",
+                "Institutional",
+                "Unknown"
+              ]
+            },
+            "waste_form": {
+              "enum": [
+                "Garments",
+                "Offcuts",
+                "Fabric rolls",
+                "Fiber",
+                "Mixed textiles",
+                "Other"
+              ]
+            },
+            "condition": {
+              "enum": [
+                "Reusable",
+                "Repairable",
+                "Recyclable",
+                "For assessment",
+                "Rejected"
+              ]
+            },
+            "intended_pathway": {
+              "enum": [
+                "Collection",
+                "Reuse",
+                "Repair",
+                "Redistribution",
+                "Upcycling",
+                "Recycling",
+                "Recovery",
+                "Diversion",
+                "For assessment"
+              ]
+            },
+            "final_pathway": {
+              "bsonType": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                null,
+                "Collection",
+                "Reuse",
+                "Repair",
+                "Redistribution",
+                "Upcycling",
+                "Recycling",
+                "Recovery",
+                "Diversion",
+                "For assessment"
+              ]
+            },
+            "declared_weight_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "current_weight_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "weight_status": {
+              "enum": [
+                "Estimated",
+                "Measured",
+                "Verified"
+              ]
+            },
+            "secondary_quantity": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "secondary_unit": {
+              "bsonType": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                null,
+                "pieces",
+                "meters",
+                "bags",
+                "bales",
+                "other"
+              ]
+            },
+            "location": {
+              "bsonType": "object",
+              "additionalProperties": false,
+              "required": [
+                "city",
+                "region"
+              ],
+              "properties": {
+                "city": {
+                  "bsonType": "string"
+                },
+                "region": {
+                  "bsonType": "string"
+                },
+                "barangay": {
+                  "bsonType": "string"
+                },
+                "latitude": {
+                  "bsonType": [
+                    "double",
+                    "int",
+                    "decimal",
+                    "null"
+                  ]
+                },
+                "longitude": {
+                  "bsonType": [
+                    "double",
+                    "int",
+                    "decimal",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "current_status": {
+              "enum": [
+                "recorded",
+                "draft",
+                "listed",
+                "reserved",
+                "in_transit",
+                "collected",
+                "received",
+                "processing",
+                "reused",
+                "upcycled",
+                "recycled",
+                "recovered",
+                "rejected",
+                "closed",
+                "archived"
+              ]
+            },
+            "current_custodian_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "validation_status": {
+              "enum": [
+                "pending",
+                "valid",
+                "flagged",
+                "excluded"
+              ]
+            },
+            "is_demo": {
+              "bsonType": "bool"
+            },
+            "archived_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "source_user_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_batches_source_user"
+        },
+        {
+          "key": {
+            "source_organization_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_batches_source_organization"
+        },
+        {
+          "key": {
+            "location.region": 1,
+            "material_category": 1,
+            "current_status": 1
+          },
+          "name": "idx_batches_region_category_status"
+        },
+        {
+          "key": {
+            "intended_pathway": 1,
+            "weight_status": 1,
+            "created_at": -1
+          },
+          "name": "idx_batches_pathway_weight_period"
+        },
+        {
+          "key": {
+            "validation_status": 1,
+            "current_status": 1
+          },
+          "name": "idx_batches_validation_status"
+        }
+      ]
+    },
+    {
+      "name": "measurements",
+      "purpose": "Immutable quantity history for each material-flow stage.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "batch_id",
+            "stage",
+            "weight_kg",
+            "weight_status",
+            "method",
+            "recorded_by",
+            "measured_at",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "batch_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "transfer_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "facility_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "flow_event_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "stage": {
+              "enum": [
+                "declaration",
+                "listing",
+                "handover",
+                "collection",
+                "receipt",
+                "processing_input",
+                "recovery_output",
+                "rejection",
+                "loss",
+                "validation"
+              ]
+            },
+            "weight_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "weight_status": {
+              "enum": [
+                "Estimated",
+                "Measured",
+                "Verified"
+              ]
+            },
+            "method": {
+              "bsonType": "string",
+              "minLength": 1
+            },
+            "measurement_context": {
+              "bsonType": "string"
+            },
+            "recorded_by": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "verified_by": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "measured_at": {
+              "bsonType": "date"
+            },
+            "note": {
+              "bsonType": "string"
+            },
+            "supersedes_measurement_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "batch_id": 1,
+            "measured_at": 1
+          },
+          "name": "idx_measurements_batch_time"
+        },
+        {
+          "key": {
+            "transfer_id": 1,
+            "stage": 1
+          },
+          "name": "idx_measurements_transfer_stage"
+        },
+        {
+          "key": {
+            "facility_id": 1,
+            "measured_at": -1
+          },
+          "name": "idx_measurements_facility_time"
+        },
+        {
+          "key": {
+            "weight_status": 1,
+            "measured_at": -1
+          },
+          "name": "idx_measurements_status_time"
+        }
+      ]
+    },
+    {
+      "name": "listings",
+      "purpose": "Discoverability and availability record for a Material Batch.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "batch_id",
+            "owner_id",
+            "title",
+            "description",
+            "status",
+            "available_weight_kg",
+            "reserved_kg",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "batch_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "owner_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "owner_organization_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "owner_name": {
+              "bsonType": "string"
+            },
+            "title": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "description": {
+              "bsonType": "string"
+            },
+            "looking_for": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "string"
+              }
+            },
+            "media": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "uri"
+                ],
+                "properties": {
+                  "uri": {
+                    "bsonType": "string"
+                  },
+                  "media_type": {
+                    "enum": [
+                      "image"
+                    ]
+                  },
+                  "alt_text": {
+                    "bsonType": "string"
+                  }
+                }
+              }
+            },
+            "available_weight_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "reserved_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0
+            },
+            "category": {
+              "bsonType": "string"
+            },
+            "condition": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "location": {
+              "bsonType": "string"
+            },
+            "city": {
+              "bsonType": "string"
+            },
+            "region": {
+              "bsonType": "string"
+            },
+            "weight_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "weight_status": {
+              "bsonType": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                null,
+                "Estimated",
+                "Measured",
+                "Verified"
+              ]
+            },
+            "waste_source": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "waste_form": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "pathway": {
+              "bsonType": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                null,
+                "Collection",
+                "Reuse",
+                "Repair",
+                "Redistribution",
+                "Upcycling",
+                "Recycling",
+                "Recovery",
+                "Diversion",
+                "For assessment"
+              ]
+            },
+            "reward_points": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "is_demo": {
+              "bsonType": "bool"
+            },
+            "status": {
+              "enum": [
+                "draft",
+                "available",
+                "matched",
+                "reserved",
+                "completed",
+                "closed",
+                "archived"
+              ]
+            },
+            "published_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "batch_id": 1
+          },
+          "name": "uq_active_listing_per_batch",
+          "unique": true,
+          "partialFilterExpression": {
+            "status": {
+              "$in": [
+                "draft",
+                "available",
+                "matched",
+                "reserved"
+              ]
+            }
+          }
+        },
+        {
+          "key": {
+            "owner_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_listings_owner_time"
+        },
+        {
+          "key": {
+            "status": 1,
+            "created_at": -1
+          },
+          "name": "idx_listings_status_time"
+        },
+        {
+          "key": {
+            "title": "text",
+            "description": "text"
+          },
+          "name": "text_listings_discovery"
+        }
+      ]
+    },
+    {
+      "name": "favorites",
+      "purpose": "Saved Material Listings for a user.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "user_id",
+            "listing_id",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "user_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "listing_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "created_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "user_id": 1,
+            "listing_id": 1
+          },
+          "name": "uq_favorite",
+          "unique": true
+        }
+      ]
+    },
+    {
+      "name": "match_requests",
+      "purpose": "Canonical user-proposed terms for receiving all or part of a listed Material Batch.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "requester_id",
+            "listing_id",
+            "requested_kg",
+            "terms",
+            "status",
+            "version",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "requester_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "requester_organization_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "listing_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "listing_title": {
+              "bsonType": "string"
+            },
+            "requester_name": {
+              "bsonType": "string"
+            },
+            "provider_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "requested_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "terms": {
+              "bsonType": "string",
+              "minLength": 1
+            },
+            "incentive_points": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "revised",
+                "accepted",
+                "rejected",
+                "withdrawn",
+                "expired"
+              ]
+            },
+            "version": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 1
+            },
+            "previous_terms": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "requested_kg",
+                  "terms",
+                  "changed_at",
+                  "changed_by"
+                ],
+                "properties": {
+                  "requested_kg": {
+                    "bsonType": [
+                      "double",
+                      "int",
+                      "long",
+                      "decimal"
+                    ],
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  },
+                  "terms": {
+                    "bsonType": "string"
+                  },
+                  "changed_at": {
+                    "bsonType": "date"
+                  },
+                  "changed_by": {
+                    "bsonType": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                }
+              }
+            },
+            "responded_by": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "responded_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "listing_id": 1,
+            "status": 1,
+            "created_at": -1
+          },
+          "name": "idx_match_requests_listing_status"
+        },
+        {
+          "key": {
+            "requester_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_match_requests_requester_time"
+        }
+      ]
+    },
+    {
+      "name": "transfers",
+      "purpose": "Authoritative material-transfer aggregate created from an accepted match request.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "listing_id",
+            "batch_id",
+            "match_request_id",
+            "provider_id",
+            "recipient_id",
+            "agreed_weight_kg",
+            "status",
+            "transfer_type",
+            "agreed_terms",
+            "validation_status",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "listing_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "batch_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "match_request_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "provider_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "provider_organization_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "recipient_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "recipient_organization_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "material_category": {
+              "bsonType": "string"
+            },
+            "agreed_weight_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "transfer_type": {
+              "enum": [
+                "barter",
+                "donation",
+                "collection",
+                "reuse",
+                "recycling",
+                "upcycling",
+                "recovery"
+              ]
+            },
+            "status": {
+              "enum": [
+                "reserved",
+                "in_progress",
+                "handed_over",
+                "collected",
+                "received",
+                "processing",
+                "validated",
+                "completed",
+                "cancelled",
+                "rejected",
+                "disputed"
+              ]
+            },
+            "agreed_terms": {
+              "bsonType": "string"
+            },
+            "circular_outcome": {
+              "bsonType": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                null,
+                "Collection",
+                "Reuse",
+                "Repair",
+                "Redistribution",
+                "Upcycling",
+                "Recycling",
+                "Recovery",
+                "Diversion",
+                "For assessment"
+              ]
+            },
+            "discrepancy_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal",
+                "null"
+              ]
+            },
+            "discrepancy_reason": {
+              "bsonType": "string"
+            },
+            "pending_reward_points": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "reward_issued_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "is_demo": {
+              "bsonType": "bool"
+            },
+            "validation_status": {
+              "enum": [
+                "pending",
+                "valid",
+                "flagged",
+                "excluded"
+              ]
+            },
+            "completed_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "cancelled_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "match_request_id": 1
+          },
+          "name": "uq_transfer_match_request",
+          "unique": true
+        },
+        {
+          "key": {
+            "batch_id": 1,
+            "created_at": 1
+          },
+          "name": "idx_transfers_batch_time"
+        },
+        {
+          "key": {
+            "provider_id": 1,
+            "status": 1,
+            "updated_at": -1
+          },
+          "name": "idx_transfers_provider_status"
+        },
+        {
+          "key": {
+            "recipient_id": 1,
+            "status": 1,
+            "updated_at": -1
+          },
+          "name": "idx_transfers_recipient_status"
+        },
+        {
+          "key": {
+            "status": 1,
+            "completed_at": -1
+          },
+          "name": "idx_transfers_status_completion"
+        }
+      ]
+    },
+    {
+      "name": "flow_events",
+      "purpose": "Immutable chronological lifecycle events for a Material Batch and transfer.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "batch_id",
+            "transfer_id",
+            "actor_id",
+            "stage",
+            "sequence",
+            "event_status",
+            "occurred_at",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "batch_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "listing_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "transfer_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "actor_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "actor_name": {
+              "bsonType": "string"
+            },
+            "facility_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "stage": {
+              "enum": [
+                "reserved",
+                "handover",
+                "collection",
+                "receipt",
+                "processing",
+                "validation",
+                "completion",
+                "cancellation",
+                "rejection",
+                "dispute"
+              ]
+            },
+            "sequence": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 1
+            },
+            "event_status": {
+              "enum": [
+                "completed",
+                "exception",
+                "reversed"
+              ]
+            },
+            "weight_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "weight_status": {
+              "bsonType": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                null,
+                "Estimated",
+                "Measured",
+                "Verified"
+              ]
+            },
+            "measurement_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "location": {
+              "bsonType": "string"
+            },
+            "note": {
+              "bsonType": "string"
+            },
+            "occurred_at": {
+              "bsonType": "date"
+            },
+            "created_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "transfer_id": 1,
+            "sequence": 1
+          },
+          "name": "uq_flow_event_sequence",
+          "unique": true
+        },
+        {
+          "key": {
+            "batch_id": 1,
+            "occurred_at": 1
+          },
+          "name": "idx_flow_events_batch_time"
+        },
+        {
+          "key": {
+            "stage": 1,
+            "occurred_at": -1
+          },
+          "name": "idx_flow_events_stage_time"
+        }
+      ]
+    },
+    {
+      "name": "collection_receipts",
+      "purpose": "Permanent facility receipt connecting a source, transfer, batch, and measured quantity.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "transfer_id",
+            "batch_id",
+            "facility_id",
+            "facility_name",
+            "source_user_id",
+            "actor_id",
+            "measurement_id",
+            "weight_kg",
+            "weight_status",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "transfer_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "batch_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "facility_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "facility_name": {
+              "bsonType": "string"
+            },
+            "source_user_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "actor_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "measurement_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "weight_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "weight_status": {
+              "enum": [
+                "Measured",
+                "Verified"
+              ]
+            },
+            "measurement_context": {
+              "bsonType": "string",
+              "minLength": 1
+            },
+            "note": {
+              "bsonType": "string"
+            },
+            "created_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "transfer_id": 1
+          },
+          "name": "uq_collection_receipt_transfer",
+          "unique": true
+        },
+        {
+          "key": {
+            "facility_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_collection_receipts_facility_time"
+        },
+        {
+          "key": {
+            "source_user_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_collection_receipts_source_time"
+        }
+      ]
+    },
+    {
+      "name": "recovery_records",
+      "purpose": "Facility processing input, output, rejection, documented loss, and circular outcome.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "transfer_id",
+            "batch_id",
+            "facility_id",
+            "organization_id",
+            "actor_id",
+            "input_kg",
+            "output_kg",
+            "rejected_kg",
+            "loss_kg",
+            "outcome",
+            "status",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "transfer_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "batch_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "facility_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "organization_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "actor_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "validated_by": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "stage": {
+              "enum": [
+                "Collection",
+                "Sorting",
+                "Processing",
+                "Recovery",
+                "Rejection"
+              ]
+            },
+            "input_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal"
+              ],
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "output_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "rejected_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "loss_kg": {
+              "bsonType": [
+                "double",
+                "int",
+                "long",
+                "decimal",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "outcome": {
+              "enum": [
+                null,
+                "Reuse",
+                "Repair",
+                "Redistribution",
+                "Upcycling",
+                "Recycling",
+                "Recovery",
+                "Rejected"
+              ]
+            },
+            "status": {
+              "enum": [
+                "recorded",
+                "validated",
+                "flagged",
+                "reversed"
+              ]
+            },
+            "is_demo": {
+              "bsonType": "bool"
+            },
+            "note": {
+              "bsonType": "string"
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "transfer_id": 1,
+            "created_at": 1
+          },
+          "name": "idx_recovery_transfer_time"
+        },
+        {
+          "key": {
+            "facility_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_recovery_facility_time"
+        },
+        {
+          "key": {
+            "organization_id": 1,
+            "outcome": 1,
+            "created_at": -1
+          },
+          "name": "idx_recovery_organization_outcome"
+        },
+        {
+          "key": {
+            "status": 1,
+            "created_at": -1
+          },
+          "name": "idx_recovery_status_time"
+        }
+      ]
+    },
+    {
+      "name": "conversations",
+      "purpose": "Transaction-party coordination without retail buyer/seller terminology.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "listing_id",
+            "participant_ids",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "listing_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "transfer_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "participant_ids": {
+              "bsonType": "array",
+              "minItems": 2,
+              "items": {
+                "bsonType": "string"
+              },
+              "uniqueItems": true
+            },
+            "participant_names": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "string"
+              }
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "listing_id": 1,
+            "participant_ids": 1
+          },
+          "name": "idx_conversations_listing_participants"
+        },
+        {
+          "key": {
+            "participant_ids": 1,
+            "updated_at": -1
+          },
+          "name": "idx_conversations_participant_time"
+        }
+      ]
+    },
+    {
+      "name": "messages",
+      "purpose": "Messages exchanged by authorized conversation participants.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "conversation_id",
+            "sender_id",
+            "body",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "conversation_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "sender_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "sender_name": {
+              "bsonType": "string"
+            },
+            "body": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 5000
+            },
+            "read_by": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "user_id",
+                  "read_at"
+                ],
+                "properties": {
+                  "user_id": {
+                    "bsonType": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "read_at": {
+                    "bsonType": "date"
+                  }
+                }
+              }
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "edited_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "conversation_id": 1,
+            "created_at": 1
+          },
+          "name": "idx_messages_conversation_time"
+        },
+        {
+          "key": {
+            "sender_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_messages_sender_time"
+        }
+      ]
+    },
+    {
+      "name": "notifications",
+      "purpose": "User notifications for approved system and participation events.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "user_id",
+            "type",
+            "title",
+            "body",
+            "is_read",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "user_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "type": {
+              "enum": [
+                "match",
+                "offer",
+                "transfer",
+                "collection",
+                "event",
+                "verification",
+                "reward",
+                "system"
+              ]
+            },
+            "title": {
+              "bsonType": "string"
+            },
+            "body": {
+              "bsonType": "string"
+            },
+            "entity_type": {
+              "bsonType": "string"
+            },
+            "entity_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "is_read": {
+              "bsonType": "bool"
+            },
+            "read_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "user_id": 1,
+            "is_read": 1,
+            "created_at": -1
+          },
+          "name": "idx_notifications_user_unread"
+        }
+      ]
+    },
+    {
+      "name": "reward_rules",
+      "purpose": "Versioned, disabled-by-default rules for approved non-cash incentives.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "title",
+            "points",
+            "active",
+            "version",
+            "eligibility",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "title": {
+              "bsonType": "string",
+              "minLength": 1
+            },
+            "points": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 1
+            },
+            "active": {
+              "bsonType": "bool"
+            },
+            "version": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 1
+            },
+            "eligibility": {
+              "bsonType": "string"
+            },
+            "created_by": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "approved_by": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "active": 1,
+            "version": -1
+          },
+          "name": "idx_reward_rules_active_version"
+        }
+      ]
+    },
+    {
+      "name": "reward_ledger",
+      "purpose": "Immutable non-cash point entries tied to validated activities.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "user_id",
+            "points",
+            "entry_type",
+            "title",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "user_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "transfer_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "rule_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "points": {
+              "bsonType": [
+                "int",
+                "long"
+              ]
+            },
+            "entry_type": {
+              "enum": [
+                "earned",
+                "reversal",
+                "redemption",
+                "adjustment"
+              ]
+            },
+            "title": {
+              "bsonType": "string"
+            },
+            "idempotency_key": {
+              "bsonType": "string",
+              "minLength": 1
+            },
+            "created_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "idempotency_key": 1
+          },
+          "name": "uq_reward_ledger_idempotency",
+          "unique": true
+        },
+        {
+          "key": {
+            "user_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_reward_ledger_user_time"
+        },
+        {
+          "key": {
+            "transfer_id": 1,
+            "rule_id": 1
+          },
+          "name": "idx_reward_ledger_transfer_rule"
+        }
+      ]
+    },
+    {
+      "name": "wallet_accounts",
+      "purpose": "Cached non-cash reward balance; reward_ledger remains authoritative.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "user_id",
+            "balance_points",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "user_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "balance_points": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "user_id": 1
+          },
+          "name": "uq_wallet_account_user",
+          "unique": true
+        }
+      ]
+    },
+    {
+      "name": "reports",
+      "purpose": "User-submitted content, transaction, or safety reports for administrative review.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "reporter_id",
+            "target_type",
+            "target_id",
+            "reason",
+            "details",
+            "status",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "reporter_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "target_type": {
+              "enum": [
+                "user",
+                "organization",
+                "listing",
+                "transfer",
+                "message",
+                "facility"
+              ]
+            },
+            "target_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "reason": {
+              "bsonType": "string"
+            },
+            "details": {
+              "bsonType": "string"
+            },
+            "status": {
+              "enum": [
+                "submitted",
+                "under_review",
+                "resolved",
+                "dismissed"
+              ]
+            },
+            "assigned_to": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "resolution": {
+              "bsonType": "string"
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "status": 1,
+            "created_at": -1
+          },
+          "name": "idx_reports_status_time"
+        },
+        {
+          "key": {
+            "target_type": 1,
+            "target_id": 1
+          },
+          "name": "idx_reports_target"
+        }
+      ]
+    },
+    {
+      "name": "support_tickets",
+      "purpose": "Help, feedback, and approved UAT submissions.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "user_id",
+            "category",
+            "subject",
+            "details",
+            "status",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "user_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "category": {
+              "enum": [
+                "support",
+                "feedback",
+                "uat",
+                "privacy",
+                "account",
+                "other"
+              ]
+            },
+            "subject": {
+              "bsonType": "string"
+            },
+            "details": {
+              "bsonType": "string"
+            },
+            "attachment_uri": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "enum": [
+                "open",
+                "in_progress",
+                "resolved",
+                "closed"
+              ]
+            },
+            "assigned_to": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "status": 1,
+            "created_at": -1
+          },
+          "name": "idx_support_status_time"
+        },
+        {
+          "key": {
+            "user_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_support_user_time"
+        }
+      ]
+    },
+    {
+      "name": "activity_logs",
+      "purpose": "Canonical immutable audit trail for sensitive and operational actions.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "actor_id",
+            "action",
+            "entity_type",
+            "entity_id",
+            "details",
+            "occurred_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "actor_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "action": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "entity_type": {
+              "bsonType": "string"
+            },
+            "entity_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "details": {
+              "bsonType": "object"
+            },
+            "ip_hash": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "occurred_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "entity_type": 1,
+            "entity_id": 1,
+            "occurred_at": -1
+          },
+          "name": "idx_activity_entity_time"
+        },
+        {
+          "key": {
+            "actor_id": 1,
+            "occurred_at": -1
+          },
+          "name": "idx_activity_actor_time"
+        },
+        {
+          "key": {
+            "action": 1,
+            "occurred_at": -1
+          },
+          "name": "idx_activity_action_time"
+        }
+      ]
+    },
+    {
+      "name": "configurations",
+      "purpose": "Versioned controlled vocabularies and approved operational parameters.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "key",
+            "version",
+            "status",
+            "value",
+            "updated_by",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "key": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "version": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 1
+            },
+            "status": {
+              "enum": [
+                "draft",
+                "active",
+                "retired"
+              ]
+            },
+            "value": {
+              "bsonType": "object"
+            },
+            "effective_from": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "updated_by": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "key": 1,
+            "version": 1
+          },
+          "name": "uq_configuration_version",
+          "unique": true
+        },
+        {
+          "key": {
+            "key": 1
+          },
+          "name": "uq_configuration_active",
+          "unique": true,
+          "partialFilterExpression": {
+            "status": "active"
+          }
+        }
+      ]
+    },
+    {
+      "name": "data_quality_issues",
+      "purpose": "Persistent review workflow for validation and reconciliation findings.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "entity_type",
+            "entity_id",
+            "rule_code",
+            "severity",
+            "status",
+            "description",
+            "detected_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "entity_type": {
+              "bsonType": "string"
+            },
+            "entity_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "rule_code": {
+              "bsonType": "string"
+            },
+            "severity": {
+              "enum": [
+                "info",
+                "warning",
+                "critical"
+              ]
+            },
+            "status": {
+              "enum": [
+                "open",
+                "acknowledged",
+                "resolved",
+                "excluded"
+              ]
+            },
+            "description": {
+              "bsonType": "string"
+            },
+            "evidence": {
+              "bsonType": "object"
+            },
+            "detected_at": {
+              "bsonType": "date"
+            },
+            "assigned_to": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "resolved_by": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "resolved_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "resolution_note": {
+              "bsonType": "string"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "entity_type": 1,
+            "entity_id": 1,
+            "rule_code": 1,
+            "status": 1
+          },
+          "name": "idx_quality_entity_rule_status"
+        },
+        {
+          "key": {
+            "severity": 1,
+            "status": 1,
+            "detected_at": -1
+          },
+          "name": "idx_quality_severity_status_time"
+        }
+      ]
+    },
+    {
+      "name": "system_interactions",
+      "purpose": "Approved, privacy-scoped instrumentation for adoption and usability research.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "event_name",
+            "client",
+            "occurred_at",
+            "privacy_classification"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "user_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "organization_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "session_id": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "event_name": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "client": {
+              "enum": [
+                "web",
+                "mobile"
+              ]
+            },
+            "properties": {
+              "bsonType": "object"
+            },
+            "privacy_classification": {
+              "enum": [
+                "aggregate",
+                "pseudonymized",
+                "restricted"
+              ]
+            },
+            "occurred_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "event_name": 1,
+            "occurred_at": -1
+          },
+          "name": "idx_interactions_event_time"
+        },
+        {
+          "key": {
+            "user_id": 1,
+            "occurred_at": -1
+          },
+          "name": "idx_interactions_user_time"
+        },
+        {
+          "key": {
+            "organization_id": 1,
+            "occurred_at": -1
+          },
+          "name": "idx_interactions_organization_time"
+        }
+      ]
+    },
+    {
+      "name": "methodologies",
+      "purpose": "Approval registry for environmental, circularity, predictive, and decision-support methods.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "name",
+            "type",
+            "version",
+            "status",
+            "definition",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "name": {
+              "bsonType": "string"
+            },
+            "type": {
+              "enum": [
+                "environmental_impact",
+                "diversion",
+                "matching",
+                "predictive",
+                "prescriptive"
+              ]
+            },
+            "version": {
+              "bsonType": "string"
+            },
+            "status": {
+              "enum": [
+                "draft",
+                "validation",
+                "approved",
+                "retired",
+                "disabled"
+              ]
+            },
+            "definition": {
+              "bsonType": "object"
+            },
+            "limitations": {
+              "bsonType": "string"
+            },
+            "approved_by": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "approved_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "updated_at": {
+              "bsonType": "date"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "type": 1,
+            "version": 1
+          },
+          "name": "uq_methodology_type_version",
+          "unique": true
+        },
+        {
+          "key": {
+            "type": 1,
+            "status": 1
+          },
+          "name": "idx_methodology_type_status"
+        }
+      ]
+    },
+    {
+      "name": "model_runs",
+      "purpose": "Non-production or approved analytical model executions with provenance.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "methodology_id",
+            "status",
+            "target",
+            "input_period",
+            "metrics",
+            "created_by",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "methodology_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "status": {
+              "enum": [
+                "queued",
+                "running",
+                "completed",
+                "failed",
+                "invalidated"
+              ]
+            },
+            "target": {
+              "bsonType": "string"
+            },
+            "input_period": {
+              "bsonType": "object",
+              "additionalProperties": false,
+              "required": [
+                "start",
+                "end"
+              ],
+              "properties": {
+                "start": {
+                  "bsonType": "date"
+                },
+                "end": {
+                  "bsonType": "date"
+                }
+              }
+            },
+            "filters": {
+              "bsonType": "object"
+            },
+            "output": {
+              "bsonType": [
+                "object",
+                "null"
+              ]
+            },
+            "metrics": {
+              "bsonType": "object"
+            },
+            "created_by": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "created_at": {
+              "bsonType": "date"
+            },
+            "completed_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "methodology_id": 1,
+            "created_at": -1
+          },
+          "name": "idx_model_runs_methodology_time"
+        },
+        {
+          "key": {
+            "status": 1,
+            "created_at": -1
+          },
+          "name": "idx_model_runs_status_time"
+        }
+      ]
+    },
+    {
+      "name": "report_exports",
+      "purpose": "Audited report/export requests and their privacy scope.",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "requested_by",
+            "report_type",
+            "scope",
+            "status",
+            "requested_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "__v": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "requested_by": {
+              "bsonType": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "report_type": {
+              "bsonType": "string"
+            },
+            "scope": {
+              "bsonType": "object"
+            },
+            "privacy_classification": {
+              "enum": [
+                "aggregate",
+                "deidentified",
+                "restricted"
+              ]
+            },
+            "status": {
+              "enum": [
+                "requested",
+                "generated",
+                "failed",
+                "expired"
+              ]
+            },
+            "row_count": {
+              "bsonType": [
+                "int",
+                "long"
+              ],
+              "minimum": 0
+            },
+            "file_uri": {
+              "bsonType": [
+                "string",
+                "null"
+              ]
+            },
+            "requested_at": {
+              "bsonType": "date"
+            },
+            "generated_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            },
+            "expires_at": {
+              "bsonType": [
+                "date",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "key": {
+            "requested_by": 1,
+            "requested_at": -1
+          },
+          "name": "idx_report_exports_requester_time"
+        },
+        {
+          "key": {
+            "status": 1,
+            "requested_at": -1
+          },
+          "name": "idx_report_exports_status_time"
+        }
+      ]
+    }
+  ],
+  "collectionNames": [
+    "schema_versions",
+    "users",
+    "organizations",
+    "sessions",
+    "consent_history",
+    "facilities",
+    "facility_assignments",
+    "collection_events",
+    "event_registrations",
+    "material_batches",
+    "measurements",
+    "listings",
+    "favorites",
+    "match_requests",
+    "transfers",
+    "flow_events",
+    "collection_receipts",
+    "recovery_records",
+    "conversations",
+    "messages",
+    "notifications",
+    "reward_rules",
+    "reward_ledger",
+    "wallet_accounts",
+    "reports",
+    "support_tickets",
+    "activity_logs",
+    "configurations",
+    "data_quality_issues",
+    "system_interactions",
+    "methodologies",
+    "model_runs",
+    "report_exports"
+  ],
+  "webPersistenceCollectionMap": {
+    "users": "users",
+    "organizations": "organizations",
+    "facilities": "facilities",
+    "materialBatches": "material_batches",
+    "measurements": "measurements",
+    "listings": "listings",
+    "offers": "match_requests",
+    "transfers": "transfers",
+    "recoveryRecords": "recovery_records",
+    "conversations": "conversations",
+    "messages": "messages",
+    "walletEntries": "reward_ledger",
+    "auditRecords": "activity_logs",
+    "configurations": "configurations"
+  },
+  "legacyCollectionDecisions": {
+    "offers": "Deprecated in favor of match_requests; migrate listing-for-listing offers into explicit transfer terms.",
+    "transactions": "Deprecated generic wallet transaction collection; use transfers for material movement and reward_ledger for points.",
+    "settings": "Deprecated untyped key/value collection; use versioned configurations.",
+    "auditlogs": "Deprecated duplicate audit source; use activity_logs.",
+    "products": "Excluded from the BalikTela core material-first schema.",
+    "orders": "Excluded because conventional retail checkout is outside the finalized blueprint.",
+    "inventorymovements": "Excluded from core; material movement is represented by batches, measurements, transfers, and flow_events."
+  }
+}

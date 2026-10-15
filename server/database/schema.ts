@@ -1,0 +1,723 @@
+import type { Document, IndexDescription } from 'mongodb';
+
+export const DATABASE_SCHEMA_VERSION = '1.1.0';
+
+export interface CollectionSchemaDefinition {
+  name: string;
+  purpose: string;
+  validator: Document;
+  indexes: IndexDescription[];
+}
+
+const id = { bsonType: 'string', minLength: 1, maxLength: 128 };
+const optionalId = { bsonType: ['string', 'null'] };
+const text = { bsonType: 'string' };
+const date = { bsonType: 'date' };
+const optionalDate = { bsonType: ['date', 'null'] };
+const nonNegative = { bsonType: ['double', 'int', 'long', 'decimal'], minimum: 0 };
+const positive = { bsonType: ['double', 'int', 'long', 'decimal'], minimum: 0, exclusiveMinimum: true };
+const integer = { bsonType: ['int', 'long'], minimum: 0 };
+const boolean = { bsonType: 'bool' };
+const stringArray = { bsonType: 'array', items: { bsonType: 'string' }, uniqueItems: true };
+
+const roles = ['Administrator', 'Government', 'Researcher', 'Producer', 'Recycler', 'Consumer', 'NGO', 'LGU/Collection Point', 'Upcycler'];
+const weightStatuses = ['Estimated', 'Measured', 'Verified'];
+const pathways = ['Collection', 'Reuse', 'Repair', 'Redistribution', 'Upcycling', 'Recycling', 'Recovery', 'Diversion', 'For assessment'];
+
+function objectSchema(required: string[], properties: Document): Document {
+  return {
+    bsonType: 'object',
+    required: ['_id', ...required],
+    additionalProperties: false,
+    properties: {
+      _id: id,
+      __v: { bsonType: ['int', 'long'], minimum: 0 },
+      ...properties,
+    },
+  };
+}
+
+function collection(name: string, purpose: string, required: string[], properties: Document, indexes: IndexDescription[]): CollectionSchemaDefinition {
+  return { name, purpose, validator: { $jsonSchema: objectSchema(required, properties) }, indexes };
+}
+
+export const DATABASE_COLLECTIONS: CollectionSchemaDefinition[] = [
+  collection('schema_versions', 'Records the applied shared database contract.',
+    ['version', 'status', 'applied_at', 'applied_by'], {
+      version: { bsonType: 'string', pattern: '^\\d+\\.\\d+\\.\\d+$' },
+      status: { enum: ['active', 'superseded', 'rolled_back'] },
+      applied_at: date,
+      applied_by: text,
+      notes: text,
+    }, [{ key: { version: 1 }, name: 'uq_schema_version', unique: true }]),
+
+  collection('users', 'Shared identity, authorization, stakeholder profile, and consent state.',
+    ['email', 'passwordHash', 'name', 'role', 'active', 'stakeholder', 'organization_verified', 'privacy_consent', 'research_consent', 'notification_enabled', 'account_status', 'scope', 'created_at', 'updated_at'], {
+      email: { bsonType: 'string', pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' },
+      passwordHash: { bsonType: 'string', minLength: 20 },
+      name: { bsonType: 'string', minLength: 1, maxLength: 200 },
+      username: { bsonType: ['string', 'null'], maxLength: 80 },
+      role: { enum: roles },
+      active: boolean,
+      stakeholder: { bsonType: 'string', minLength: 1, maxLength: 120 },
+      organization_id: optionalId,
+      organization: text,
+      organization_verified: boolean,
+      verification_status: { enum: ['pending', 'verified', 'rejected', 'suspended'] },
+      account_status: { enum: ['active', 'pending_verification', 'suspended', 'deactivated'] },
+      bio: { bsonType: 'string', maxLength: 2000 },
+      location: text,
+      city: text,
+      region: text,
+      phone: text,
+      avatar_uri: { bsonType: ['string', 'null'] },
+      rating: { bsonType: ['double', 'int', 'decimal'], minimum: 0, maximum: 5 },
+      swaps: integer,
+      privacy_consent: boolean,
+      research_consent: boolean,
+      notification_enabled: boolean,
+      scope: {
+        bsonType: 'object', additionalProperties: false,
+        required: ['organization_ids', 'facility_ids', 'regions', 'can_export', 'aggregate_only'],
+        properties: { organization_ids: stringArray, facility_ids: stringArray, regions: stringArray, can_export: boolean, aggregate_only: boolean },
+      },
+      profile: {
+        bsonType: 'object', additionalProperties: false,
+        properties: {
+          age_group: text, organization_size: text, production_volume_kg: nonNegative, recycling_practices: text,
+          accepted_textiles: stringArray, sustainability_interests: stringArray,
+        },
+      },
+      trust_placeholder: { bsonType: ['double', 'int', 'decimal'], minimum: 0, maximum: 100 },
+      last_login_at: optionalDate,
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { email: 1 }, name: 'uq_users_email', unique: true },
+      { key: { username: 1 }, name: 'uq_users_username_present', unique: true, partialFilterExpression: { username: { $type: 'string' } } },
+      { key: { role: 1, active: 1 }, name: 'idx_users_role_active' },
+      { key: { organization_id: 1, active: 1 }, name: 'idx_users_organization_active' },
+      { key: { region: 1 }, name: 'idx_users_region' },
+    ]),
+
+  collection('auth_account_security', 'Authentication lifecycle state kept separate from the shared mobile/web user profile.',
+    ['user_id', 'created_at', 'updated_at'], {
+      user_id: id,
+      email_verified_at: optionalDate,
+      password_changed_at: optionalDate,
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { user_id: 1 }, name: 'uq_auth_account_security_user', unique: true },
+    ]),
+
+  collection('organizations', 'Institutional stakeholders and their verification state.',
+    ['name', 'type', 'verification_status', 'status', 'region', 'city', 'service_areas', 'accepted_materials', 'created_at', 'updated_at'], {
+      name: { bsonType: 'string', minLength: 1, maxLength: 240 },
+      type: { enum: ['Research institution', 'Government agency', 'Producer/Retailer', 'Recycler', 'Upcycler', 'NGO/Community', 'LGU/MRF', 'Collection point', 'Other'] },
+      verification_status: { enum: ['pending', 'verified', 'rejected', 'suspended'] },
+      status: { enum: ['active', 'prospective', 'inactive'] },
+      record_label: { enum: ['operational', 'demo', 'sample'] },
+      region: text,
+      city: text,
+      address: text,
+      service_areas: stringArray,
+      accepted_materials: stringArray,
+      contact_email: text,
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { name: 1 }, name: 'uq_organizations_name', unique: true },
+      { key: { type: 1, status: 1 }, name: 'idx_organizations_type_status' },
+      { key: { region: 1, city: 1 }, name: 'idx_organizations_location' },
+    ]),
+
+  collection('sessions', 'Revocable authentication sessions with rotating hashed refresh credentials and replay history.',
+    ['user_id', 'client', 'token_hash', 'csrf_hash', 'expires_at', 'created_at', 'updated_at'], {
+      user_id: id,
+      client: { enum: ['web', 'mobile', 'api'] },
+      token_hash: { bsonType: 'string', minLength: 32 },
+      used_token_hashes: { bsonType: 'array', items: { bsonType: 'string' } },
+      csrf_hash: { bsonType: 'string', minLength: 32 },
+      expires_at: date,
+      revoked_at: optionalDate,
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { token_hash: 1 }, name: 'uq_sessions_token_hash', unique: true },
+      { key: { user_id: 1, revoked_at: 1 }, name: 'idx_sessions_user_active' },
+      { key: { expires_at: 1 }, name: 'ttl_sessions_expiry', expireAfterSeconds: 0 },
+    ]),
+
+  collection('auth_challenges', 'Single-use hashed password-reset and email-verification challenges.',
+    ['user_id', 'type', 'token_hash', 'client', 'expires_at', 'created_at', 'updated_at'], {
+      user_id: id,
+      type: { enum: ['password_reset', 'email_verification'] },
+      token_hash: { bsonType: 'string', minLength: 32 },
+      client: { enum: ['web', 'mobile', 'api'] },
+      expires_at: date,
+      consumed_at: optionalDate,
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { token_hash: 1 }, name: 'uq_auth_challenges_token_hash', unique: true },
+      { key: { user_id: 1, type: 1, consumed_at: 1 }, name: 'idx_auth_challenges_user_type_active' },
+      { key: { expires_at: 1 }, name: 'ttl_auth_challenges_expiry', expireAfterSeconds: 0 },
+    ]),
+
+  collection('auth_rate_limits', 'Privacy-preserving authentication throttling state keyed by a server-derived subject hash.',
+    ['scope', 'subject_hash', 'attempts', 'window_started_at', 'expires_at', 'updated_at'], {
+      scope: { enum: ['login', 'password_reset', 'email_verification'] },
+      subject_hash: { bsonType: 'string', minLength: 32 },
+      attempts: { bsonType: ['int', 'long'], minimum: 0 },
+      window_started_at: date,
+      locked_until: optionalDate,
+      expires_at: date,
+      updated_at: date,
+    }, [
+      { key: { scope: 1, subject_hash: 1 }, name: 'uq_auth_rate_limit_subject', unique: true },
+      { key: { expires_at: 1 }, name: 'ttl_auth_rate_limits_expiry', expireAfterSeconds: 0 },
+    ]),
+
+  collection('consent_history', 'Immutable history of operational privacy and research consent.',
+    ['user_id', 'privacy', 'research', 'policy_version', 'recorded_by', 'created_at'], {
+      user_id: id,
+      privacy: boolean,
+      research: boolean,
+      policy_version: text,
+      recorded_by: id,
+      source: { enum: ['web', 'mobile', 'administrator'] },
+      created_at: date,
+    }, [{ key: { user_id: 1, created_at: -1 }, name: 'idx_consent_user_history' }]),
+
+  collection('facilities', 'Approved collection, sorting, recycling, recovery, and upcycling locations.',
+    ['organization_id', 'name', 'type', 'address', 'city', 'region', 'location', 'categories', 'pathways', 'schedule', 'instructions', 'verification_status', 'status', 'created_at', 'updated_at'], {
+      organization_id: id,
+      name: { bsonType: 'string', minLength: 1, maxLength: 240 },
+      type: { enum: ['Collection point', 'Sorting facility', 'MRF', 'Recycler', 'Upcycling hub', 'Repair hub', 'Donation center'] },
+      address: text,
+      city: text,
+      region: text,
+      location: {
+        bsonType: 'object', additionalProperties: false, required: ['type', 'coordinates'],
+        properties: { type: { enum: ['Point'] }, coordinates: { bsonType: 'array', minItems: 2, maxItems: 2, items: { bsonType: ['double', 'int', 'decimal'] } } },
+      },
+      categories: stringArray,
+      pathways: { bsonType: 'array', items: { enum: pathways }, uniqueItems: true },
+      schedule: text,
+      instructions: text,
+      service_areas: stringArray,
+      monthly_capacity_kg: nonNegative,
+      current_intake_kg: nonNegative,
+      is_demo: boolean,
+      verification_status: { enum: ['pending', 'verified', 'rejected', 'suspended'] },
+      status: { enum: ['available', 'near_capacity', 'maintenance', 'onboarding', 'inactive'] },
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { organization_id: 1, name: 1 }, name: 'uq_facilities_organization_name', unique: true },
+      { key: { location: '2dsphere' }, name: 'geo_facilities_location' },
+      { key: { region: 1, type: 1, verification_status: 1 }, name: 'idx_facilities_region_type_verified' },
+      { key: { categories: 1 }, name: 'idx_facilities_categories' },
+    ]),
+
+  collection('facility_assignments', 'Authorizes a user to operate for a facility.',
+    ['user_id', 'facility_id', 'role', 'active', 'assigned_by', 'created_at', 'updated_at'], {
+      user_id: id,
+      facility_id: id,
+      role: { enum: ['manager', 'collector', 'receiver', 'verifier', 'processor', 'viewer'] },
+      active: boolean,
+      assigned_by: id,
+      created_at: date,
+      updated_at: date,
+    }, [{ key: { user_id: 1, facility_id: 1, role: 1 }, name: 'uq_facility_assignment', unique: true }]),
+
+  collection('collection_events', 'Approved textile collection and community events.',
+    ['facility_id', 'title', 'starts_at', 'ends_at', 'description', 'status', 'created_by', 'created_at', 'updated_at'], {
+      facility_id: id,
+      title: { bsonType: 'string', minLength: 1, maxLength: 240 },
+      starts_at: date,
+      ends_at: date,
+      description: text,
+      status: { enum: ['draft', 'pending_approval', 'published', 'completed', 'cancelled'] },
+      created_by: id,
+      approved_by: optionalId,
+      approved_at: optionalDate,
+      created_at: date,
+      updated_at: date,
+    }, [{ key: { facility_id: 1, starts_at: 1 }, name: 'idx_collection_events_facility_start' }, { key: { status: 1, starts_at: 1 }, name: 'idx_collection_events_status_start' }]),
+
+  collection('event_registrations', 'User registrations and attendance state for collection events.',
+    ['event_id', 'user_id', 'status', 'created_at', 'updated_at'], {
+      event_id: id,
+      user_id: id,
+      status: { enum: ['registered', 'cancelled', 'attended', 'no_show'] },
+      created_at: date,
+      updated_at: date,
+    }, [{ key: { event_id: 1, user_id: 1 }, name: 'uq_event_registration', unique: true }, { key: { user_id: 1, created_at: -1 }, name: 'idx_event_registration_user' }]),
+
+  collection('material_batches', 'Authoritative textile material identity, provenance, current state, and latest mass snapshot.',
+    ['source_user_id', 'material_category', 'waste_source', 'waste_form', 'condition', 'intended_pathway', 'declared_weight_kg', 'current_weight_kg', 'weight_status', 'location', 'current_status', 'current_custodian_id', 'validation_status', 'created_at', 'updated_at'], {
+      source_user_id: id,
+      source_organization_id: optionalId,
+      material_category: { bsonType: 'string', minLength: 1 },
+      composition: text,
+      waste_source: { enum: ['Pre-consumer', 'Post-consumer', 'Obsolete inventory', 'Household', 'Institutional', 'Unknown'] },
+      waste_form: { enum: ['Garments', 'Offcuts', 'Fabric rolls', 'Fiber', 'Mixed textiles', 'Other'] },
+      condition: { enum: ['Reusable', 'Repairable', 'Recyclable', 'For assessment', 'Rejected'] },
+      intended_pathway: { enum: pathways },
+      final_pathway: { bsonType: ['string', 'null'], enum: [null, ...pathways] },
+      declared_weight_kg: positive,
+      current_weight_kg: positive,
+      weight_status: { enum: weightStatuses },
+      secondary_quantity: { bsonType: ['double', 'int', 'long', 'decimal', 'null'], minimum: 0 },
+      secondary_unit: { bsonType: ['string', 'null'], enum: [null, 'pieces', 'meters', 'bags', 'bales', 'other'] },
+      location: {
+        bsonType: 'object', additionalProperties: false, required: ['city', 'region'],
+        properties: { city: text, region: text, barangay: text, latitude: { bsonType: ['double', 'int', 'decimal', 'null'] }, longitude: { bsonType: ['double', 'int', 'decimal', 'null'] } },
+      },
+      current_status: { enum: ['recorded', 'draft', 'listed', 'reserved', 'in_transit', 'collected', 'received', 'processing', 'reused', 'upcycled', 'recycled', 'recovered', 'rejected', 'closed', 'archived'] },
+      current_custodian_id: id,
+      validation_status: { enum: ['pending', 'valid', 'flagged', 'excluded'] },
+      is_demo: boolean,
+      archived_at: optionalDate,
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { source_user_id: 1, created_at: -1 }, name: 'idx_batches_source_user' },
+      { key: { source_organization_id: 1, created_at: -1 }, name: 'idx_batches_source_organization' },
+      { key: { 'location.region': 1, material_category: 1, current_status: 1 }, name: 'idx_batches_region_category_status' },
+      { key: { intended_pathway: 1, weight_status: 1, created_at: -1 }, name: 'idx_batches_pathway_weight_period' },
+      { key: { validation_status: 1, current_status: 1 }, name: 'idx_batches_validation_status' },
+    ]),
+
+  collection('measurements', 'Immutable quantity history for each material-flow stage.',
+    ['batch_id', 'stage', 'weight_kg', 'weight_status', 'method', 'recorded_by', 'measured_at', 'created_at'], {
+      batch_id: id,
+      transfer_id: optionalId,
+      facility_id: optionalId,
+      flow_event_id: optionalId,
+      stage: { enum: ['declaration', 'listing', 'handover', 'collection', 'receipt', 'processing_input', 'recovery_output', 'rejection', 'loss', 'validation'] },
+      weight_kg: positive,
+      weight_status: { enum: weightStatuses },
+      method: { bsonType: 'string', minLength: 1 },
+      measurement_context: text,
+      recorded_by: id,
+      verified_by: optionalId,
+      measured_at: date,
+      note: text,
+      supersedes_measurement_id: optionalId,
+      created_at: date,
+    }, [
+      { key: { batch_id: 1, measured_at: 1 }, name: 'idx_measurements_batch_time' },
+      { key: { transfer_id: 1, stage: 1 }, name: 'idx_measurements_transfer_stage' },
+      { key: { facility_id: 1, measured_at: -1 }, name: 'idx_measurements_facility_time' },
+      { key: { weight_status: 1, measured_at: -1 }, name: 'idx_measurements_status_time' },
+    ]),
+
+  collection('listings', 'Discoverability and availability record for a Material Batch.',
+    ['batch_id', 'owner_id', 'title', 'description', 'status', 'available_weight_kg', 'reserved_kg', 'created_at', 'updated_at'], {
+      batch_id: id,
+      owner_id: id,
+      owner_organization_id: optionalId,
+      owner_name: text,
+      title: { bsonType: 'string', minLength: 1, maxLength: 240 },
+      description: text,
+      looking_for: { bsonType: 'array', items: { bsonType: 'string' } },
+      media: { bsonType: 'array', items: { bsonType: 'object', required: ['uri'], properties: { uri: text, media_type: { enum: ['image'] }, alt_text: text } } },
+      available_weight_kg: positive,
+      reserved_kg: nonNegative,
+      category: text,
+      condition: { bsonType: ['string', 'null'] },
+      location: text,
+      city: text,
+      region: text,
+      weight_kg: positive,
+      weight_status: { bsonType: ['string', 'null'], enum: [null, ...weightStatuses] },
+      waste_source: { bsonType: ['string', 'null'] },
+      waste_form: { bsonType: ['string', 'null'] },
+      pathway: { bsonType: ['string', 'null'], enum: [null, ...pathways] },
+      reward_points: integer,
+      is_demo: boolean,
+      status: { enum: ['draft', 'available', 'matched', 'reserved', 'completed', 'closed', 'archived'] },
+      published_at: optionalDate,
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { batch_id: 1 }, name: 'uq_active_listing_per_batch', unique: true, partialFilterExpression: { status: { $in: ['draft', 'available', 'matched', 'reserved'] } } },
+      { key: { owner_id: 1, created_at: -1 }, name: 'idx_listings_owner_time' },
+      { key: { status: 1, created_at: -1 }, name: 'idx_listings_status_time' },
+      { key: { title: 'text', description: 'text' }, name: 'text_listings_discovery' },
+    ]),
+
+  collection('favorites', 'Saved Material Listings for a user.',
+    ['user_id', 'listing_id', 'created_at'], {
+      user_id: id,
+      listing_id: id,
+      created_at: date,
+    }, [{ key: { user_id: 1, listing_id: 1 }, name: 'uq_favorite', unique: true }]),
+
+  collection('match_requests', 'Canonical user-proposed terms for receiving all or part of a listed Material Batch.',
+    ['requester_id', 'listing_id', 'requested_kg', 'terms', 'status', 'version', 'created_at', 'updated_at'], {
+      requester_id: id,
+      requester_organization_id: optionalId,
+      listing_id: id,
+      listing_title: text,
+      requester_name: text,
+      provider_id: id,
+      requested_kg: positive,
+      terms: { bsonType: 'string', minLength: 1 },
+      incentive_points: integer,
+      status: { enum: ['pending', 'revised', 'accepted', 'rejected', 'withdrawn', 'expired'] },
+      version: { bsonType: ['int', 'long'], minimum: 1 },
+      previous_terms: { bsonType: 'array', items: { bsonType: 'object', required: ['requested_kg', 'terms', 'changed_at', 'changed_by'], properties: { requested_kg: positive, terms: text, changed_at: date, changed_by: id } } },
+      responded_by: optionalId,
+      responded_at: optionalDate,
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { listing_id: 1, status: 1, created_at: -1 }, name: 'idx_match_requests_listing_status' },
+      { key: { requester_id: 1, created_at: -1 }, name: 'idx_match_requests_requester_time' },
+    ]),
+
+  collection('transfers', 'Authoritative material-transfer aggregate created from an accepted match request.',
+    ['listing_id', 'batch_id', 'match_request_id', 'provider_id', 'recipient_id', 'agreed_weight_kg', 'status', 'transfer_type', 'agreed_terms', 'validation_status', 'created_at', 'updated_at'], {
+      listing_id: id,
+      batch_id: id,
+      match_request_id: id,
+      provider_id: id,
+      provider_organization_id: optionalId,
+      recipient_id: id,
+      recipient_organization_id: optionalId,
+      material_category: text,
+      agreed_weight_kg: positive,
+      transfer_type: { enum: ['barter', 'donation', 'collection', 'reuse', 'recycling', 'upcycling', 'recovery'] },
+      status: { enum: ['reserved', 'in_progress', 'handed_over', 'collected', 'received', 'processing', 'validated', 'completed', 'cancelled', 'rejected', 'disputed'] },
+      agreed_terms: text,
+      circular_outcome: { bsonType: ['string', 'null'], enum: [null, ...pathways] },
+      discrepancy_kg: { bsonType: ['double', 'int', 'long', 'decimal', 'null'] },
+      discrepancy_reason: text,
+      pending_reward_points: integer,
+      reward_issued_at: optionalDate,
+      is_demo: boolean,
+      validation_status: { enum: ['pending', 'valid', 'flagged', 'excluded'] },
+      completed_at: optionalDate,
+      cancelled_at: optionalDate,
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { match_request_id: 1 }, name: 'uq_transfer_match_request', unique: true },
+      { key: { batch_id: 1, created_at: 1 }, name: 'idx_transfers_batch_time' },
+      { key: { provider_id: 1, status: 1, updated_at: -1 }, name: 'idx_transfers_provider_status' },
+      { key: { recipient_id: 1, status: 1, updated_at: -1 }, name: 'idx_transfers_recipient_status' },
+      { key: { status: 1, completed_at: -1 }, name: 'idx_transfers_status_completion' },
+    ]),
+
+  collection('flow_events', 'Immutable chronological lifecycle events for a Material Batch and transfer.',
+    ['batch_id', 'transfer_id', 'actor_id', 'stage', 'sequence', 'event_status', 'occurred_at', 'created_at'], {
+      batch_id: id,
+      listing_id: optionalId,
+      transfer_id: id,
+      actor_id: id,
+      actor_name: text,
+      facility_id: optionalId,
+      stage: { enum: ['reserved', 'handover', 'collection', 'receipt', 'processing', 'validation', 'completion', 'cancellation', 'rejection', 'dispute'] },
+      sequence: { bsonType: ['int', 'long'], minimum: 1 },
+      event_status: { enum: ['completed', 'exception', 'reversed'] },
+      weight_kg: { bsonType: ['double', 'int', 'long', 'decimal', 'null'], minimum: 0 },
+      weight_status: { bsonType: ['string', 'null'], enum: [null, ...weightStatuses] },
+      measurement_id: optionalId,
+      location: text,
+      note: text,
+      occurred_at: date,
+      created_at: date,
+    }, [
+      { key: { transfer_id: 1, sequence: 1 }, name: 'uq_flow_event_sequence', unique: true },
+      { key: { batch_id: 1, occurred_at: 1 }, name: 'idx_flow_events_batch_time' },
+      { key: { stage: 1, occurred_at: -1 }, name: 'idx_flow_events_stage_time' },
+    ]),
+
+  collection('collection_receipts', 'Permanent facility receipt connecting a source, transfer, batch, and measured quantity.',
+    ['transfer_id', 'batch_id', 'facility_id', 'facility_name', 'source_user_id', 'actor_id', 'measurement_id', 'weight_kg', 'weight_status', 'created_at'], {
+      transfer_id: id,
+      batch_id: id,
+      facility_id: id,
+      facility_name: text,
+      source_user_id: id,
+      actor_id: id,
+      measurement_id: id,
+      weight_kg: positive,
+      weight_status: { enum: ['Measured', 'Verified'] },
+      measurement_context: { bsonType: 'string', minLength: 1 },
+      note: text,
+      created_at: date,
+    }, [
+      { key: { transfer_id: 1 }, name: 'uq_collection_receipt_transfer', unique: true },
+      { key: { facility_id: 1, created_at: -1 }, name: 'idx_collection_receipts_facility_time' },
+      { key: { source_user_id: 1, created_at: -1 }, name: 'idx_collection_receipts_source_time' },
+    ]),
+
+  collection('recovery_records', 'Facility processing input, output, rejection, documented loss, and circular outcome.',
+    ['transfer_id', 'batch_id', 'facility_id', 'organization_id', 'actor_id', 'input_kg', 'output_kg', 'rejected_kg', 'loss_kg', 'outcome', 'status', 'created_at', 'updated_at'], {
+      transfer_id: id,
+      batch_id: id,
+      facility_id: id,
+      organization_id: id,
+      actor_id: id,
+      validated_by: optionalId,
+      stage: { enum: ['Collection', 'Sorting', 'Processing', 'Recovery', 'Rejection'] },
+      input_kg: positive,
+      output_kg: { bsonType: ['double', 'int', 'long', 'decimal', 'null'], minimum: 0 },
+      rejected_kg: { bsonType: ['double', 'int', 'long', 'decimal', 'null'], minimum: 0 },
+      loss_kg: { bsonType: ['double', 'int', 'long', 'decimal', 'null'], minimum: 0 },
+      outcome: { enum: [null, 'Reuse', 'Repair', 'Redistribution', 'Upcycling', 'Recycling', 'Recovery', 'Rejected'] },
+      status: { enum: ['recorded', 'validated', 'flagged', 'reversed'] },
+      is_demo: boolean,
+      note: text,
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { transfer_id: 1, created_at: 1 }, name: 'idx_recovery_transfer_time' },
+      { key: { facility_id: 1, created_at: -1 }, name: 'idx_recovery_facility_time' },
+      { key: { organization_id: 1, outcome: 1, created_at: -1 }, name: 'idx_recovery_organization_outcome' },
+      { key: { status: 1, created_at: -1 }, name: 'idx_recovery_status_time' },
+    ]),
+
+  collection('conversations', 'Transaction-party coordination without retail buyer/seller terminology.',
+    ['listing_id', 'participant_ids', 'created_at', 'updated_at'], {
+      listing_id: id,
+      transfer_id: optionalId,
+      participant_ids: { bsonType: 'array', minItems: 2, items: { bsonType: 'string' }, uniqueItems: true },
+      participant_names: { bsonType: 'array', items: { bsonType: 'string' } },
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { listing_id: 1, participant_ids: 1 }, name: 'idx_conversations_listing_participants' },
+      { key: { participant_ids: 1, updated_at: -1 }, name: 'idx_conversations_participant_time' },
+    ]),
+
+  collection('messages', 'Messages exchanged by authorized conversation participants.',
+    ['conversation_id', 'sender_id', 'body', 'created_at'], {
+      conversation_id: id,
+      sender_id: id,
+      sender_name: text,
+      body: { bsonType: 'string', minLength: 1, maxLength: 5000 },
+      read_by: { bsonType: 'array', items: { bsonType: 'object', required: ['user_id', 'read_at'], properties: { user_id: id, read_at: date } } },
+      created_at: date,
+      edited_at: optionalDate,
+    }, [{ key: { conversation_id: 1, created_at: 1 }, name: 'idx_messages_conversation_time' }, { key: { sender_id: 1, created_at: -1 }, name: 'idx_messages_sender_time' }]),
+
+  collection('notifications', 'User notifications for approved system and participation events.',
+    ['user_id', 'type', 'title', 'body', 'is_read', 'created_at'], {
+      user_id: id,
+      type: { enum: ['match', 'offer', 'transfer', 'collection', 'event', 'verification', 'reward', 'system'] },
+      title: text,
+      body: text,
+      entity_type: text,
+      entity_id: optionalId,
+      is_read: boolean,
+      read_at: optionalDate,
+      created_at: date,
+    }, [{ key: { user_id: 1, is_read: 1, created_at: -1 }, name: 'idx_notifications_user_unread' }]),
+
+  collection('reward_rules', 'Versioned, disabled-by-default rules for approved non-cash incentives.',
+    ['title', 'points', 'active', 'version', 'eligibility', 'created_at', 'updated_at'], {
+      title: { bsonType: 'string', minLength: 1 },
+      points: { bsonType: ['int', 'long'], minimum: 1 },
+      active: boolean,
+      version: { bsonType: ['int', 'long'], minimum: 1 },
+      eligibility: text,
+      created_by: id,
+      approved_by: optionalId,
+      created_at: date,
+      updated_at: date,
+    }, [{ key: { active: 1, version: -1 }, name: 'idx_reward_rules_active_version' }]),
+
+  collection('reward_ledger', 'Immutable non-cash point entries tied to validated activities.',
+    ['user_id', 'points', 'entry_type', 'title', 'created_at'], {
+      user_id: id,
+      transfer_id: optionalId,
+      rule_id: optionalId,
+      points: { bsonType: ['int', 'long'] },
+      entry_type: { enum: ['earned', 'reversal', 'redemption', 'adjustment'] },
+      title: text,
+      idempotency_key: { bsonType: 'string', minLength: 1 },
+      created_at: date,
+    }, [
+      { key: { idempotency_key: 1 }, name: 'uq_reward_ledger_idempotency', unique: true },
+      { key: { user_id: 1, created_at: -1 }, name: 'idx_reward_ledger_user_time' },
+      { key: { transfer_id: 1, rule_id: 1 }, name: 'idx_reward_ledger_transfer_rule' },
+    ]),
+
+  collection('wallet_accounts', 'Cached non-cash reward balance; reward_ledger remains authoritative.',
+    ['user_id', 'balance_points', 'updated_at'], {
+      user_id: id,
+      balance_points: { bsonType: ['int', 'long'], minimum: 0 },
+      updated_at: date,
+    }, [{ key: { user_id: 1 }, name: 'uq_wallet_account_user', unique: true }]),
+
+  collection('reports', 'User-submitted content, transaction, or safety reports for administrative review.',
+    ['reporter_id', 'target_type', 'target_id', 'reason', 'details', 'status', 'created_at', 'updated_at'], {
+      reporter_id: id,
+      target_type: { enum: ['user', 'organization', 'listing', 'transfer', 'message', 'facility'] },
+      target_id: id,
+      reason: text,
+      details: text,
+      status: { enum: ['submitted', 'under_review', 'resolved', 'dismissed'] },
+      assigned_to: optionalId,
+      resolution: text,
+      created_at: date,
+      updated_at: date,
+    }, [{ key: { status: 1, created_at: -1 }, name: 'idx_reports_status_time' }, { key: { target_type: 1, target_id: 1 }, name: 'idx_reports_target' }]),
+
+  collection('support_tickets', 'Help, feedback, and approved UAT submissions.',
+    ['user_id', 'category', 'subject', 'details', 'status', 'created_at', 'updated_at'], {
+      user_id: id,
+      category: { enum: ['support', 'feedback', 'uat', 'privacy', 'account', 'other'] },
+      subject: text,
+      details: text,
+      attachment_uri: { bsonType: ['string', 'null'] },
+      status: { enum: ['open', 'in_progress', 'resolved', 'closed'] },
+      assigned_to: optionalId,
+      created_at: date,
+      updated_at: date,
+    }, [{ key: { status: 1, created_at: -1 }, name: 'idx_support_status_time' }, { key: { user_id: 1, created_at: -1 }, name: 'idx_support_user_time' }]),
+
+  collection('activity_logs', 'Canonical immutable audit trail for sensitive and operational actions.',
+    ['actor_id', 'action', 'entity_type', 'entity_id', 'details', 'occurred_at'], {
+      actor_id: optionalId,
+      action: { bsonType: 'string', minLength: 1, maxLength: 160 },
+      entity_type: text,
+      entity_id: id,
+      details: { bsonType: 'object' },
+      ip_hash: { bsonType: ['string', 'null'] },
+      occurred_at: date,
+    }, [
+      { key: { entity_type: 1, entity_id: 1, occurred_at: -1 }, name: 'idx_activity_entity_time' },
+      { key: { actor_id: 1, occurred_at: -1 }, name: 'idx_activity_actor_time' },
+      { key: { action: 1, occurred_at: -1 }, name: 'idx_activity_action_time' },
+    ]),
+
+  collection('configurations', 'Versioned controlled vocabularies and approved operational parameters.',
+    ['key', 'version', 'status', 'value', 'updated_by', 'created_at', 'updated_at'], {
+      key: { bsonType: 'string', minLength: 1, maxLength: 120 },
+      version: { bsonType: ['int', 'long'], minimum: 1 },
+      status: { enum: ['draft', 'active', 'retired'] },
+      value: { bsonType: 'object' },
+      effective_from: optionalDate,
+      updated_by: id,
+      created_at: date,
+      updated_at: date,
+    }, [
+      { key: { key: 1, version: 1 }, name: 'uq_configuration_version', unique: true },
+      { key: { key: 1 }, name: 'uq_configuration_active', unique: true, partialFilterExpression: { status: 'active' } },
+    ]),
+
+  collection('data_quality_issues', 'Persistent review workflow for validation and reconciliation findings.',
+    ['entity_type', 'entity_id', 'rule_code', 'severity', 'status', 'description', 'detected_at', 'updated_at'], {
+      entity_type: text,
+      entity_id: id,
+      rule_code: text,
+      severity: { enum: ['info', 'warning', 'critical'] },
+      status: { enum: ['open', 'acknowledged', 'resolved', 'excluded'] },
+      description: text,
+      evidence: { bsonType: 'object' },
+      detected_at: date,
+      assigned_to: optionalId,
+      resolved_by: optionalId,
+      resolved_at: optionalDate,
+      resolution_note: text,
+      updated_at: date,
+    }, [
+      { key: { entity_type: 1, entity_id: 1, rule_code: 1, status: 1 }, name: 'idx_quality_entity_rule_status' },
+      { key: { severity: 1, status: 1, detected_at: -1 }, name: 'idx_quality_severity_status_time' },
+    ]),
+
+  collection('system_interactions', 'Approved, privacy-scoped instrumentation for adoption and usability research.',
+    ['event_name', 'client', 'occurred_at', 'privacy_classification'], {
+      user_id: optionalId,
+      organization_id: optionalId,
+      session_id: optionalId,
+      event_name: { bsonType: 'string', minLength: 1, maxLength: 160 },
+      client: { enum: ['web', 'mobile'] },
+      properties: { bsonType: 'object' },
+      privacy_classification: { enum: ['aggregate', 'pseudonymized', 'restricted'] },
+      occurred_at: date,
+    }, [
+      { key: { event_name: 1, occurred_at: -1 }, name: 'idx_interactions_event_time' },
+      { key: { user_id: 1, occurred_at: -1 }, name: 'idx_interactions_user_time' },
+      { key: { organization_id: 1, occurred_at: -1 }, name: 'idx_interactions_organization_time' },
+    ]),
+
+  collection('methodologies', 'Approval registry for environmental, circularity, predictive, and decision-support methods.',
+    ['name', 'type', 'version', 'status', 'definition', 'created_at', 'updated_at'], {
+      name: text,
+      type: { enum: ['environmental_impact', 'diversion', 'matching', 'predictive', 'prescriptive'] },
+      version: text,
+      status: { enum: ['draft', 'validation', 'approved', 'retired', 'disabled'] },
+      definition: { bsonType: 'object' },
+      limitations: text,
+      approved_by: optionalId,
+      approved_at: optionalDate,
+      created_at: date,
+      updated_at: date,
+    }, [{ key: { type: 1, version: 1 }, name: 'uq_methodology_type_version', unique: true }, { key: { type: 1, status: 1 }, name: 'idx_methodology_type_status' }]),
+
+  collection('model_runs', 'Non-production or approved analytical model executions with provenance.',
+    ['methodology_id', 'status', 'target', 'input_period', 'metrics', 'created_by', 'created_at'], {
+      methodology_id: id,
+      status: { enum: ['queued', 'running', 'completed', 'failed', 'invalidated'] },
+      target: text,
+      input_period: { bsonType: 'object', additionalProperties: false, required: ['start', 'end'], properties: { start: date, end: date } },
+      filters: { bsonType: 'object' },
+      output: { bsonType: ['object', 'null'] },
+      metrics: { bsonType: 'object' },
+      created_by: id,
+      created_at: date,
+      completed_at: optionalDate,
+    }, [{ key: { methodology_id: 1, created_at: -1 }, name: 'idx_model_runs_methodology_time' }, { key: { status: 1, created_at: -1 }, name: 'idx_model_runs_status_time' }]),
+
+  collection('report_exports', 'Audited report/export requests and their privacy scope.',
+    ['requested_by', 'report_type', 'scope', 'status', 'requested_at'], {
+      requested_by: id,
+      report_type: text,
+      scope: { bsonType: 'object' },
+      privacy_classification: { enum: ['aggregate', 'deidentified', 'restricted'] },
+      status: { enum: ['requested', 'generated', 'failed', 'expired'] },
+      row_count: integer,
+      file_uri: { bsonType: ['string', 'null'] },
+      requested_at: date,
+      generated_at: optionalDate,
+      expires_at: optionalDate,
+    }, [{ key: { requested_by: 1, requested_at: -1 }, name: 'idx_report_exports_requester_time' }, { key: { status: 1, requested_at: -1 }, name: 'idx_report_exports_status_time' }]),
+];
+
+export const CORE_COLLECTION_NAMES = DATABASE_COLLECTIONS.map(({ name }) => name);
+
+export const LEGACY_COLLECTION_DECISIONS = {
+  offers: 'Deprecated in favor of match_requests; migrate listing-for-listing offers into explicit transfer terms.',
+  transactions: 'Deprecated generic wallet transaction collection; use transfers for material movement and reward_ledger for points.',
+  settings: 'Deprecated untyped key/value collection; use versioned configurations.',
+  auditlogs: 'Deprecated duplicate audit source; use activity_logs.',
+  products: 'Excluded from the BalikTela core material-first schema.',
+  orders: 'Excluded because conventional retail checkout is outside the finalized blueprint.',
+  inventorymovements: 'Excluded from core; material movement is represented by batches, measurements, transfers, and flow_events.',
+} as const;
+
+export const WEB_PERSISTENCE_COLLECTION_MAP = {
+  users: 'users',
+  organizations: 'organizations',
+  facilities: 'facilities',
+  materialBatches: 'material_batches',
+  measurements: 'measurements',
+  listings: 'listings',
+  offers: 'match_requests',
+  transfers: 'transfers',
+  recoveryRecords: 'recovery_records',
+  conversations: 'conversations',
+  messages: 'messages',
+  walletEntries: 'reward_ledger',
+  auditRecords: 'activity_logs',
+  systemInteractions: 'system_interactions',
+  configurations: 'configurations',
+} as const;

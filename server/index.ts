@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import cors from 'cors';
-import express, { type NextFunction, type Request, type Response } from 'express';
+import express, { type Response } from 'express';
+import { installSecurity, securityErrorHandler } from './security.js';
 import {
   accessSummary, authorize, isWithinOperationalScope, scopeBatches, scopeFacilities,
   scopeOrganizations, scopeRecoveryRecords, scopeTransfers, type Permission,
@@ -54,10 +54,7 @@ const dashboardAnalyticsCache = new AsyncTtlCache<DashboardAnalytics>(dashboardC
 const dashboardSnapshotCache = new AsyncTtlCache<DashboardAnalyticsSnapshot>(dashboardSnapshotTtlMs, 1);
 const dashboardMutationPrefixes = ['/api/users', '/api/organizations', '/api/barter', '/api/facilities', '/api/material-batches', '/api/transfers', '/api/recovery-records', '/api/configuration'];
 
-app.disable('x-powered-by');
-if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
-app.use(cors({ origin: clientOrigin(), credentials: true }));
-app.use(express.json({ limit: '1mb' }));
+installSecurity(app);
 app.use('/api/auth', (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Pragma', 'no-cache');
@@ -96,7 +93,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', storage: store.mode, timestamp: new Date().toISOString() }));
+app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 registerSetupRoutes(app, { store, identity, enabled: usesSupabaseAuth });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -339,7 +336,7 @@ app.post('/api/auth/refresh', async (req, res) => {
     await audit(session.userId, 'auth.refresh.replay', 'Session', session.id, 'A previously used refresh token was replayed; the session was revoked.');
     return res.status(401).json({ message: 'Refresh-token replay detected. Sign in again.' });
   }
-  if (!bodyToken && hashSessionToken(String(req.headers['x-csrf-token'] ?? '')) !== session.csrfHash) {
+  if (session.client === 'web' && hashSessionToken(String(req.headers['x-csrf-token'] ?? '')) !== session.csrfHash) {
     return res.status(403).json({ message: 'Refresh request failed CSRF validation.' });
   }
 
@@ -361,14 +358,14 @@ app.post('/api/auth/refresh', async (req, res) => {
 
   const accessToken = issueToken(user.id, user.role, session.id);
   const accessTokenExpiresAt = new Date(Date.now() + AUTH_ACCESS_TTL_SECONDS * 1000).toISOString();
-  if (session.client === 'web' && !bodyToken) setRefreshCookie(res, nextRefreshToken, session.expiresAt);
+  if (session.client === 'web') setRefreshCookie(res, nextRefreshToken, session.expiresAt);
   res.json({
     token: accessToken,
     accessToken,
     accessTokenExpiresAt,
-    refreshToken: session.client === 'web' && !bodyToken ? undefined : nextRefreshToken,
+    refreshToken: session.client === 'web' ? undefined : nextRefreshToken,
     refreshTokenExpiresAt: session.expiresAt,
-    csrfToken: session.client === 'web' && !bodyToken ? nextCsrfToken : undefined,
+    csrfToken: session.client === 'web' ? nextCsrfToken : undefined,
     session: sessionSummary(session, session.id),
   });
 });
@@ -500,7 +497,7 @@ app.patch('/api/users/:id', requireAuth, permit('users.manage'), async (req: Aut
 app.get('/api/organizations', requireAuth, permit('organizations.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
   const organizations = scopeOrganizations(actor, await store.all('organizations'));
-  res.json({ organizations });
+  res.json({ organizations: actor.scope.aggregateOnly ? [] : organizations });
 });
 
 app.post('/api/organizations', requireAuth, permit('organizations.manage'), async (req: AuthenticatedRequest, res) => {
@@ -577,6 +574,7 @@ app.get('/api/material-batches', requireAuth, permit('batches.read'), async (req
 
 app.get('/api/facilities', requireAuth, permit('facilities.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
+  if (actor.scope.aggregateOnly) return res.json({ facilities: [] });
   let facilities = scopeFacilities(actor, await store.all('facilities'));
   const region = String(req.query.region ?? 'All regions'); const material = String(req.query.materialCategory ?? 'All textiles');
   facilities = facilities.filter((item) => (region === 'All regions' || item.region === region) && (material === 'All textiles' || item.acceptedMaterials.includes(material)));
@@ -888,26 +886,23 @@ registerManagementRoutes(app, store);
 registerPredictiveRoutes(app, store);
 if (process.env.NODE_ENV === 'production' || process.env.SERVE_WEB === 'true') serveWebApp(app);
 
-app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  if (error instanceof Error && 'status' in error && typeof error.status === 'number') return res.status(error.status).json({message:error.message});
-  const message = error instanceof Error ? error.message : 'The authentication service could not complete this request.';
-  if (error instanceof Error && error.name === 'SupabaseAuthError') return res.status(400).json({ message });
-  console.error(error);
-  return res.status(500).json({ message: 'The BalikTela service could not complete this request.' });
-});
+app.use(securityErrorHandler);
 app.use((_req, res) => res.status(404).json({ message: 'API route not found.' }));
-app.listen(port, '0.0.0.0', () => {
+const httpServer = app.listen(port, '0.0.0.0', () => {
   console.log(`BalikTela API listening on http://localhost:${port} (${store.mode})`);
   if (process.env.DASHBOARD_PREWARM !== 'false') void warmDashboardSnapshot();
 });
+httpServer.requestTimeout = 30_000;
+httpServer.headersTimeout = 15_000;
+httpServer.setTimeout(60_000);
 
-function id(prefix: string) { return `${prefix}-${randomUUID().slice(0, 8).toUpperCase()}`; }
+function id(prefix: string) { return `${prefix}-${randomUUID().toUpperCase()}`; }
 function positiveEnv(name: string, fallback: number) { const value = Number(process.env[name]); return Number.isInteger(value) && value > 0 ? value : fallback; }
 async function warmDashboardSnapshot() {
   try {
     await dashboardSnapshotCache.getOrCreate('current', () => loadDashboardAnalyticsSnapshot(store));
-  } catch (error) {
-    console.error('Dashboard analytics snapshot prewarm failed.', error);
+  } catch {
+    console.error('Dashboard analytics snapshot prewarm failed. Check database availability.');
   }
 }
 function rateLimitIdentity(scope: 'login' | 'password_reset' | 'email_verification', subject: string) {
@@ -967,7 +962,7 @@ function sessionSummary(session: AuthSessionRecord, currentSessionId: string) {
 }
 function cookieValue(header: string | undefined, name: string) {
   const value = header?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
-  return value ? decodeURIComponent(value) : '';
+  try { return value ? decodeURIComponent(value) : ''; } catch { return ''; }
 }
 function setRefreshCookie(res: Response, token: string, expiresAt: string) {
   res.cookie(REFRESH_COOKIE_NAME, token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/api/auth', expires: new Date(expiresAt) });

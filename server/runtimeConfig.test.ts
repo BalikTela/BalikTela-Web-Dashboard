@@ -22,6 +22,9 @@ test('Render origin is automatic and a custom HTTPS origin takes precedence', ()
   assert.equal(clientOrigin({ ...production, CLIENT_ORIGIN: 'https://dashboard.example.org/' }), 'https://dashboard.example.org');
   assert.throws(() => validateProductionEnvironment({ ...production, CLIENT_ORIGIN: 'http://localhost:5173' }), /HTTPS/);
   assert.throws(() => validateProductionEnvironment({ ...production, RENDER_EXTERNAL_URL: '' }), /CLIENT_ORIGIN/);
+  assert.throws(() => validateProductionEnvironment({ ...production, CLIENT_ORIGIN: 'https://dashboard.example.org/login' }), /exact HTTPS origin/);
+  assert.throws(() => validateProductionEnvironment({ ...production, CLIENT_ORIGIN: 'https://user:password@dashboard.example.org' }), /exact HTTPS origin/);
+  assert.throws(() => validateProductionEnvironment({ ...production, SUPABASE_URL: 'http://example.supabase.co' }), /SUPABASE_URL/);
 });
 
 test('public demo password is rejected in production and all Supabase-connected environments', () => {

@@ -8,5 +8,9 @@ export function buildDataQuality(actor: UserRecord, batches: MaterialBatchRecord
     ...transfers.filter(item => hasDiscrepancy(item.discrepancyKg, item.handoverWeightKg ?? item.agreedWeightKg, threshold)).map(item => ({ id: `DQ-${item.id}-VAR`, severity: 'Critical', category: 'Mass discrepancy', entityType: 'Transfer', entityId: actor.scope.aggregateOnly ? 'De-identified transfer' : item.id, description: `${formatMass(Math.abs(item.discrepancyKg ?? 0))} discrepancy meets or exceeds the ${threshold}% threshold of handover mass (agreed mass when handover is absent).`, status: item.status === 'Completed' ? 'Documented' : 'Open' })),
     ...transfers.filter(item => item.status === 'Completed' && item.verifiedWeightKg === null).map(item => ({ id: `DQ-${item.id}-VERIFY`, severity: 'Critical', category: 'Invalid completion', entityType: 'Transfer', entityId: actor.scope.aggregateOnly ? 'De-identified transfer' : item.id, description: 'Completed transfer has no verified weight.', status: 'Open' })),
   ];
-  return { thresholdPercent: threshold, summary: { totalIssues: issues.length, critical: issues.filter(item => item.severity === 'Critical').length, warnings: issues.filter(item => item.severity === 'Warning').length, validationCoveragePercent: percentage(batches.filter(item => item.weightStatus === 'Verified').length, batches.length) }, issues };
+  const visibleIssues = actor.scope.aggregateOnly ? issues.map((item, index) => ({ ...item,
+    id: `DQ-aggregate-${index}`,
+    description: item.category === 'Mass discrepancy' ? `A scoped discrepancy meets or exceeds the ${threshold}% threshold. Record-level weights are restricted.` : item.description,
+  })) : issues;
+  return { thresholdPercent: threshold, summary: { totalIssues: issues.length, critical: issues.filter(item => item.severity === 'Critical').length, warnings: issues.filter(item => item.severity === 'Warning').length, validationCoveragePercent: percentage(batches.filter(item => item.weightStatus === 'Verified').length, batches.length) }, issues: visibleIssues };
 }

@@ -57,6 +57,7 @@ export async function buildDashboardAnalytics(store: Store, actor: UserRecord, q
       periodLabel: period.label,
       reportingCutoff: period.endDate,
       period,
+      aggregateOnly: actor.scope.aggregateOnly,
       denominatorNote: `Diversion rate = verified completed reuse and recycling mass / unique declared batch mass. Asia/Manila batch-registration cohort; latest recorded outcomes through ${period.asOf}, not historical status snapshots. Capacity is prorated by the actual fraction of each calendar month. Comparison: ${period.comparisonBasis}.`,
       sampleDisclosure: 'All records with SYN- identifiers and all organizations labeled demo are synthetic sample data for development and presentation only.',
     },
@@ -69,9 +70,9 @@ export async function buildDashboardAnalytics(store: Store, actor: UserRecord, q
       const value = aggregate(currentBatches.filter((item) => item.materialCategory === category), matchingTransfers, recoveryRecords);
       return { category, kilograms: value.collectedKg, recoveryRate: percent(value.reusedKg + value.recycledKg, value.collectedKg) };
     }).sort((a, b) => b.kilograms - a.kilograms),
-    transactions: transactionsView(currentTransfers, currentBatches, users),
-    stakeholders: stakeholderView(currentBatches, currentTransfers, users, facilities, facilityMetrics),
-    facilities: facilityMetrics,
+    transactions: actor.scope.aggregateOnly ? [] : transactionsView(currentTransfers, currentBatches, users),
+    stakeholders: actor.scope.aggregateOnly ? [] : stakeholderView(currentBatches, currentTransfers, users, facilities, facilityMetrics),
+    facilities: actor.scope.aggregateOnly ? aggregateFacilities(facilityMetrics) : facilityMetrics,
     regionalActivity,
     circularFlow: { generatedKg: current.generatedKg, collectedKg: current.collectedKg, sortedKg: current.sortedKg, reusedKg: current.reusedKg, recycledKg: current.recycledKg, residualKg: Math.max(0, current.generatedKg - current.reusedKg - current.recycledKg) },
     impactMetrics: { landfillAvoidedKg: null, estimatedCo2eKg: null, estimatedWaterLiters: null, diversionRate: percent(current.reusedKg + current.recycledKg, current.generatedKg), sortingYield: percent(current.reusedKg + current.recycledKg, current.sortedKg), methodologyStatus: 'Disabled pending approved methodology' as const },
@@ -87,6 +88,18 @@ export async function buildDashboardAnalytics(store: Store, actor: UserRecord, q
       environmentalImpact: { status: 'Disabled pending approved methodology' as const, co2eKg: null, waterLiters: null, landfillAvoidedKg: null },
     },
   };
+}
+
+function aggregateFacilities(facilities: ReturnType<typeof facilityView>) {
+  return [...new Set(facilities.map(item => item.region))].map((region, index) => {
+    const rows = facilities.filter(item => item.region === region);
+    const sum = (key: 'capacityKg' | 'intakeKg' | 'processedKg') => round(rows.reduce((total, item) => total + item[key], 0));
+    const capacityKg = sum('capacityKg'), intakeKg = sum('intakeKg');
+    return { id: `aggregate-region-${index}`, name: `${region} facility aggregate`, location: region, region,
+      acceptedTypes: [...new Set(rows.flatMap(item => item.acceptedTypes))], capacityKg, intakeKg,
+      processedKg: sum('processedKg'), utilization: percent(intakeKg, capacityKg),
+      processingTimeDays: 0, status: 'Aggregate only', isDemo: true as const };
+  });
 }
 
 function reportingMonths(period: ReportingWindow) {

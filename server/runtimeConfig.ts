@@ -13,7 +13,11 @@ export function validateProductionEnvironment(env: Environment = process.env) {
     throw new Error('JWT_SECRET must be a private, randomly generated value of at least 32 characters.');
   }
   if (!env.CLIENT_ORIGIN && !env.RENDER_EXTERNAL_URL) throw new Error('Set CLIENT_ORIGIN to the deployed dashboard URL.');
-  if (new URL(clientOrigin(env)).protocol !== 'https:') throw new Error('Production CLIENT_ORIGIN must use HTTPS.');
+  const origin = new URL(clientOrigin(env));
+  if (origin.protocol !== 'https:') throw new Error('Production CLIENT_ORIGIN must use HTTPS.');
+  if (origin.origin !== clientOrigin(env) || origin.username || origin.password) throw new Error('CLIENT_ORIGIN must be an exact HTTPS origin without a path, query, credentials or fragment.');
+  const supabase = new URL(env.SUPABASE_URL!);
+  if (supabase.protocol !== 'https:' || supabase.username || supabase.password) throw new Error('Production SUPABASE_URL must use HTTPS without credentials.');
   if (env.AUTH_DEMO_DELIVERY === 'true') throw new Error('AUTH_DEMO_DELIVERY must be disabled in production.');
 }
 

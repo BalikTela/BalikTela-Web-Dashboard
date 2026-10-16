@@ -39,6 +39,7 @@ export function securitySubjectHash(value: string) {
 }
 
 export function passwordPolicyError(password: string) {
+  if (Buffer.byteLength(password, 'utf8') > 72) return 'Use at most 72 UTF-8 bytes for the password.';
   if (isDefaultDemoPassword(password)) return 'Choose a private password. The published demo password cannot be used for this dashboard.';
   if (password.length < 12) return 'Use at least 12 characters.';
   if (!/[a-z]/.test(password) || !/[A-Z]/.test(password)) return 'Include uppercase and lowercase letters.';
@@ -59,8 +60,8 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
   if (!header?.startsWith('Bearer ')) return res.status(401).json({ message: 'Authentication required.' });
   try {
     const token = header.slice(7);
-    const payload = jwt.verify(token, secret, { issuer: 'baliktela-api' }) as { userId?: string; role?: UserRole; sessionId?: string; tokenType?: string };
-    if (!payload.userId || !payload.role || !payload.sessionId || payload.tokenType !== 'access') throw new Error('Session-bound access token required.');
+    const payload = jwt.verify(token, secret, { issuer: 'baliktela-api', algorithms: ['HS256'] }) as { userId?: string; role?: UserRole; sessionId?: string; tokenType?: string };
+    if (typeof payload.userId !== 'string' || typeof payload.role !== 'string' || typeof payload.sessionId !== 'string' || !payload.userId || !payload.role || !payload.sessionId || payload.tokenType !== 'access') throw new Error('Session-bound access token required.');
     req.auth = { userId: payload.userId, role: payload.role, sessionId: payload.sessionId };
     next();
   } catch {
@@ -68,8 +69,8 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
   }
 }
 
-export function publicUser<T extends { passwordHash: unknown }>(user: T) {
-  const { passwordHash: _passwordHash, ...safe } = user;
+export function publicUser<T extends { passwordHash: unknown; authUserId?: unknown }>(user: T) {
+  const { passwordHash: _passwordHash, authUserId: _authUserId, ...safe } = user;
   return safe;
 }
 

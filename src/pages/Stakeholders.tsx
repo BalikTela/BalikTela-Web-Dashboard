@@ -28,11 +28,12 @@ export function Stakeholders({ data }: { data: Data }) {
 
   return (
     <div className="space-y-5">
+      {data.metadata.aggregateOnly && <p className="text-sm text-slate-600">Your assigned access is aggregate-only. Individual stakeholder profiles and transaction histories are restricted.</p>}
       <section className="stagger-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Active stakeholders" value={data.stakeholders.length.toString()} detail="Matching current filters" icon={UsersRound} />
+        <SummaryCard label="Active stakeholders" value={data.metadata.aggregateOnly ? 'Restricted' : data.stakeholders.length.toString()} detail="Matching current filters" icon={UsersRound} />
         <SummaryCard label="System recovered volume" value={`${formatMass(recovered)}`} detail="Unique filtered material flow" icon={Recycle} tone="emerald" />
         <SummaryCard label="Transfer completion" value={data.transactions.length ? `${participation}%` : 'Not available'} detail="Completed / all scoped transfers" icon={Activity} tone="blue" />
-        <SummaryCard label="Profile activity" value={transactions.toLocaleString()} detail="Role involvements; not unique transactions" icon={Waypoints} tone="amber" />
+        <SummaryCard label="Profile activity" value={data.metadata.aggregateOnly ? 'Restricted' : transactions.toLocaleString()} detail="Role involvements; not unique transactions" icon={Waypoints} tone="amber" />
       </section>
 
       <Panel>
@@ -67,7 +68,7 @@ export function Stakeholders({ data }: { data: Data }) {
               </button>
             ))}
           </div>}</PaginatedRecords>
-        ) : <EmptyBlock label={`No ${activeGroup === 'NGO' ? 'NGO' : activeGroup.toLowerCase()} records match the current filters.`} />}
+        ) : <EmptyBlock label={data.metadata.aggregateOnly ? 'Individual profiles are restricted by your aggregate-only access.' : `No ${activeGroup === 'NGO' ? 'NGO' : activeGroup.toLowerCase()} records match the current filters.`} />}
       </Panel>
       <StakeholderDrawer stakeholder={selected} transactions={data.transactions} onClose={() => setSelected(null)} />
     </div>

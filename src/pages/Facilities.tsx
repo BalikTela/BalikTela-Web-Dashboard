@@ -18,7 +18,7 @@ export function Facilities({ data }: { data: Data }) {
   return (
     <div className="space-y-5">
       <section className="stagger-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Active facilities" value={data.facilities.length.toString()} detail="Matching regional and textile filters" icon={Factory} />
+        <SummaryCard label={data.metadata.aggregateOnly ? 'Regional facility groups' : 'Active facilities'} value={data.facilities.length.toString()} detail="Matching regional and textile filters" icon={Factory} />
         <SummaryCard label="Period capacity" value={`${formatMass(capacity)}`} detail={data.metadata.periodLabel} icon={Gauge} tone="blue" />
         <SummaryCard label="Network utilization" value={capacity ? `${averageUtilization}%` : 'Not available'} detail="Total intake / prorated period capacity" icon={Activity} tone={averageUtilization >= 85 ? 'amber' : 'emerald'} />
         <SummaryCard label="Processed volume" value={`${formatMass(processed)}`} detail="Derived from filtered recycling flow" icon={PackageCheck} tone="emerald" />
@@ -41,7 +41,7 @@ export function Facilities({ data }: { data: Data }) {
                   <td><div className="flex items-center gap-2"><Progress value={item.utilization} className="w-24" indicatorClassName={item.utilization >= 85 ? 'bg-amber-500' : undefined} />{item.capacityKg > 0 ? `${item.utilization}%` : 'Not available'}</div></td>
                   <td>{formatMass(item.intakeKg)}</td>
                   <td>{formatMass(item.processedKg)}</td>
-                  <td>{item.processingTimeDays} days</td>
+                  <td>{data.metadata.aggregateOnly ? 'Not reported' : `${item.processingTimeDays} days`}</td>
                   <td><StatusBadge status={item.status} /></td>
                 </tr>
               ))}

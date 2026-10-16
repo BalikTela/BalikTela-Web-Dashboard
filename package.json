@@ -8,6 +8,8 @@
   },
   "scripts": {
     "analytics:poc:generate": "tsx scripts/generate-predictive-dataset.ts",
+    "security:audit": "node --import tsx scripts/audit-security.ts",
+    "test:security:ui": "node --import tsx scripts/test-security-ui.ts",
     "test:predictive:ui": "node --import tsx scripts/test-predictive-ui.ts",
     "test:reports:ui": "node --import tsx scripts/test-reports-ui.ts",
     "start": "node build/server/index.js",
@@ -42,6 +44,7 @@
     "db:supabase:apply": "tsx scripts/supabase-schema.ts --apply",
     "db:supabase:seed": "tsx scripts/seed-database.ts",
     "db:supabase:seed-dashboard": "tsx scripts/seed-synthetic-dashboard.ts",
+    "db:supabase:seed-october": "node --import tsx scripts/seed-october-dashboard.ts",
     "db:supabase:test-sync": "tsx scripts/test-mobile-sync.ts",
     "db:supabase:test-auth": "npm run build:render && tsx scripts/test-supabase-auth.ts",
     "db:supabase:migrate-auth": "tsx scripts/migrate-demo-auth.ts",
@@ -51,7 +54,7 @@
     "db:test:mobile-sync": "tsx scripts/test-mobile-sync.ts",
     "generate:tracker": "node scripts/generate-feature-tracker.mjs",
     "generate:milestones": "node scripts/generate-milestone-plan.mjs",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run security:audit",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
@@ -65,6 +68,8 @@
     "cors": "^2.8.6",
     "dotenv": "^18.0.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.544.0",

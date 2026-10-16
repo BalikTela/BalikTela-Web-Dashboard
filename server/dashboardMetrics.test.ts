@@ -6,8 +6,29 @@ import { emptyListingFilters, filterListings } from '../src/lib/listingFilters.j
 import { buildDashboardAnalytics } from './dashboardAnalytics.js';
 import { createSeedData } from './seed.js';
 import { MemoryStore } from './store.js';
+import { buildDataQuality } from './dataQuality.js';
 const asOf = new Date('2026-10-17T04:00:00Z');
 const historicalQuery = { dateRange: 'Custom range', startDate: '2026-07-01', endDate: '2026-09-21' };
+
+test('aggregate-only analytics omits stakeholder identities and lifecycle records while retaining regional totals', async () => {
+  const seed = await createSeedData();
+  const store = new MemoryStore(seed);
+  const admin = seed.users[0];
+  const actor = { ...admin, role: 'Government' as const, scope: { ...admin.scope, aggregateOnly: true } };
+  const unrestricted = await buildDashboardAnalytics(store, admin, historicalQuery, undefined, asOf);
+  const aggregate = await buildDashboardAnalytics(store, actor, historicalQuery, undefined, asOf);
+  assert.deepEqual(aggregate.transactions, []);
+  assert.deepEqual(aggregate.stakeholders, []);
+  assert.deepEqual(aggregate.circularFlow, unrestricted.circularFlow);
+  assert.deepEqual(aggregate.regionalActivity, unrestricted.regionalActivity);
+  assert.equal(aggregate.facilities.reduce((sum, item) => sum + item.capacityKg, 0), unrestricted.facilities.reduce((sum, item) => sum + item.capacityKg, 0));
+  const serialized = JSON.stringify(aggregate);
+  for (const user of seed.users) assert.ok(!serialized.includes(user.fullName) && !serialized.includes(user.email));
+  for (const facility of seed.facilities) assert.ok(!serialized.includes(facility.id) && !serialized.includes(facility.name));
+  for (const transfer of seed.transfers) assert.ok(!serialized.includes(transfer.id));
+  const quality = JSON.stringify(buildDataQuality(actor, seed.materialBatches, seed.transfers, 5, asOf));
+  for (const record of [...seed.materialBatches, ...seed.transfers]) assert.ok(!quality.includes(record.id));
+});
 
 test('metric ton conversions preserve small weights, missing evidence, and round trips', () => {
   assert.equal(formatMass(96310), '96.31 t');

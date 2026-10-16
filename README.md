@@ -10,6 +10,8 @@ Current prototype model: [BalikTela ERD](docs/BalikTela_ERD.md)
 
 Deployment: [Render Setup](docs/Render_Deployment.md). The repository includes `render.yaml` for one web service serving the dashboard and API together.
 
+Security controls, assessment limits, unresolved credential exposure and deployment checklist: [Web Security](SECURITY.md).
+
 ## Technology
 
 - React and TypeScript for the web interface
@@ -59,6 +61,12 @@ For the owner-only backup administrator command and private password rotation, s
 - Legacy MongoDB schema commands remain available only for controlled data migration and rollback during the transition.
 
 The seed command refuses to run when the target already contains users. Seeding never runs automatically during API startup.
+
+### October Operational Demo
+
+The additive `synthetic-operational-october-2026-v1` scenario covers October 1-16, 2026: 24 explicitly synthetic batches across four regions and six textile categories, with linked measurements, listings, transfers, lifecycle events, recovery balances, demo rewards and aggregate engagement summaries. It represents an illustrative month-to-date scenario, not measured October performance or a full-month projection. The predictive training dataset is unchanged.
+
+Run `npm run db:supabase:seed-october` for a read-only preflight. To intentionally insert it, run `SUPABASE_SYNTHETIC_SEED=true npm run db:supabase:seed-october -- --apply`. The command reads the ignored `.env.supabase` profile, requires existing fictional SYN registry records, inserts only its OCT26 namespace in one transaction, and verifies existing rows are unchanged. It does not create/reactivate accounts, change permissions, rewrite earlier months or alter the shared mobile schema. A complete existing fixture is a no-op; partial fixtures abort for manual review. The legacy full-history seed remains a separate upsert command and must not be used to refresh this shared dataset.
 
 ## Reporting periods and exports
 

@@ -154,6 +154,13 @@ try {
   research = await signIn(researcher.email, initial);
   assert.ok(research.access.permissions.includes('analytics.read'));
   await call('/users', undefined, research.accessToken, 403);
+  if (research.user.scope.aggregateOnly) {
+    const aggregate = (await call('/analytics/dashboard', undefined, research.accessToken)).data;
+    assert.deepEqual(aggregate.transactions, []);
+    assert.deepEqual(aggregate.stakeholders, []);
+    assert.deepEqual((await call('/organizations', undefined, research.accessToken)).data.organizations, []);
+    assert.deepEqual((await call('/facilities', undefined, research.accessToken)).data.facilities, []);
+  }
   checks.push('pending institutional restriction, administrator-only approval, approval revocation, researcher permission boundary');
 
   const web = await call('/auth/login', { email: researcher.email, password: initial, client: 'web' });
@@ -162,6 +169,9 @@ try {
   assert.equal(cookie.includes('Secure'), live);
   assert.equal(web.data.refreshToken, undefined);
   const cookieValue = cookie.split(';')[0];
+  await call('/auth/refresh', {}, undefined, 401, 'POST', { Cookie: 'baliktela_refresh=%ZZ' });
+  const bodyRefresh = decodeURIComponent(cookieValue.slice(cookieValue.indexOf('=') + 1));
+  await call('/auth/refresh', { refreshToken: bodyRefresh }, undefined, 403);
   await call('/auth/refresh', {}, undefined, 403, 'POST', { Cookie: cookieValue });
   const rotated = await call('/auth/refresh', {}, undefined, 200, 'POST', { Cookie: cookieValue, 'X-CSRF-Token': web.data.csrfToken });
   assert.equal(rotated.data.refreshToken, undefined);

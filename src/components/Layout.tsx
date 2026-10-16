@@ -10,6 +10,7 @@ import { Button } from './ui/button';
 import { useAuth } from '../context/AuthContext';
 import { canAccessPage } from '../access';
 import balikTelaLogo from '../assets/auth/baliktelaph.png';
+import { useContentTransition } from '../lib/motion';
 
 const navigation: Array<{ key: PageKey; label: string; icon: React.ComponentType<{ size?: number; className?: string }>; section: 'Workspace' | 'Manage' }> = [
   { key: 'overview', label: 'Overview', icon: Home, section: 'Workspace' },
@@ -57,6 +58,7 @@ export function Layout({ activePage, onPageChange, children, dataContextLabel = 
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, access, logout, storageMode } = useAuth();
   const meta = pageMeta[activePage];
+  const heading = useContentTransition(activePage);
   const navigate = (page: PageKey) => { onPageChange(page); setMobileOpen(false); };
   const availableNavigation = navigation.filter((item) => canAccessPage(access, item.key) && !(user?.scope.aggregateOnly && ['listings', 'materials', 'operations'].includes(item.key)));
 
@@ -86,7 +88,7 @@ export function Layout({ activePage, onPageChange, children, dataContextLabel = 
         <header className="sticky top-0 z-30 border-b border-[#dfe5e2] bg-white/95 backdrop-blur-xl">
           <div className="flex min-h-[64px] items-center gap-2 px-3 sm:min-h-[72px] sm:gap-3 sm:px-6 xl:px-8 2xl:px-10">
             <Button variant="ghost" size="icon" className="shrink-0 xl:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu size={19} /></Button>
-            <div className="min-w-0 flex-1"><h1 className="truncate text-[17px] font-semibold text-[#17201d]">{meta.title}</h1><p className="hidden truncate text-xs text-[#718079] sm:block">{meta.description}</p></div>
+            <div ref={heading} className="min-w-0 flex-1"><h1 className="truncate text-[17px] font-semibold text-[#17201d]">{meta.title}</h1><p className="hidden truncate text-xs text-[#718079] sm:block">{meta.description}</p></div>
             <div className="hidden items-center gap-2 rounded-md border border-[#dfe5e2] bg-[#f7f9f8] px-2.5 py-1.5 text-[11px] font-medium text-[#66736e] 2xl:flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />{dataContextLabel}</div>
             <div className="hidden h-6 w-px bg-slate-200 sm:block" /><button type="button" onClick={() => navigate('profile')} className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-900 text-xs font-semibold text-white" aria-label="Open my profile">{initials(user?.fullName ?? 'BT')}</button>
             <Button variant="ghost" size="icon" onClick={logout} title="Sign out" aria-label="Sign out"><LogOut size={17} /></Button>

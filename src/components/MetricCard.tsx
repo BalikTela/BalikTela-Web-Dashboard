@@ -1,13 +1,15 @@
 import type { Kpi } from '../types';
 import { cn } from '../lib/utils';
+import { useContentTransition } from '../lib/motion';
 
 export function MetricCard({ metric, featured = false, sparkline, sparklineStart = 'Start', sparklineEnd = 'Current' }: { metric: Kpi; featured?: boolean; sparkline?: number[]; sparklineStart?: string; sparklineEnd?: string }) {
   const positive = metric.delta.startsWith('+') || metric.delta.includes('% of');
+  const reading = useContentTransition<HTMLParagraphElement>(metric.value);
 
   return (
     <article className={cn('min-w-0 overflow-hidden rounded-md border', featured ? 'flex min-h-52 flex-col border-[#193c31] bg-[#193c31] p-5 text-white sm:col-span-2 sm:min-h-64 xl:row-span-2' : 'surface-panel surface-panel-interactive flex min-h-[132px] flex-col p-4')}>
       <p className={cn('break-words text-xs font-medium leading-5', featured ? 'text-white/65' : 'text-[#66736e]')}>{metric.label}</p>
-      <p className={cn('break-words font-semibold leading-none tabular-nums', featured ? 'mt-4 text-4xl text-white' : 'mt-3 text-2xl text-[#174b3a]')}>{metric.value}</p>
+      <p ref={reading} className={cn('break-words font-semibold leading-none tabular-nums', featured ? 'mt-4 text-4xl text-white' : 'mt-3 text-2xl text-[#174b3a]')}>{metric.value}</p>
       <p className={cn('text-xs leading-5', featured ? 'mt-2 text-white/60' : 'mt-auto pt-3', !featured && (positive ? 'text-emerald-700' : 'text-[#718079]'))}>{metric.delta}</p>
       {featured && sparkline ? (
         <div className="mt-auto pt-5">

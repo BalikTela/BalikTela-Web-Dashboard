@@ -11,6 +11,7 @@ import type { Filters } from './types';
 import { canAccessPage } from './access';
 import { readAuthLink } from './lib/authLinks';
 import { AuthLayout } from './components/AuthLayout';
+import { MotionPage } from './lib/motion';
 import { AuthProvider } from './context/AuthContext';
 
 export type PageKey = 'overview' | 'listings' | 'materials' | 'operations' | 'waste' | 'transactions' | 'stakeholders' | 'facilities' | 'geographic' | 'advanced' | 'quality' | 'governance' | 'reports' | 'organizations' | 'users' | 'audit' | 'profile' | 'settings';
@@ -126,7 +127,7 @@ function DashboardWorkspace() {
         {needsDashboardData && error && data ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">The latest refresh failed. Showing the most recently loaded analytics.</p> : null}
         {(!needsDashboardData || data) ? (
           <Suspense fallback={<LoadingBlock label="Loading workspace…" />}>
-            {[...visitedPages].map((page) => <div key={page} className={page === currentPage ? 'page-enter' : 'hidden'} aria-hidden={page !== currentPage}>{pageContent(page)}</div>)}
+            {[...visitedPages].map((page) => <MotionPage key={page} active={page === currentPage}>{pageContent(page)}</MotionPage>)}
           </Suspense>
         ) : null}
       </div>

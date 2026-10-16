@@ -3,15 +3,17 @@ import { useState, type ReactNode } from 'react';
 import { paginationWindow } from '../../shared/pagination';
 import { Button } from './ui/button';
 import { Select } from './ui/select';
+import { useContentTransition } from '../lib/motion';
 
 export function PaginatedRecords<T>({ rows, children, resetKey = '', label = 'Records' }: {
   rows: T[]; children: (pageRows: T[]) => ReactNode; resetKey?: string; label?: string;
 }) {
   const [state, setState] = useState({ page: 1, size: 10, key: resetKey });
   const window = paginationWindow(rows.length, state.key === resetKey ? state.page : 1, state.size);
+  const content = useContentTransition(`${resetKey}:${window.page}:${state.size}:${rows.length}`);
   const navigate = (page: number) => setState({ ...state, page, key: resetKey });
   return <>
-    {children(rows.slice(window.start, window.end))}
+    <div ref={content} className="min-w-0">{children(rows.slice(window.start, window.end))}</div>
     <nav aria-label={`${label} pagination`} className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#dfe5e2] pt-4 text-xs text-[#66736e]">
       <p role="status" className="tabular-nums">{window.total ? window.start + 1 : 0}–{window.end} of {window.total.toLocaleString()} records</p>
       <div className="flex flex-wrap items-center gap-3">

@@ -95,6 +95,16 @@ Advanced Analytics > Predictive provides four-week weekly collection forecasts, 
 
 The generator deliberately contains seasonality, regional mass scales and category selection patterns. Good synthetic test scores demonstrate the pipeline only, not real-world accuracy. Production use still requires real mobile-to-web data quality checks, approved target definitions, methodology ownership, acceptance thresholds, external validation and monitoring. Method references: [Simple Statistics](https://simple-statistics.github.io/docs/) and [Forecasting: Principles and Practice](https://otexts.com/fpp3/toolbox.html).
 
+## Dashboard motion
+
+Workspace transitions preserve mounted pages, filters, pagination and API caches. Shared viewport observers reveal panels, flow stages, sparklines and percentage bars once as they become visible; stagger delays are capped at 140 ms. Numbers remain immediately available, without simulated count-ups. Page fades take 200 ms, content feedback 160 ms, section entrances 280 ms, charts 360 ms and sparkline strokes 540 ms. No decorative looping animations or additional animation dependency are used.
+
+`src/lib/motion.tsx` owns page activity, reactive system reduced-motion preferences and content transitions. `src/hooks/useChartMotion.ts` coordinates Chart.js entrances and data updates, settles inactive/offscreen charts, and stops drawing in background tabs. Reduced motion cancels programmatic entrances and renders chart values immediately, including when the preference changes while the dashboard is open. The native record editor, existing drawers, filters and mobile navigation use short CSS transitions with the same reduced-motion fallback.
+
+Design references: [shadcn/ui sheets](https://ui.shadcn.com/docs/components/sheet), [Motion accessibility](https://motion.dev/docs/react-accessibility), [Chart.js animations](https://www.chartjs.org/docs/latest/configuration/animations.html), and [design-motion-principles](https://github.com/kylezantos/design-motion-principles). Patterns are adapted to the existing dashboard rather than copied or installed as external skills.
+
+`npm run test:motion:ui` uses isolated browser fixtures at seven widths from 320 to 2560 px in normal and reduced-motion modes. It checks chart frames and final pixels, viewport reveals, cache preservation, filters, pagination focus, drawers, record editors, configuration, profile, predictive charts, runtime preference changes, idle rendering and overflow. It is also included in `npm run test:security:ui` against production CSP headers. No Supabase writes or email sends are needed.
+
 ## Centralized permissions
 
 `server/access-control.ts` is the authoritative role-permission and operational-scope policy. Every protected API endpoint declares a permission, reloads the current account before authorization, and applies organization, facility, aggregate-only, and export boundaries. Login and session restoration return the effective permission list so the web navigation uses the same policy as the API.

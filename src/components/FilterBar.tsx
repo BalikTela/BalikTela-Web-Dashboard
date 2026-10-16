@@ -34,13 +34,13 @@ export function FilterBar({ filters, onChange }: { filters: Filters; onChange: (
           <Select label="Textile type" value={filters.textileType} onChange={(value) => update('textileType', value as Filters['textileType'])} options={['All textiles', 'Cotton', 'Polyester', 'Denim', 'Mixed fabric', 'Uniforms', 'Household linen']} />
         </div>
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => setExpanded((value) => !value)} className="flex-1 border-[#cfd8d4] xl:flex-none"><SlidersHorizontal size={16} />More filters{activeCount > 0 ? <Badge className="ml-1 h-5 min-w-5 justify-center px-1.5">{activeCount}</Badge> : null}</Button>
+          <Button type="button" variant="outline" aria-expanded={expanded} aria-controls="additional-dashboard-filters" onClick={() => setExpanded((value) => !value)} className="flex-1 border-[#cfd8d4] xl:flex-none"><SlidersHorizontal size={16} />More filters{activeCount > 0 ? <Badge className="ml-1 h-5 min-w-5 justify-center px-1.5">{activeCount}</Badge> : null}</Button>
           <Button type="button" variant="ghost" size="icon" onClick={() => onChange(initialFilters)} title="Reset filters" aria-label="Reset filters"><RotateCcw size={16} /></Button>
         </div>
       </div>
       {filters.dateRange === 'Custom range' ? <div className="mt-3 grid gap-3 border-t border-[#edf0ee] pt-3 sm:grid-cols-2"><label><FieldLabel>Start date (Asia/Manila)</FieldLabel><Input type="date" aria-label="Reporting start date" value={filters.startDate} max={filters.endDate || manilaDate()} onChange={event => update('startDate', event.target.value)} /></label><label><FieldLabel>End date (Asia/Manila)</FieldLabel><Input type="date" aria-label="Reporting end date" value={filters.endDate} min={filters.startDate} max={manilaDate()} onChange={event => update('endDate', event.target.value)} /></label></div> : null}
       {expanded ? (
-        <div className="expand-enter mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+        <div id="additional-dashboard-filters" className="expand-enter mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
           <Text label="City" value={filters.city} placeholder="Any city" onChange={(value) => update('city', value)} />
           <Select label="Transaction" value={filters.transactionType} onChange={(value) => update('transactionType', value as Filters['transactionType'])} options={['All types', 'Barter', 'Return', 'Donation', 'Collection', 'Recycling', 'Redistribution']} />
           <Select label="Stakeholder" value={filters.stakeholderType} onChange={(value) => update('stakeholderType', value as Filters['stakeholderType'])} options={['All stakeholders', 'Administrator', 'Government', 'Researcher', 'Producer', 'Recycler', 'Consumer', 'NGO', 'LGU/Collection Point', 'Upcycler']} />

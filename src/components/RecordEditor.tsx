@@ -21,7 +21,7 @@ export function RecordEditor({ title, initial, fields, onSave, onClose }: {
   const [error,setError]=useState('');
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(()=>{ const previous=document.activeElement as HTMLElement | null; dialog.current?.showModal(); return ()=>previous?.focus(); },[]);
-  return createPortal(<dialog ref={dialog} onCancel={event=>{event.preventDefault();if(!busy)onClose();}} className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-md border border-[#dfe5e2] bg-white p-0 text-[#17201d] shadow-xl backdrop:bg-slate-950/35">
+  return createPortal(<dialog ref={dialog} onCancel={event=>{event.preventDefault();if(!busy)onClose();}} className="record-editor m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-md border border-[#dfe5e2] bg-white p-0 text-[#17201d] shadow-xl backdrop:bg-slate-950/35">
     <form className="p-4 sm:p-6" onSubmit={async event=>{
       event.preventDefault(); event.stopPropagation(); setBusy(true); setError('');
       const payload={...values};

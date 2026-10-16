@@ -13,6 +13,7 @@ import {
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import { toTons } from '../../shared/metrics';
 import type { CategoryShare, Facility, RegionActivity, WastePoint } from '../types';
+import { useChartMotion } from '../hooks/useChartMotion';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, Filler);
 
@@ -40,9 +41,11 @@ const chartOptions = {
 };
 
 export function WasteTrendChart({ data }: { data: WastePoint[] }) {
+  const motion = useChartMotion<'line'>();
   return (
     <Line
-      options={chartOptions}
+      ref={motion.ref}
+      options={{ ...chartOptions, animation: motion.animation }}
       data={{
         labels: data.map((item) => item.month),
         datasets: [
@@ -57,9 +60,12 @@ export function WasteTrendChart({ data }: { data: WastePoint[] }) {
 }
 
 export function CategoryDoughnut({ data }: { data: CategoryShare[] }) {
+  const motion = useChartMotion<'doughnut'>();
   return (
     <Doughnut
+      ref={motion.ref}
       options={{
+        animation: motion.animation,
         responsive: true,
         maintainAspectRatio: false,
         plugins: { legend: { position: 'bottom', labels: { color: tick, boxWidth: 10, boxHeight: 10, usePointStyle: true } } },
@@ -74,9 +80,11 @@ export function CategoryDoughnut({ data }: { data: CategoryShare[] }) {
 }
 
 export function RegionalBarChart({ data }: { data: RegionActivity[] }) {
+  const motion = useChartMotion<'bar'>();
   return (
     <Bar
-      options={chartOptions}
+      ref={motion.ref}
+      options={{ ...chartOptions, animation: motion.animation }}
       data={{
         labels: data.map((item) => item.region),
         datasets: [
@@ -89,9 +97,11 @@ export function RegionalBarChart({ data }: { data: RegionActivity[] }) {
 }
 
 export function FacilityUtilizationChart({ data }: { data: Facility[] }) {
+  const motion = useChartMotion<'bar'>();
   return (
     <Bar
-      options={{ ...chartOptions, indexAxis: 'y' as const }}
+      ref={motion.ref}
+      options={{ ...chartOptions, indexAxis: 'y' as const, animation: motion.animation }}
       data={{
         labels: data.map((item) => item.name.replace(' Cooperative', '').replace(' Center', '')),
         datasets: [{ label: 'Utilization %', data: data.map((item) => item.capacityKg > 0 ? item.utilization : null), backgroundColor: '#27775c', borderRadius: 3 }],
@@ -101,9 +111,11 @@ export function FacilityUtilizationChart({ data }: { data: Facility[] }) {
 }
 
 export function ForecastChart({ data }: { data: Array<{ month: string; historical: number | null; forecast: number | null }> }) {
+  const motion = useChartMotion<'line'>();
   return (
     <Line
-      options={chartOptions}
+      ref={motion.ref}
+      options={{ ...chartOptions, animation: motion.animation }}
       data={{
         labels: data.map((item) => item.month),
         datasets: [

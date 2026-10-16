@@ -69,7 +69,7 @@ try {
       else return route.fulfill({ status: 404, json: { message: `Unmocked ${path}` } });
       await route.fulfill({ json: body });
     });
-    await page.goto(base);
+    await page.goto(new URL('/dashboard', base).href);
     await page.getByText('Program Analytics', { exact: true }).waitFor();
     const navigate = async (name: string) => {
       const toggle = page.getByRole('button', { name: 'Open navigation', exact: true });

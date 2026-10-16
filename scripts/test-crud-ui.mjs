@@ -15,7 +15,7 @@ try {
     page.setDefaultTimeout(15000);
     const errors=[];
     page.on('pageerror',error=>errors.push(error.message));
-    await page.goto(base);
+    await page.goto(new URL('/login', base).href);
     await page.getByLabel('Email address', { exact: true }).fill('admin@baliktela.demo');
     await page.getByLabel('Password', { exact: true }).fill('BalikTelaDemo2026!');
     const loginPromise=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/auth/login');

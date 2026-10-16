@@ -36,7 +36,7 @@ try {
         if (path === '/api/auth/me' && scenario === 'pending') return route.fulfill({ json: { user: { id: 'BRANDING-UI', fullName: 'Branding test', role: 'Researcher', accountStatus: 'Pending verification', scope: { aggregateOnly: true } }, access: { permissions: ['profile.read'] }, storage: 'ui-fixture' } });
         return route.fulfill({ status: 401, json: { message: 'No session in this isolated UI test.' } });
       });
-      const suffix = scenario === 'registration-unavailable' ? '/?auth=register' : scenario === 'setup' ? '/?auth=setup' : ['password', 'confirmation'].includes(scenario) ? '/?auth=complete&type=invite&token_hash=branding-fixture' : scenario === 'invalid' ? '/?auth=complete' : '/';
+      const suffix = scenario === 'registration-unavailable' ? '/?auth=register' : scenario === 'setup' ? '/?auth=setup' : ['password', 'confirmation'].includes(scenario) ? '/?auth=complete&type=invite&token_hash=branding-fixture' : scenario === 'invalid' ? '/?auth=complete' : '/login';
       try {
         await page.goto(`${base}${suffix}`);
         if (scenario === 'restoring') await page.getByRole('status').filter({ hasText: 'Restoring secure session' }).waitFor();

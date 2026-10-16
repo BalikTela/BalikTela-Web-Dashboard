@@ -11,7 +11,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
     <main className="auth-layout">
       <section className="auth-workspace" aria-label="BalikTelaPH account access">
         <header className="auth-workspace-header">
-          <img className="auth-primary-logo" src={balikTelaLogo} alt="BalikTelaPH" width={1254} height={1254} decoding="async" draggable={false} />
+          <a href="/" aria-label="BalikTelaPH home"><img className="auth-primary-logo" src={balikTelaLogo} alt="BalikTelaPH" width={1254} height={1254} decoding="async" draggable={false} /></a>
           <span className="auth-secure-label"><LockKeyhole size={14} aria-hidden="true" />Secure access</span>
         </header>
         <div className="auth-workspace-content">{children}</div>

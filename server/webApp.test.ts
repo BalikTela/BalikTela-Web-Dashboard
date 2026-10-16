@@ -22,7 +22,7 @@ test('production serves the dashboard and immutable assets without masking API e
   if (!address || typeof address === 'string') throw new Error('No test port.');
   const base = `http://127.0.0.1:${address.port}`;
   try {
-    for (const path of ['/', '/stakeholders/detail']) {
+    for (const path of ['/', '/login', '/dashboard', '/auth/callback', '/stakeholders/detail']) {
       const response = await fetch(`${base}${path}`);
       assert.equal(response.status, 200);
       assert.equal(response.headers.get('cache-control'), 'no-cache');

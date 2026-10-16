@@ -27,6 +27,16 @@ Keep local credentials in `.env` or an ignored `.env.supabase` profile. The secr
 
 Without Supabase or legacy MongoDB credentials, the API intentionally uses an in-memory demo store. This keeps the prototype reviewable, but records reset whenever the API restarts.
 
+## Public homepage
+
+- `/` introduces the project, textile pathways, community roles, and the two platforms. It never mounts authentication or requests protected dashboard data.
+- `/login` opens institutional sign-in; `/dashboard` restores the authorized workspace. The sign-in logo links back to the public homepage.
+- Existing invitation, confirmation, and recovery callbacks at the root URL continue to take precedence over the homepage. Keep existing Supabase redirect settings.
+- Mobile calls to action open the project-approved app at `https://baliktelaprogressive.vercel.app/` in a new tab. An optional `VITE_MOBILE_APP_URL` HTTPS override is read at build time; rebuild after changing it. This is a public URL, never a place for credentials. No app-store release is implied.
+- No new backend routes, database migrations, or public data permissions are required. The existing Render service serves the public page, sign-in, and dashboard.
+- `npm run test:home:ui` checks seven viewport sizes, public request isolation, imagery, mobile app links, keyboard navigation, dialogs, FAQs, and sign-in navigation. The default preview URL is `http://127.0.0.1:5174`; override with `HOME_UI_URL` when needed.
+- Content follows the finalized blueprint in `../Documents/Balik Tela PH Web and Mobile Blueprint.docx`. Illustrative images and design references are documented in `public/ASSET_SOURCES.md`. No live environmental impact totals or prospective partner endorsements are published.
+
 ## Account access
 
 Sign in with your approved private account. Institutional accounts are invited by an administrator and choose their own password through the email setup flow. Login fields are never prefilled with shared credentials.

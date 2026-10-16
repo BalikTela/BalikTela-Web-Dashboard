@@ -25,7 +25,7 @@ try {
         if (path === '/api/auth/logout' && scenario === 'offline-logout') return route.abort('failed');
         return route.fulfill({ status: 401, json: { message: 'The session is unavailable.' } });
       });
-      await page.goto(base);
+      await page.goto(new URL('/login', base).href);
       await page.getByRole('button', { name: 'Sign in', exact: true }).waitFor();
       assert.equal(await page.getByRole('button', { name: 'Create participant account', exact: true }).count(), 0);
       assert.equal(await page.getByLabel('Email address', { exact: true }).inputValue(), '');

@@ -33,7 +33,7 @@ try {
   for (const viewport of viewports) {
     const context = await browser.newContext({ viewport });
     const page = await context.newPage();
-    await page.goto(baseUrl, { waitUntil: 'networkidle' });
+    await page.goto(new URL('/login', baseUrl).href, { waitUntil: 'networkidle' });
     await page.getByLabel('Email address', { exact: true }).fill(email);
     await page.getByLabel('Password', { exact: true }).fill(password);
     const loginLayout = await inspectLayout(page);

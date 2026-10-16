@@ -6,6 +6,8 @@ import { emptyListingFilters, filterListings } from '../src/lib/listingFilters.j
 import { buildDashboardAnalytics } from './dashboardAnalytics.js';
 import { createSeedData } from './seed.js';
 import { MemoryStore } from './store.js';
+const asOf = new Date('2026-10-17T04:00:00Z');
+const historicalQuery = { dateRange: 'Custom range', startDate: '2026-07-01', endDate: '2026-09-21' };
 
 test('metric ton conversions preserve small weights, missing evidence, and round trips', () => {
   assert.equal(formatMass(96310), '96.31 t');
@@ -46,7 +48,7 @@ test('listing filters compose with trimmed search, evidence state, pathway, and 
 test('untransferred batches remain in diversion denominators; outputs and percentages reconcile', async () => {
   const seed = await createSeedData();
   const store = new MemoryStore(seed);
-  const data = await buildDashboardAnalytics(store, seed.users[0], { dateRange: 'Last 90 days' });
+  const data = await buildDashboardAnalytics(store, seed.users[0], historicalQuery, undefined, asOf);
   assert.equal(data.circularFlow.generatedKg, 575);
   assert.equal(data.operations.metrics.declaredKg, 575);
   assert.equal(data.circularFlow.reusedKg, 89);
@@ -56,7 +58,7 @@ test('untransferred batches remain in diversion denominators; outputs and percen
   assert.match(data.kpis[0].value, / t$/);
   assert.equal(data.facilities[0].capacityKg, 6480, 'Monthly capacity must be prorated over July 1-Sep 21 (2.7 months).');
   assert.equal(data.facilities[0].utilization, percentage(data.facilities[0].intakeKg, 6480));
-  const filtered = await buildDashboardAnalytics(store, seed.users[0], { dateRange: 'Last 90 days', textileType: 'Cotton' });
+  const filtered = await buildDashboardAnalytics(store, seed.users[0], { ...historicalQuery, textileType: 'Cotton' }, undefined, asOf);
   assert.equal(filtered.circularFlow.generatedKg, 320);
   assert.equal(filtered.circularFlow.reusedKg, 0);
   assert.equal(filtered.impactMetrics.diversionRate, 0);
@@ -65,13 +67,13 @@ test('untransferred batches remain in diversion denominators; outputs and percen
 test('analytics excludes other years and future batches, keeps all transactions, and does not duplicate facility outcomes', async () => {
   const seed = await createSeedData();
   const batch = seed.materialBatches[3];
-  seed.materialBatches.push({ ...batch, id: 'OLD', createdAt: '2025-09-01T00:00:00Z' }, { ...batch, id: 'FUTURE', createdAt: '2026-09-30T00:00:00Z' });
+  seed.materialBatches.push({ ...batch, id: 'OLD', createdAt: '2025-09-01T00:00:00Z' }, { ...batch, id: 'FUTURE', createdAt: '2026-10-18T00:00:00Z' });
   seed.recoveryRecords.push({ ...seed.recoveryRecords[0], id: 'EXTRA-STAGE', facilityId: 'FAC-002', timestamp: '2026-09-16T00:00:00Z' });
   seed.transfers = Array.from({ length: 120 }, (_, index) => ({ ...seed.transfers[0], id: `TR-${index}`, verifiedWeightKg: 0.5 }));
-  const data = await buildDashboardAnalytics(new MemoryStore(seed), seed.users[0], {});
+  const data = await buildDashboardAnalytics(new MemoryStore(seed), seed.users[0], {}, undefined, asOf);
   assert.equal(data.circularFlow.generatedKg, 575);
   assert.equal(data.transactions.length, 120);
   assert.equal(data.facilities.reduce((sum, facility) => sum + facility.processedKg, 0), 60);
-  const empty = await buildDashboardAnalytics(new MemoryStore(seed), seed.users[0], { textileType: 'Nonexistent' });
+  const empty = await buildDashboardAnalytics(new MemoryStore(seed), seed.users[0], { textileType: 'Nonexistent' }, undefined, asOf);
   assert.equal(empty.kpis.find(item => item.label === 'Diversion Rate')?.value, 'Not available');
 });

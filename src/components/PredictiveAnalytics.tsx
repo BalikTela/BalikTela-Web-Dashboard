@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Download, FlaskConical, LoaderCircle, RotateCcw } from 'lucide-react';
+import { AlertCircle, Download, LoaderCircle, RotateCcw } from 'lucide-react';
 import { FORECAST_METHOD_LABELS, type PredictiveReport } from '../../shared/predictive';
 import { formatMass } from '../../shared/metrics';
 import { useAuth } from '../context/AuthContext';
@@ -61,7 +61,7 @@ export function PredictiveAnalytics() {
 
   return <div className="predictive section-enter">
     <header className="predictive-heading">
-      <div><span className="predictive-label"><FlaskConical size={14} aria-hidden="true" />Synthetic proof of concept</span><h3>Forward view</h3><p>Simulated platform activity. Separate from live operational records.</p></div>
+      <div><h3>Forward view</h3><p>Simulated platform activity. Separate from live operational records.</p></div>
       {access?.permissions.includes('reports.export') ? <Button variant="outline" onClick={download} disabled={exporting || !report} className="gap-2">{exporting ? <LoaderCircle className="animate-spin" size={15} /> : <Download size={15} />}Dataset CSV</Button> : null}
     </header>
     <div className="predictive-filters">

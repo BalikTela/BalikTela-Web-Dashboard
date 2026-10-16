@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import {
-  accessSummary, authorize, isWithinOperationalScope, scopeAnalyticalBatches, scopeBatches, scopeFacilities,
+  accessSummary, authorize, isWithinOperationalScope, scopeBatches, scopeFacilities,
   scopeOrganizations, scopeRecoveryRecords, scopeTransfers, type Permission,
 } from './access-control.js';
 import {
@@ -14,9 +14,12 @@ import {
 import { createSeedData } from './seed.js';
 import { registerPredictiveRoutes } from './analytics/routes.js';
 import { createStore } from './store.js';
-import { calculateOperationalMass, canIssueReward } from './domain.js';
-import { formatMass, hasDiscrepancy, percentage, toTons } from '../shared/metrics.js';
-import { buildDashboardAnalytics, loadDashboardAnalyticsSnapshot, type DashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
+import { canIssueReward } from './domain.js';
+import { formatMass } from '../shared/metrics.js';
+import { resolveReportingPeriod, manilaDate } from '../shared/reporting.js';
+import { buildDataQuality } from './dataQuality.js';
+import { registerReportRoutes } from './reports.js';
+import { buildDashboardAnalytics, filterBatches, loadDashboardAnalyticsSnapshot, selectAnalyticsCohort, type DashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
 import { AsyncTtlCache, dashboardAnalyticsCacheKey } from './asyncCache.js';
 import { SupabaseIdentity } from './supabaseIdentity.js';
 import { createPasswordSetupGrant, registerSetupRoutes } from './authSetup.js';
@@ -564,8 +567,11 @@ app.post('/api/barter/listings', requireAuth, permit('listings.create'), async (
 
 app.get('/api/material-batches', requireAuth, permit('batches.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
-  const batches = scopeBatches(actor, await store.all('materialBatches')).filter((batch) => matchesOperationalQuery(batch, req.query));
-  const measurements = await store.all('measurements');
+  const snapshot = await loadDashboardAnalyticsSnapshot(store);
+  const scoped = scopeBatches(actor, snapshot.allBatches);
+  const period = resolveReportingPeriod({ ...req.query, dateRange: req.query.dateRange ?? 'All time' }, new Date(), scoped.map(item => item.createdAt).sort()[0]);
+  const batches = filterBatches(scoped, period, req.query, { transfers: snapshot.allTransfers, recoveryRecords: snapshot.recoveryRecords.filter(item => item.status !== 'Reversed'), users: snapshot.users, organizations: snapshot.organizations });
+  const measurements = snapshot.measurements;
   res.json({ batches: batches.map((batch) => ({ ...batch, measurements: measurements.filter((measurement) => measurement.batchId === batch.id) })) });
 });
 
@@ -675,7 +681,9 @@ app.patch('/api/barter/offers/:id', requireAuth, permit('offers.manage'), async 
 
 app.get('/api/transfers', requireAuth, permit('transfers.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
-  const transfers = scopeTransfers(actor, await store.all('transfers'));
+  const snapshot = await loadDashboardAnalyticsSnapshot(store);
+  const selected = Object.keys(req.query).length ? selectAnalyticsCohort(snapshot, actor, { ...req.query, dateRange: req.query.dateRange ?? 'All time' }).currentTransfers : snapshot.allTransfers;
+  const transfers = scopeTransfers(actor, selected);
   res.json({ transfers: transfers.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) });
 });
 
@@ -756,7 +764,9 @@ app.patch('/api/transfers/:id', requireAuth, permit('transfers.manage'), async (
 
 app.get('/api/recovery-records', requireAuth, permit('recovery.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
-  let records = scopeRecoveryRecords(actor, await store.all('recoveryRecords'));
+  const snapshot = await loadDashboardAnalyticsSnapshot(store);
+  const { currentBatchIds } = selectAnalyticsCohort(snapshot, actor, { ...req.query, dateRange: req.query.dateRange ?? 'All time' });
+  let records = scopeRecoveryRecords(actor, snapshot.recoveryRecords).filter(item => currentBatchIds.has(item.batchId));
   const status = String(req.query.transactionStatus ?? 'All statuses'); const facilityId = String(req.query.facilityId ?? 'All facilities');
   records = records.filter((item) => (status === 'All statuses' || item.status === status) && (facilityId === 'All facilities' || item.facilityId === facilityId));
   res.json({ records: records.sort((a, b) => b.timestamp.localeCompare(a.timestamp)) });
@@ -783,38 +793,18 @@ app.post('/api/recovery-records', requireAuth, permit('recovery.create'), async 
 
 app.get('/api/analytics/operations', requireAuth, permit('analytics.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
-  const allBatches = await store.all('materialBatches');
-  const allTransfers = await store.all('transfers');
-  const allMeasurements = await store.all('measurements');
-  const scopedBatches = scopeAnalyticalBatches(actor, allBatches).filter((batch) => matchesOperationalQuery(batch, req.query));
-  const batchIds = new Set(scopedBatches.map((batch) => batch.id));
-  const transfers = allTransfers.filter((transfer) => batchIds.has(transfer.batchId));
-  const measurements = allMeasurements.filter((measurement) => batchIds.has(measurement.batchId));
-  const sum = (values: Array<number | null>) => values.reduce<number>((total, value) => total + (value ?? 0), 0);
-  const completed = transfers.filter((transfer) => transfer.status === 'Completed');
-  const mass = calculateOperationalMass(scopedBatches, transfers);
-  const { verifiedKg, declaredKg, receivedKg } = mass;
-  res.json({
-    period: { start: '2026-09-01', end: '2026-09-21', label: 'Sep 1-21, 2026 · demo records' },
-    scope: { role: actor.role, aggregateOnly: actor.scope.aggregateOnly, organizationIds: actor.scope.organizationIds },
-    metrics: {
-      batchCount: scopedBatches.length, declaredKg, measuredKg: sum(measurements.filter((item) => item.status === 'Measured').map((item) => item.weightKg)),
-      verifiedKg, receivedKg, completedTransfers: completed.length, activeTransfers: transfers.filter((item) => !['Completed', 'Cancelled', 'Rejected'].includes(item.status)).length,
-      diversionRate: mass.diversionRate,
-      denominator: 'Verified mass in completed transfers / unique declared batch mass in scope',
-    },
-    massBalance: { declaredKg, handedOverKg: mass.handedOverKg, receivedKg, verifiedKg, discrepancyKg: mass.discrepancyKg },
-    quality: { estimatedBatches: scopedBatches.filter((item) => item.weightStatus === 'Estimated').length, measuredBatches: scopedBatches.filter((item) => item.weightStatus === 'Measured').length, verifiedBatches: scopedBatches.filter((item) => item.weightStatus === 'Verified').length, discrepancyFlags: transfers.filter((item) => Math.abs(item.discrepancyKg ?? 0) > 0.01).length },
-    environmentalImpact: { status: 'Disabled pending approved methodology', co2eKg: null, waterLiters: null, landfillAvoidedKg: null },
-  });
+  const data = await buildDashboardAnalytics(store, actor, req.query);
+  res.json(data.operations);
 });
 
 app.get('/api/analytics/dashboard', requireAuth, permit('analytics.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
   const startedAt = performance.now();
-  const result = await dashboardAnalyticsCache.getOrCreate(dashboardAnalyticsCacheKey(actor, req.query), async () => {
+  const now = new Date();
+  resolveReportingPeriod(req.query, now);
+  const result = await dashboardAnalyticsCache.getOrCreate(dashboardAnalyticsCacheKey(actor, { ...req.query, reportingDay: manilaDate(now) }), async () => {
     const snapshot = await dashboardSnapshotCache.getOrCreate('current', () => loadDashboardAnalyticsSnapshot(store));
-    return buildDashboardAnalytics(store, actor, req.query, snapshot.value);
+    return buildDashboardAnalytics(store, actor, req.query, snapshot.value, now);
   });
   const durationMs = performance.now() - startedAt;
   res.setHeader('Cache-Control', 'private, no-store');
@@ -825,17 +815,11 @@ app.get('/api/analytics/dashboard', requireAuth, permit('analytics.read'), async
 
 app.get('/api/data-quality', requireAuth, permit('dataQuality.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
-  const batches = scopeAnalyticalBatches(actor, await store.all('materialBatches')).filter((batch) => matchesOperationalQuery(batch, req.query));
-  const batchIds = new Set(batches.map((item) => item.id));
-  const transfers = (await store.all('transfers')).filter((item) => batchIds.has(item.batchId));
-  const threshold = (await store.findOne('configurations', (item) => item.id === 'platform'))?.discrepancyThresholdPercent ?? 5;
-  const issues = [
-    ...batches.filter((item) => item.weightStatus === 'Estimated').map((item) => ({ id: `DQ-${item.id}-EST`, severity: 'Warning', category: 'Unverified measurement', entityType: 'Material batch', entityId: actor.scope.aggregateOnly ? 'De-identified batch' : item.id, description: `${item.materialCategory} has an estimated weight without measured or verified evidence.`, status: 'Open' })),
-    ...batches.filter((item) => item.currentStatus === 'Reserved' && Date.now() - new Date(item.updatedAt).getTime() > 7 * 86400000).map((item) => ({ id: `DQ-${item.id}-STALE`, severity: 'Warning', category: 'Stale workflow', entityType: 'Material batch', entityId: actor.scope.aggregateOnly ? 'De-identified batch' : item.id, description: 'Reserved material has no lifecycle update for more than seven days.', status: 'Open' })),
-    ...transfers.filter((item) => hasDiscrepancy(item.discrepancyKg, item.handoverWeightKg ?? item.agreedWeightKg, threshold)).map((item) => ({ id: `DQ-${item.id}-VAR`, severity: 'Critical', category: 'Mass discrepancy', entityType: 'Transfer', entityId: actor.scope.aggregateOnly ? 'De-identified transfer' : item.id, description: `${formatMass(Math.abs(item.discrepancyKg ?? 0))} discrepancy meets or exceeds the ${threshold}% threshold of handover mass (agreed mass when handover is absent).`, status: item.status === 'Completed' ? 'Documented' : 'Open' })),
-    ...transfers.filter((item) => item.status === 'Completed' && item.verifiedWeightKg === null).map((item) => ({ id: `DQ-${item.id}-VERIFY`, severity: 'Critical', category: 'Invalid completion', entityType: 'Transfer', entityId: actor.scope.aggregateOnly ? 'De-identified transfer' : item.id, description: 'Completed transfer has no verified weight.', status: 'Open' })),
-  ];
-  res.json({ thresholdPercent: threshold, summary: { totalIssues: issues.length, critical: issues.filter((item) => item.severity === 'Critical').length, warnings: issues.filter((item) => item.severity === 'Warning').length, validationCoveragePercent: percentage(batches.filter((item) => item.weightStatus === 'Verified').length, batches.length) }, issues });
+  const snapshot = await loadDashboardAnalyticsSnapshot(store);
+  const now = new Date();
+  const { currentBatches: batches, currentTransfers: transfers } = selectAnalyticsCohort(snapshot, actor, req.query, now);
+  const threshold = (await store.findOne('configurations', item => item.id === 'platform'))?.discrepancyThresholdPercent ?? 5;
+  res.json(buildDataQuality(actor, batches, transfers, threshold, now));
 });
 
 app.get('/api/audit-records', requireAuth, permit('audit.read'), async (req: AuthenticatedRequest, res) => {
@@ -873,27 +857,7 @@ app.get('/api/governance', requireAuth, permit('governance.read'), async (req: A
   res.json({ methodology: { environmentalImpact: 'Disabled pending approved methodology', predictiveAnalytics: 'Non-production; model validation required', prescriptiveAnalytics: 'Non-production; governance approval required', massAccounting: 'Verified completed kilograms / unique declared batch kilograms', version: configuration?.methodologyVersion ?? 'Not approved' }, privacy: { role: actor.role, aggregateOnly: actor.scope.aggregateOnly, exportAllowed: actor.scope.canExport, policy: actor.scope.aggregateOnly ? 'Aggregate/de-identified access' : 'Authorized organization or individual scope' }, policyIndicators: [{ label: 'Verified material completion', status: 'Available', caveat: 'Operational indicator only; not a statutory compliance claim.' }, { label: 'EPR reporting support', status: 'Preparation only', caveat: 'Requires regulator-approved definitions and reporting rules.' }, { label: 'Environmental equivalents', status: 'Disabled', caveat: 'No approved factors or methodology.' }] });
 });
 
-app.get('/api/reports', requireAuth, permit('reports.read'), async (req: AuthenticatedRequest, res) => {
-  const actor = await currentUser(req, res); if (!actor) return;
-  res.json({ reports: [
-    { id: 'material-flow', name: 'Material Flow Summary', description: 'Material mass in metric tons (t), with reporting scope and denominator notes.', formats: ['CSV'], available: true },
-    { id: 'data-quality', name: 'Data Quality Summary', description: 'Measurement status, discrepancies, and validation coverage.', formats: ['CSV'], available: true },
-    { id: 'organizations', name: 'Organization Participation', description: actor.scope.aggregateOnly ? 'De-identified participation totals.' : 'Authorized organization activity.', formats: ['CSV'], available: true },
-    { id: 'environmental-impact', name: 'Environmental Methodology Status', description: 'Methodology status only; no environmental equivalents are calculated.', formats: ['CSV'], available: true },
-  ], scope: { role: actor.role, canExport: actor.scope.canExport || actor.role === 'Administrator', aggregateOnly: actor.scope.aggregateOnly } });
-});
-
-app.get('/api/reports/:reportId/export', requireAuth, permit('reports.export'), async (req: AuthenticatedRequest, res) => {
-  const actor = await currentUser(req, res); if (!actor) return;
-  const reportId = String(req.params.reportId);
-  const batches = scopeAnalyticalBatches(actor, await store.all('materialBatches')); const transfers = (await store.all('transfers')).filter((item) => batches.some((batch) => batch.id === item.batchId));
-  let rows: string[][]; let headers: string[];
-  if (reportId === 'data-quality') { headers = ['Metric', 'Value']; rows = [['Estimated batches', String(batches.filter((item) => item.weightStatus === 'Estimated').length)], ['Measured batches', String(batches.filter((item) => item.weightStatus === 'Measured').length)], ['Verified batches', String(batches.filter((item) => item.weightStatus === 'Verified').length)], ['Transfer discrepancy flags', String(transfers.filter((item) => Math.abs(item.discrepancyKg ?? 0) > 0.01).length)]]; }
-  else if (reportId === 'environmental-impact') { headers = ['Indicator', 'Status']; rows = [['Environmental impact', 'Disabled pending approved methodology'], ['Predictive analytics', 'Non-production'], ['Mass denominator', 'Verified completed mass / unique declared batch mass']]; }
-  else { headers = ['Reporting period', 'Batch ID', 'Material category', 'Weight status', 'Declared (t)', 'Current (t)', 'Current status']; rows = batches.map((item) => ['Sep 1-21, 2026 demo', actor.scope.aggregateOnly ? 'De-identified' : item.id, item.materialCategory, item.weightStatus, String(toTons(item.declaredWeightKg)), String(toTons(item.currentWeightKg)), item.currentStatus]); }
-  const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\n'); await audit(actor.id, 'report.exported', 'Report', reportId, `${rows.length} CSV rows exported under ${actor.role} scope.`);
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="baliktela-${reportId}-demo.csv"`); res.send(csv);
-});
+registerReportRoutes(app, store);
 
 app.get('/api/barter/conversations', requireAuth, permit('messages.read'), async (req: AuthenticatedRequest, res) => {
   const actor = req.actor!;
@@ -1048,12 +1012,3 @@ async function authorizedConversation(req: AuthenticatedRequest, res: Response):
 }
 function matchScore(a: ListingRecord, b: ListingRecord, weights: ConfigurationRecord['matchingWeights']) { let score = 20; if (a.textileType === b.textileType) score += weights.category; if (a.circularPathway === b.circularPathway) score += weights.pathway; if (a.region === b.region) score += weights.region; if (a.quality === b.quality) score += weights.condition; if (Math.min(a.quantityKg, b.quantityKg) / Math.max(a.quantityKg, b.quantityKg) > 0.5) score += weights.quantity; return Math.min(100, score); }
 function matchReasons(a: ListingRecord, b: ListingRecord) { return [a.textileType === b.textileType ? 'Same material category' : 'Complementary material category', a.circularPathway === b.circularPathway ? 'Same circular pathway' : 'Alternative pathway', a.region === b.region ? 'Same region' : 'Cross-region', a.quality === b.quality ? 'Similar condition' : 'Different condition']; }
-function matchesOperationalQuery(batch: MaterialBatchRecord, query: Record<string, unknown>) {
-  const region = String(query.region ?? 'All regions'); const category = String(query.materialCategory ?? query.textileType ?? 'All textiles');
-  const source = String(query.wasteSource ?? 'All sources'); const pathway = String(query.circularPathway ?? 'All pathways'); const weight = String(query.weightStatus ?? 'All weight statuses');
-  const organization = String(query.organizationId ?? 'All organizations');
-  return (region === 'All regions' || batch.region === region) && (category === 'All textiles' || batch.materialCategory === category)
-    && (source === 'All sources' || batch.wasteSource === source) && (pathway === 'All pathways' || batch.circularPathway === pathway)
-    && (weight === 'All weight statuses' || batch.weightStatus === weight) && (organization === 'All organizations' || batch.sourceOrganizationId === organization);
-}
-function csvCell(value: string) { return `"${value.replaceAll('"', '""')}"`; }

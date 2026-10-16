@@ -81,7 +81,7 @@ export default function HomePage({ notFound = false }: { notFound?: boolean }) {
         <div className="home-container home-institutions-inner"><p>Research-led.<br /><strong>Community-minded.</strong></p><div className="home-institution-logos">
           <a href="https://www.dost.gov.ph/" target="_blank" rel="noopener noreferrer" className="home-institution-dost" aria-label="DOST - Department of Science and Technology (opens in a new tab)"><img src={dost} alt="DOST" width={140} height={140} /></a>
           <a href="https://www.pchrd.dost.gov.ph/" target="_blank" rel="noopener noreferrer" className="home-institution-pchrd" aria-label="DOST-PCHRD (opens in a new tab)"><img src={pchrd} alt="Philippine Council for Health Research and Development" width={540} height={270} /></a>
-          <a href="https://national-u.edu.ph/" target="_blank" rel="noopener noreferrer" className="home-institution-nu" aria-label="National University (opens in a new tab)"><img src={university} alt="National University" width={500} height={281} /></a>
+          <a href="https://www.nu.edu.ph/" target="_blank" rel="noopener noreferrer" className="home-institution-nu" aria-label="National University (opens in a new tab)"><img src={university} alt="National University" width={500} height={281} /></a>
         </div><span className="home-institutions-label">Project institutions</span></div>
       </section>
 

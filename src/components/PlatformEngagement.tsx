@@ -3,7 +3,7 @@ import { SectionHeader } from './SectionHeader';
 
 export function PlatformEngagement({ data, periodLabel }: { data: EngagementMetrics; periodLabel: string }) {
   const metrics = [
-    ['Monthly active users', data.monthlyActiveUsers.toLocaleString(), 'Latest month in selected period'],
+    ['Monthly active users', data.monthlyActiveUsersAvailable === false ? 'Not available' : data.monthlyActiveUsers.toLocaleString(), 'Reported summaries in final selected month'],
     ['Sessions', data.sessions.toLocaleString(), `${data.averageSessionMinutes} min average duration`],
     ['Waste submissions', data.wasteSubmissions.toLocaleString(), 'System-recorded submission actions'],
     ['Barter actions', data.barterActions.toLocaleString(), 'Listings, matches, and offer actions'],

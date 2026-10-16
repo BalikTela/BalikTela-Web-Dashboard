@@ -9,6 +9,7 @@
   "scripts": {
     "analytics:poc:generate": "tsx scripts/generate-predictive-dataset.ts",
     "test:predictive:ui": "node --import tsx scripts/test-predictive-ui.ts",
+    "test:reports:ui": "node --import tsx scripts/test-reports-ui.ts",
     "start": "node build/server/index.js",
     "build:server": "tsc -p tsconfig.build.json",
     "build:render": "npm run build && npm run build:server",

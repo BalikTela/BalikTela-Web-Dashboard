@@ -2,6 +2,8 @@
 
 Research prototype for circular textile analytics, participant profiles, and traceable barter exchanges.
 
+Development scope: this repository focuses on the web dashboard, its public homepage, and supporting API. A separate developer owns the mobile application. Coordinate shared schema and authentication changes with that developer; mobile implementation is outside this repository's scope.
+
 Database integration baseline: [Supabase Migration and Shared Schema](docs/Supabase_Migration.md)
 
 Current prototype model: [BalikTela ERD](docs/BalikTela_ERD.md)
@@ -57,6 +59,17 @@ For the owner-only backup administrator command and private password rotation, s
 - Legacy MongoDB schema commands remain available only for controlled data migration and rollback during the transition.
 
 The seed command refuses to run when the target already contains users. Seeding never runs automatically during API startup.
+
+## Reporting periods and exports
+
+- Operational reporting uses `Asia/Manila` calendar dates, not a fixed demo cutoff. Last 30/90 days include today through the generation timestamp. The previous comparison is the immediately preceding equal elapsed duration; year-to-date compares with the previous calendar year through the same local date/time, clamping leap day to February 28. All time has no previous comparison.
+- Custom dates are inclusive calendar dates. Today's end is capped at now; future, reversed, malformed and incomplete windows return HTTP 400. Monthly capacity uses actual calendar-month fractions rather than a fixed 30-day assumption. Long windows are limited to ten years.
+- Date filters select **batch-registration cohorts**. Outcomes use the latest recorded evidence through generation time, not reconstructed historical states. An old registration cohort can therefore include a later completion. Cohort intake / modeled window capacity is not a claim of historical calendar utilization. Engagement uses interaction timestamps within the selected window and assigned access scope. Monthly-active-user summaries use the final selected calendar month, not the last month that happened to contain data.
+- Reports uses the global filters and the same cohort selector, mass aggregation and data-quality rules as analytics. Four report types have distinct content: material flow, quality, organization participation and environmental methodology status. CSV and printable reports include the period, timezone, generation time, role/scope, filters, definitions and units. Exports are regenerated when requested; concurrent operational changes can produce a newer result than a previously loaded preview.
+- CSV exports retain up to six decimal places in metric tons, correctly quote delimiters/newlines and neutralize spreadsheet formula prefixes. Aggregate-only reports group organizations and omit names, emails and source identifiers, including identifying filter values. Export permission is rechecked for every request. Unknown report IDs return 404; invalid filters/formats return 400, without creating export audits.
+- Preview: `GET /api/reports/:reportId/preview` requires `reports.read`. CSV: `GET /api/reports/:reportId/export`; printable data: the same export route with `format=print`. Both export formats additionally require `reports.export` and create an audit event. Previewing alone does not record an export. Print / PDF prepares the selected report's **complete table** on a dedicated page with print styles and a Save as PDF action, not the report catalog or only the current pagination page. It uses the browser's PDF support, not a server PDF service.
+- Existing unfiltered material/transfer/recovery registry API calls retain all-time access within their existing permissions. Dashboard callers pass explicit periods. The predictive PoC remains on its separate fixed synthetic snapshot.
+- `npm run test:reports:ui` covers seven viewport sizes, all report types, rolling/custom dates, filters, CSV downloads, printable full data/PDF generation, pagination, invalid/empty periods, and read-only researcher access. Unit/API tests cover Manila/year/leap boundaries, exact report/analytics totals, discrepancy thresholds, aggregate exports and CSV parsing.
 
 ## Synthetic predictive analytics PoC
 

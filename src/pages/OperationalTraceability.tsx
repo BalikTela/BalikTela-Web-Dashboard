@@ -27,7 +27,7 @@ export function OperationalTraceability({filters}:{filters:Filters}) {
   const [offer,setOffer]=useState<BarterOffer|null>(null);
   const [error,setError]=useState('');
   const [loading,setLoading]=useState(true);
-  const load=useCallback(async()=>{try{const result=await platformApi.transfers();setTransfers(result.transfers);if(canManage)setOffers((await platformApi.offers()).offers);setError('');}catch(reason){setError(reason instanceof Error?reason.message:'Unable to load transfers.');}finally{setLoading(false);}},[canManage]);
+  const load=useCallback(async()=>{try{const result=await platformApi.transfers({ ...filters });setTransfers(result.transfers);if(canManage)setOffers((await platformApi.offers()).offers);setError('');}catch(reason){setError(reason instanceof Error?reason.message:'Unable to load transfers.');}finally{setLoading(false);}},[canManage,filters]);
   useEffect(()=>{void load();},[load]);
   useRecordRefresh(load,['/transfers','/barter','/material-batches']);
   const rows=useMemo(()=>transfers.filter(item=>filters.transactionStatus==='All statuses'||(filters.transactionStatus==='Flagged'?['Disputed','Rejected'].includes(item.status):filters.transactionStatus==='In transit'?item.status==='Handed over':filters.transactionStatus==='In sorting'?item.status==='Received':filters.transactionStatus==='Pending validation'?['Reserved','Validated'].includes(item.status):item.status===filters.transactionStatus)).filter(item=>[item.id,item.batchId,item.materialCategory,item.status,item.circularOutcome].join(' ').toLowerCase().includes(query.toLowerCase())),[filters.transactionStatus,query,transfers]);

@@ -16,7 +16,7 @@ import { AuthProvider } from './context/AuthContext';
 export type PageKey = 'overview' | 'listings' | 'materials' | 'operations' | 'waste' | 'transactions' | 'stakeholders' | 'facilities' | 'geographic' | 'advanced' | 'quality' | 'governance' | 'reports' | 'organizations' | 'users' | 'audit' | 'profile' | 'settings';
 
 const dataPages = new Set<PageKey>(['overview', 'waste', 'transactions', 'stakeholders', 'facilities', 'geographic', 'advanced']);
-const filterablePages = new Set<PageKey>([...dataPages, 'materials', 'operations', 'quality']);
+const filterablePages = new Set<PageKey>([...dataPages, 'materials', 'operations', 'quality', 'reports']);
 const pageModules = {
   overview: () => import('./pages/Overview'), listings: () => import('./pages/ListingOversight'), materials: () => import('./pages/MaterialRegistry'),
   traceability: () => import('./pages/OperationalTraceability'), operations: () => import('./pages/RecoveryOperations'), waste: () => import('./pages/WasteAnalytics'),
@@ -107,7 +107,7 @@ function DashboardWorkspace() {
     if (page === 'advanced' && data) return <AdvancedAnalytics data={data} onModeChange={setAdvancedMode} />;
     if (page === 'quality') return <DataQuality filters={filters} />;
     if (page === 'governance') return <Governance />;
-    if (page === 'reports') return <Reports />;
+    if (page === 'reports') return <Reports filters={filters} active={currentPage === 'reports'} />;
     if (page === 'organizations') return <OrganizationAdmin />;
     if (page === 'users') return <UserAccounts />;
     if (page === 'audit') return <AuditTrail />;

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getDashboardData } from '../services/dashboardService';
 import type { Filters } from '../types';
+import { manilaDate } from '../../shared/reporting';
 
 type DashboardData = Awaited<ReturnType<typeof getDashboardData>>;
 type CacheEntry = { data: DashboardData; cachedAt: number };
@@ -25,12 +26,20 @@ function remember(key: string, data: DashboardData) {
 
 export function useDashboardData(filters: Filters, scopeKey: string, enabled = true) {
   const [revision,setRevision]=useState(0);
+  const [reportingDay, setReportingDay] = useState(() => manilaDate());
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dataRef = useRef<DashboardData | null>(null);
-  const key = useMemo(() => cacheKey(filters, scopeKey), [filters, scopeKey]);
+  const key = useMemo(() => cacheKey(filters, `${scopeKey}:${reportingDay}`), [filters, scopeKey, reportingDay]);
+  useEffect(() => {
+    const nextMidnight = Date.parse(`${reportingDay}T00:00:00+08:00`) + 86400000;
+    const timer = window.setTimeout(() => setReportingDay(manilaDate()), Math.max(1, nextMidnight - Date.now()));
+    const checkDay = () => setReportingDay(manilaDate());
+    window.addEventListener('focus', checkDay);
+    return () => { window.clearTimeout(timer); window.removeEventListener('focus', checkDay); };
+  }, [reportingDay]);
 
   useEffect(()=>{
     const invalidate=()=>{ clientCache.clear();setRevision(value=>value+1); };

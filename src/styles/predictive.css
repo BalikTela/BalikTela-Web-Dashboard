@@ -1,7 +1,6 @@
 .predictive { color: #22342c; font-variant-numeric: tabular-nums; }
 .predictive-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 4px 0 24px; }
-.predictive-label { display: inline-flex; align-items: center; gap: 6px; color: #916014; font-size: 11px; font-weight: 600; }
-.predictive-heading h3 { margin-top: 8px; font-size: 24px; font-weight: 600; }
+.predictive-heading h3 { margin-top: 0; font-size: 24px; font-weight: 600; }
 .predictive-heading p, .predictive-chart-heading p { margin-top: 5px; color: #6a7770; font-size: 12px; line-height: 1.6; }
 .predictive-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, .8fr) 36px; align-items: end; gap: 12px; border-top: 1px solid #e3e9e5; border-bottom: 1px solid #e3e9e5; padding: 16px 0; }
 .predictive-filters label { display: grid; gap: 7px; min-width: 0; font-size: 11px; font-weight: 500; color: #66736c; }

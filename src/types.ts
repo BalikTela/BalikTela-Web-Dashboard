@@ -12,6 +12,8 @@ export type StakeholderType = 'Producer' | 'Recycler' | 'Consumer' | 'NGO' | 'Ad
 
 export interface Filters {
   dateRange: string;
+  startDate: string;
+  endDate: string;
   region: Region;
   city: string;
   textileType: 'All textiles' | TextileType;
@@ -172,6 +174,7 @@ export interface BarterMetrics {
 
 export interface EngagementMetrics {
   monthlyActiveUsers: number;
+  monthlyActiveUsersAvailable?: boolean;
   sessions: number;
   wasteSubmissions: number;
   barterActions: number;

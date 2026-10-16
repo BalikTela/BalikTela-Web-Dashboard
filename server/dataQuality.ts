@@ -1,0 +1,12 @@
+import { formatMass, hasDiscrepancy, percentage } from '../shared/metrics.js';
+import type { MaterialBatchRecord, TransferRecord, UserRecord } from './types.js';
+
+export function buildDataQuality(actor: UserRecord, batches: MaterialBatchRecord[], transfers: TransferRecord[], threshold: number, now = new Date()) {
+  const issues = [
+    ...batches.filter(item => item.weightStatus === 'Estimated').map(item => ({ id: `DQ-${item.id}-EST`, severity: 'Warning', category: 'Unverified measurement', entityType: 'Material batch', entityId: actor.scope.aggregateOnly ? 'De-identified batch' : item.id, description: `${item.materialCategory} has an estimated weight without measured or verified evidence.`, status: 'Open' })),
+    ...batches.filter(item => item.currentStatus === 'Reserved' && now.getTime() - Date.parse(item.updatedAt) > 7 * 86400000).map(item => ({ id: `DQ-${item.id}-STALE`, severity: 'Warning', category: 'Stale workflow', entityType: 'Material batch', entityId: actor.scope.aggregateOnly ? 'De-identified batch' : item.id, description: 'Reserved material has no lifecycle update for more than seven days.', status: 'Open' })),
+    ...transfers.filter(item => hasDiscrepancy(item.discrepancyKg, item.handoverWeightKg ?? item.agreedWeightKg, threshold)).map(item => ({ id: `DQ-${item.id}-VAR`, severity: 'Critical', category: 'Mass discrepancy', entityType: 'Transfer', entityId: actor.scope.aggregateOnly ? 'De-identified transfer' : item.id, description: `${formatMass(Math.abs(item.discrepancyKg ?? 0))} discrepancy meets or exceeds the ${threshold}% threshold of handover mass (agreed mass when handover is absent).`, status: item.status === 'Completed' ? 'Documented' : 'Open' })),
+    ...transfers.filter(item => item.status === 'Completed' && item.verifiedWeightKg === null).map(item => ({ id: `DQ-${item.id}-VERIFY`, severity: 'Critical', category: 'Invalid completion', entityType: 'Transfer', entityId: actor.scope.aggregateOnly ? 'De-identified transfer' : item.id, description: 'Completed transfer has no verified weight.', status: 'Open' })),
+  ];
+  return { thresholdPercent: threshold, summary: { totalIssues: issues.length, critical: issues.filter(item => item.severity === 'Critical').length, warnings: issues.filter(item => item.severity === 'Warning').length, validationCoveragePercent: percentage(batches.filter(item => item.weightStatus === 'Verified').length, batches.length) }, issues };
+}

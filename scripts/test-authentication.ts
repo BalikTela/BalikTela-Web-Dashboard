@@ -77,6 +77,18 @@ try {
   const adminLogin = await signIn(administrator.email, initial);
   assert.equal(adminLogin.user.passwordHash, undefined);
   assert.ok(adminLogin.access.permissions.includes('users.manage'));
+  if (!live) {
+    const dashboard = (await call('/analytics/dashboard', undefined, adminLogin.accessToken)).data;
+    const operations = (await call('/analytics/operations', undefined, adminLogin.accessToken)).data;
+    const report = (await call('/reports/material-flow/preview', undefined, adminLogin.accessToken)).data;
+    const total = report.rows.at(-1);
+    assert.equal(Number(total[3]), dashboard.circularFlow.generatedKg / 1000);
+    assert.equal(operations.metrics.declaredKg, dashboard.operations.metrics.declaredKg);
+    assert.equal(report.period.timeZone, 'Asia/Manila');
+    await call('/reports/missing/preview', undefined, adminLogin.accessToken, 404);
+    await call('/analytics/dashboard?dateRange=Custom%20range', undefined, adminLogin.accessToken, 400);
+    checks.push('shared live reporting periods, report/dashboard/operations reconciliation, invalid period and report rejection');
+  }
   if (live) {
     const backupEmail = `baliktela.backup-audit.${suffix}@example.test`;
     emails.push(backupEmail);

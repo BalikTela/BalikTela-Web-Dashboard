@@ -48,6 +48,8 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Prescriptive', exact: true }).count(), 0);
     await page.getByRole('button', { name: 'Predictive', exact: true }).click();
     const panel = page.locator('.predictive');
+    assert.equal(await panel.getByText('Synthetic proof of concept', { exact: true }).count(), 0);
+    await panel.getByText('Simulated platform activity. Separate from live operational records.', { exact: true }).waitFor();
     if (fail) { await panel.getByRole('button', { name: 'Retry forecast' }).waitFor(); fail = false; await panel.getByRole('button', { name: 'Retry forecast' }).click(); }
     await panel.getByRole('table', { name: 'Collection weekly projections' }).waitFor();
     assert.equal(await panel.getByRole('table').locator('tbody tr').count(), 4);

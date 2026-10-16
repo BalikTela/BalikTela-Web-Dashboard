@@ -4,6 +4,8 @@ import { platformApi } from './platformApi';
 export function getDashboardData(filters: Filters, signal?: AbortSignal) {
   return platformApi.dashboardAnalytics({
     dateRange: filters.dateRange,
+    startDate: filters.startDate,
+    endDate: filters.endDate,
     region: filters.region,
     city: filters.city,
     textileType: filters.textileType,

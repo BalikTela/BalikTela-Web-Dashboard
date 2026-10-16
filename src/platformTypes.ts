@@ -165,7 +165,7 @@ export interface OperationsAnalytics {
 }
 
 export interface DashboardAnalytics {
-  metadata: { periodLabel: string; reportingCutoff: string; denominatorNote: string; sampleDisclosure: string };
+  metadata: { periodLabel: string; reportingCutoff: string; denominatorNote: string; sampleDisclosure: string; period: import('../shared/reporting.js').ReportingPeriod };
   kpis: Kpi[];
   wasteTrend: WastePoint[];
   categoryShares: CategoryShare[];

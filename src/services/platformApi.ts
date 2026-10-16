@@ -1,6 +1,7 @@
 import type { AccessSummary, AuditRecord, AuthSessionSummary, BarterListing, BarterOffer, ChatMessage, Conversation, DashboardAnalytics, DataQualityResult, GovernanceData, MaterialBatch, OperationsAnalytics, Organization, PlatformConfiguration, PlatformFacility, PlatformUser, RecoveryRecord, ReportDefinition, Transfer, WalletEntry } from '../platformTypes';
 
 import type { PredictiveReport } from '../../shared/predictive';
+import type { ReportDocument } from '../../shared/reporting';
 
 const CSRF_KEY = 'baliktela_csrf';
 let accessToken: string | null = null;
@@ -53,7 +54,7 @@ async function refreshAccessToken() {
   return refreshPromise;
 }
 
-async function request<T>(path: string, init: RequestInit = {}, allowRefresh = true): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, allowRefresh = true, responseType: 'json' | 'text' = 'json'): Promise<T> {
   const token = accessToken;
   const response = await fetch(`/api${path}`, {
     ...init,
@@ -62,10 +63,13 @@ async function request<T>(path: string, init: RequestInit = {}, allowRefresh = t
   });
   if (response.status === 401 && allowRefresh && !['/auth/login', '/auth/register', '/auth/refresh'].includes(path)) {
     if (!accessToken || accessToken === token) await refreshAccessToken();
-    return request<T>(path, init, false);
+    return request<T>(path, init, false, responseType);
   }
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.message ?? 'The BalikTela service could not complete this request.');
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message ?? 'The BalikTela service could not complete this request.');
+  }
+  const payload = responseType === 'text' ? await response.text() : await response.json().catch(() => ({}));
   if (init.method && init.method !== 'GET' && !path.startsWith('/auth/')) window.dispatchEvent(new CustomEvent('baliktela:records-changed', {detail:path}));
   return payload as T;
 }
@@ -111,7 +115,7 @@ export const platformApi = {
   createOffer: (listingId: string, body: Record<string, unknown>) => request<{ offer: BarterOffer }>(`/barter/listings/${listingId}/offers`, { method: 'POST', body: JSON.stringify(body) }),
   decideOffer: (offerId: string, status: 'Accepted' | 'Declined') => request<{ offer: BarterOffer }>(`/barter/offers/${offerId}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   manageOffer: (id: string, body: Record<string, unknown>) => request<{offer:BarterOffer}>(`/barter/offers/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(body)}),
-  transfers: () => request<{ transfers: Transfer[] }>('/transfers'),
+  transfers: (filters?: Record<string, unknown>) => request<{ transfers: Transfer[] }>(`/transfers${queryString(filters)}`),
   advanceTransfer: (transferId: string, body: Record<string, unknown>) => request<{ transfer: Transfer }>(`/transfers/${transferId}`, { method: 'PATCH', body: JSON.stringify(body) }),
   materialBatches: (filters?: Record<string, unknown>) => request<{ batches: MaterialBatch[] }>(`/material-batches${queryString(filters)}`),
   createMaterialBatch: (body: Record<string, unknown>) => request<{batch:MaterialBatch}>('/material-batches',{method:'POST',body:JSON.stringify(body)}),
@@ -137,10 +141,13 @@ export const platformApi = {
   updateConfiguration: (body: Partial<PlatformConfiguration>) => request<{ configuration: PlatformConfiguration }>('/configuration', { method: 'PATCH', body: JSON.stringify(body) }),
   governance: () => request<GovernanceData>('/governance'),
   reports: () => request<{ reports: ReportDefinition[]; scope: { role: string; canExport: boolean; aggregateOnly: boolean } }>('/reports'),
-  async exportReport(reportId: string) {
-    const response = await fetch(`/api/reports/${encodeURIComponent(reportId)}/export`, { headers: { ...(getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {}) } });
-    if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.message ?? 'Unable to export this report.'); }
-    const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `baliktela-${reportId}-demo.csv`; link.click(); URL.revokeObjectURL(url);
+  reportPreview: (reportId: string, filters?: Record<string, unknown>, signal?: AbortSignal) => request<ReportDocument>(`/reports/${encodeURIComponent(reportId)}/preview${queryString(filters)}`, { signal }),
+  printableReport: (reportId: string, filters?: Record<string, unknown>) => request<ReportDocument>(`/reports/${encodeURIComponent(reportId)}/export${queryString({ ...filters, format: 'print' })}`),
+  async exportReport(reportId: string, filters?: Record<string, unknown>, filename = `baliktela-${reportId}.csv`) {
+    const csv = await request<string>(`/reports/${encodeURIComponent(reportId)}/export${queryString(filters)}`, {}, true, 'text');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1_000);
   },
   conversations: () => request<{ conversations: Conversation[] }>('/barter/conversations'),
   messages: (conversationId: string) => request<{ conversation: Conversation; messages: ChatMessage[] }>(`/barter/conversations/${conversationId}/messages`),

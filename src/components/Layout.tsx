@@ -53,7 +53,7 @@ const pageMeta: Record<PageKey, { title: string; description: string }> = {
   settings: { title: 'Settings', description: 'Governance, privacy, and data source controls' },
 };
 
-export function Layout({ activePage, onPageChange, children, dataContextLabel = 'Demo data · Sep 21, 2026' }: { activePage: PageKey; onPageChange: (page: PageKey) => void; children: ReactNode; dataContextLabel?: string }) {
+export function Layout({ activePage, onPageChange, children, dataContextLabel = 'Operational data · Asia/Manila' }: { activePage: PageKey; onPageChange: (page: PageKey) => void; children: ReactNode; dataContextLabel?: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, access, logout, storageMode } = useAuth();
   const meta = pageMeta[activePage];

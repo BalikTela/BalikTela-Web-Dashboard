@@ -21,6 +21,10 @@ try {
     await page.route('**/api/**', route => route.fulfill({ status: 401, json: { message: 'Isolated public-page test; no session.' } }));
     await page.goto(base);
     await page.getByRole('heading', { level: 1, name: 'BalikTelaPH', exact: true }).waitFor();
+    const universityLink = page.getByRole('link', { name: 'National University (opens in a new tab)', exact: true });
+    assert.equal(await universityLink.getAttribute('href'), 'https://www.nu.edu.ph/');
+    assert.equal(await universityLink.getAttribute('target'), '_blank');
+    assert.equal(await universityLink.getAttribute('rel'), 'noopener noreferrer');
     const photo = await page.locator('.home-hero-image').evaluate(async image => {
       await image.decode();
       const canvas = document.createElement('canvas'); canvas.width = canvas.height = 20;

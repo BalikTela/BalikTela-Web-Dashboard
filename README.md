@@ -58,7 +58,23 @@ For the owner-only backup administrator command and private password rotation, s
 
 The seed command refuses to run when the target already contains users. Seeding never runs automatically during API startup.
 
-## Access control
+## Synthetic predictive analytics PoC
+
+Advanced Analytics > Predictive provides four-week weekly collection forecasts, projected platform-declared textile waste, and category-conditioned recycler offer-selection tendencies. All outputs are conspicuously synthetic and non-production. The dashboard includes diagnostic and predictive views only; prescriptive analytics is outside its current scope. No new Supabase tables or live operational writes are used.
+
+- Bundled artifacts: `data/predictive/v1/observations.csv` (9,600 linked event records), `manifest.json`, `evaluation.json`, and `data-dictionary.json`. Regenerate deterministically with `npm run analytics:poc:generate` (seed 20261016). The canonical JSON observation checksum is in the manifest.
+- Coverage: 120 complete Monday-Sunday UTC weeks, 24 June 2024 through 11 October 2026. Four forecast weeks begin 12 October 2026. This is a fixed demonstration snapshot, not a continuously updating live prediction.
+- Chronological split: 6,720 training records / 84 weeks; 1,440 validation / 18 weeks; 1,440 test / 18 weeks (70/15/15). Events aggregate to 120 weekly time points, not 9,600 independent weekly samples.
+- Volume models compare last-value, trailing 8-week mean, trailing 26-week OLS trend, and 52-week seasonal naive baselines. Validation MAE selects each method before testing. Both held-out blocks use 15 rolling origins with four horizons, giving 60 overlapping forecast errors. Previously observed test history may enter subsequent origins; future outcomes cannot. Final forecasts refit the selected methods on all available past history.
+- Weekly ranges are nominal 80% empirical validation-error quantiles, not guaranteed coverage. The interface reports actual test coverage, MAE in tons, and WAPE (sum absolute errors / sum observed mass). Collection cannot exceed declared mass. The four-week sum has no claimed confidence interval.
+- Recycler tendencies use Beta(1,1)-smoothed binary selection rates by offered category, not market shares or individual recycler recommendations. A validation-selected recency window is tested with log loss and Brier score against a category-blind pooled baseline. Actual selected shares have a separate denominator and label.
+- Every scope requires at least 600 observations and 104 active weeks. These are PoC sufficiency heuristics, not approved research thresholds. Sparse region/category combinations intentionally show no prediction. Region/material filters affect all model outputs; the historical-view selector changes chart history only. Operational cohort filters are hidden in this mode because this dataset is separate.
+- `GET /api/analytics/predictive` requires `analytics.predictive.read`, assigned centrally to Administrator, Government, and Researcher. Current sessions and account status are checked on every request. Government/research region limits are enforced. The dataset-export endpoint additionally requires `reports.export` and exports only the selected permitted synthetic scope. Raw fixture records never enter the frontend bundle.
+- `npm test` checks data reproducibility, chronological partitions, mass accounting, percentage denominators, sparse gates, API authorization and region-restricted exports. `npm run test:predictive:ui` checks all three views, filter effects, error/retry, download, cache reuse, chart pixels and seven viewport sizes against the actual model builder using isolated browser fixtures.
+
+The generator deliberately contains seasonality, regional mass scales and category selection patterns. Good synthetic test scores demonstrate the pipeline only, not real-world accuracy. Production use still requires real mobile-to-web data quality checks, approved target definitions, methodology ownership, acceptance thresholds, external validation and monitoring. Method references: [Simple Statistics](https://simple-statistics.github.io/docs/) and [Forecasting: Principles and Practice](https://otexts.com/fpp3/toolbox.html).
+
+## Centralized permissions
 
 `server/access-control.ts` is the authoritative role-permission and operational-scope policy. Every protected API endpoint declares a permission, reloads the current account before authorization, and applies organization, facility, aggregate-only, and export boundaries. Login and session restoration return the effective permission list so the web navigation uses the same policy as the API.
 

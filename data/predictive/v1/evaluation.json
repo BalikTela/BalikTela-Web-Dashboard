@@ -1,0 +1,888 @@
+{
+  "mode": "synthetic-poc",
+  "status": "ready",
+  "message": "Synthetic forecasts and selection tendencies; not approved for real-world decisions.",
+  "manifest": {
+    "version": "baliktela-synthetic-predictive-v1",
+    "seed": 20261016,
+    "sha256": "2fdd302722d89744208cf8f2516baca1e9fce867d6f6db379d6d81a2e941d390",
+    "recordCount": 9600,
+    "weeklyObservations": 120,
+    "periodStart": "2024-06-24",
+    "cutoffExclusive": "2026-10-12T00:00:00.000Z",
+    "partitions": [
+      {
+        "name": "training",
+        "records": 6720,
+        "weeks": 84,
+        "start": "2024-06-24",
+        "endExclusive": "2026-02-02"
+      },
+      {
+        "name": "validation",
+        "records": 1440,
+        "weeks": 18,
+        "start": "2026-02-02",
+        "endExclusive": "2026-06-08"
+      },
+      {
+        "name": "test",
+        "records": 1440,
+        "weeks": 18,
+        "start": "2026-06-08",
+        "endExclusive": "2026-10-12"
+      }
+    ],
+    "disclosure": "Entirely synthetic proof-of-concept observations. No real participant identities, operational measurements, or validated real-world accuracy claims."
+  },
+  "scope": {
+    "region": "All regions",
+    "materialCategory": "All materials",
+    "records": 9600,
+    "activeWeeks": 120
+  },
+  "regions": [
+    "Metro Manila",
+    "Central Visayas",
+    "Western Visayas",
+    "Davao Region"
+  ],
+  "materials": [
+    "Cotton",
+    "Polyester",
+    "Denim",
+    "Mixed fabric",
+    "Uniforms",
+    "Household linen"
+  ],
+  "history": [
+    {
+      "weekStart": "2024-06-24",
+      "declaredKg": 17225.16,
+      "collectedKg": 10868.66
+    },
+    {
+      "weekStart": "2024-07-01",
+      "declaredKg": 19418.42,
+      "collectedKg": 12140.84
+    },
+    {
+      "weekStart": "2024-07-08",
+      "declaredKg": 17806.52,
+      "collectedKg": 11016.03
+    },
+    {
+      "weekStart": "2024-07-15",
+      "declaredKg": 19107.39,
+      "collectedKg": 12002.69
+    },
+    {
+      "weekStart": "2024-07-22",
+      "declaredKg": 19563.52,
+      "collectedKg": 12287.1
+    },
+    {
+      "weekStart": "2024-07-29",
+      "declaredKg": 19612.97,
+      "collectedKg": 12472.83
+    },
+    {
+      "weekStart": "2024-08-05",
+      "declaredKg": 19262.37,
+      "collectedKg": 12248.23
+    },
+    {
+      "weekStart": "2024-08-12",
+      "declaredKg": 18404.36,
+      "collectedKg": 11620.36
+    },
+    {
+      "weekStart": "2024-08-19",
+      "declaredKg": 18518.82,
+      "collectedKg": 11886.84
+    },
+    {
+      "weekStart": "2024-08-26",
+      "declaredKg": 18290.06,
+      "collectedKg": 11828.74
+    },
+    {
+      "weekStart": "2024-09-02",
+      "declaredKg": 19058.69,
+      "collectedKg": 12262.27
+    },
+    {
+      "weekStart": "2024-09-09",
+      "declaredKg": 19313.27,
+      "collectedKg": 12486.07
+    },
+    {
+      "weekStart": "2024-09-16",
+      "declaredKg": 17864.99,
+      "collectedKg": 11508.99
+    },
+    {
+      "weekStart": "2024-09-23",
+      "declaredKg": 19465.44,
+      "collectedKg": 12510.81
+    },
+    {
+      "weekStart": "2024-09-30",
+      "declaredKg": 18488.4,
+      "collectedKg": 11774.29
+    },
+    {
+      "weekStart": "2024-10-07",
+      "declaredKg": 18891.25,
+      "collectedKg": 12317.55
+    },
+    {
+      "weekStart": "2024-10-14",
+      "declaredKg": 19242.96,
+      "collectedKg": 12414.76
+    },
+    {
+      "weekStart": "2024-10-21",
+      "declaredKg": 19053.47,
+      "collectedKg": 12312.99
+    },
+    {
+      "weekStart": "2024-10-28",
+      "declaredKg": 18505.95,
+      "collectedKg": 11942.14
+    },
+    {
+      "weekStart": "2024-11-04",
+      "declaredKg": 19782.9,
+      "collectedKg": 12983.31
+    },
+    {
+      "weekStart": "2024-11-11",
+      "declaredKg": 20383.68,
+      "collectedKg": 13110.18
+    },
+    {
+      "weekStart": "2024-11-18",
+      "declaredKg": 19404.97,
+      "collectedKg": 12428.97
+    },
+    {
+      "weekStart": "2024-11-25",
+      "declaredKg": 20217.88,
+      "collectedKg": 13181.03
+    },
+    {
+      "weekStart": "2024-12-02",
+      "declaredKg": 20214.29,
+      "collectedKg": 12932.85
+    },
+    {
+      "weekStart": "2024-12-09",
+      "declaredKg": 19221.08,
+      "collectedKg": 12471.44
+    },
+    {
+      "weekStart": "2024-12-16",
+      "declaredKg": 18997.97,
+      "collectedKg": 12486.23
+    },
+    {
+      "weekStart": "2024-12-23",
+      "declaredKg": 19009,
+      "collectedKg": 12678.16
+    },
+    {
+      "weekStart": "2024-12-30",
+      "declaredKg": 19702.85,
+      "collectedKg": 13075.79
+    },
+    {
+      "weekStart": "2025-01-06",
+      "declaredKg": 17553.82,
+      "collectedKg": 11564.87
+    },
+    {
+      "weekStart": "2025-01-13",
+      "declaredKg": 18189,
+      "collectedKg": 12061.23
+    },
+    {
+      "weekStart": "2025-01-20",
+      "declaredKg": 17982.19,
+      "collectedKg": 11997.95
+    },
+    {
+      "weekStart": "2025-01-27",
+      "declaredKg": 16278.98,
+      "collectedKg": 10650.22
+    },
+    {
+      "weekStart": "2025-02-03",
+      "declaredKg": 17154.59,
+      "collectedKg": 11299.37
+    },
+    {
+      "weekStart": "2025-02-10",
+      "declaredKg": 15661.35,
+      "collectedKg": 10289.95
+    },
+    {
+      "weekStart": "2025-02-17",
+      "declaredKg": 16422.16,
+      "collectedKg": 11050.03
+    },
+    {
+      "weekStart": "2025-02-24",
+      "declaredKg": 15370.48,
+      "collectedKg": 10302.41
+    },
+    {
+      "weekStart": "2025-03-03",
+      "declaredKg": 15302.51,
+      "collectedKg": 10297.45
+    },
+    {
+      "weekStart": "2025-03-10",
+      "declaredKg": 14285.73,
+      "collectedKg": 9477.34
+    },
+    {
+      "weekStart": "2025-03-17",
+      "declaredKg": 15502.16,
+      "collectedKg": 10200.39
+    },
+    {
+      "weekStart": "2025-03-24",
+      "declaredKg": 16094.45,
+      "collectedKg": 10779.15
+    },
+    {
+      "weekStart": "2025-03-31",
+      "declaredKg": 14932.17,
+      "collectedKg": 10084.84
+    },
+    {
+      "weekStart": "2025-04-07",
+      "declaredKg": 14291.36,
+      "collectedKg": 9627.74
+    },
+    {
+      "weekStart": "2025-04-14",
+      "declaredKg": 16641.9,
+      "collectedKg": 11097.75
+    },
+    {
+      "weekStart": "2025-04-21",
+      "declaredKg": 16832.83,
+      "collectedKg": 11368.55
+    },
+    {
+      "weekStart": "2025-04-28",
+      "declaredKg": 15967.15,
+      "collectedKg": 10631.52
+    },
+    {
+      "weekStart": "2025-05-05",
+      "declaredKg": 16710.7,
+      "collectedKg": 11356.19
+    },
+    {
+      "weekStart": "2025-05-12",
+      "declaredKg": 16535.48,
+      "collectedKg": 11388.94
+    },
+    {
+      "weekStart": "2025-05-19",
+      "declaredKg": 17135.88,
+      "collectedKg": 11505.8
+    },
+    {
+      "weekStart": "2025-05-26",
+      "declaredKg": 18571.32,
+      "collectedKg": 12540.86
+    },
+    {
+      "weekStart": "2025-06-02",
+      "declaredKg": 20092.38,
+      "collectedKg": 13632.88
+    },
+    {
+      "weekStart": "2025-06-09",
+      "declaredKg": 19817.39,
+      "collectedKg": 13381.43
+    },
+    {
+      "weekStart": "2025-06-16",
+      "declaredKg": 21668.03,
+      "collectedKg": 14826.12
+    },
+    {
+      "weekStart": "2025-06-23",
+      "declaredKg": 21025.87,
+      "collectedKg": 14568.85
+    },
+    {
+      "weekStart": "2025-06-30",
+      "declaredKg": 20022.62,
+      "collectedKg": 13714.1
+    },
+    {
+      "weekStart": "2025-07-07",
+      "declaredKg": 20603.17,
+      "collectedKg": 13721.87
+    },
+    {
+      "weekStart": "2025-07-14",
+      "declaredKg": 22144.07,
+      "collectedKg": 15337.43
+    },
+    {
+      "weekStart": "2025-07-21",
+      "declaredKg": 21124.16,
+      "collectedKg": 14667.2
+    },
+    {
+      "weekStart": "2025-07-28",
+      "declaredKg": 20666.11,
+      "collectedKg": 14487.49
+    },
+    {
+      "weekStart": "2025-08-04",
+      "declaredKg": 21309.75,
+      "collectedKg": 14947.06
+    },
+    {
+      "weekStart": "2025-08-11",
+      "declaredKg": 22363.36,
+      "collectedKg": 15657.34
+    },
+    {
+      "weekStart": "2025-08-18",
+      "declaredKg": 20709.48,
+      "collectedKg": 14308.31
+    },
+    {
+      "weekStart": "2025-08-25",
+      "declaredKg": 20800.76,
+      "collectedKg": 14435.86
+    },
+    {
+      "weekStart": "2025-09-01",
+      "declaredKg": 21662.83,
+      "collectedKg": 15028.15
+    },
+    {
+      "weekStart": "2025-09-08",
+      "declaredKg": 19435.78,
+      "collectedKg": 13465.91
+    },
+    {
+      "weekStart": "2025-09-15",
+      "declaredKg": 21371.53,
+      "collectedKg": 14960.75
+    },
+    {
+      "weekStart": "2025-09-22",
+      "declaredKg": 21260.77,
+      "collectedKg": 14876.63
+    },
+    {
+      "weekStart": "2025-09-29",
+      "declaredKg": 21903.62,
+      "collectedKg": 15321.06
+    },
+    {
+      "weekStart": "2025-10-06",
+      "declaredKg": 23106.07,
+      "collectedKg": 16108.6
+    },
+    {
+      "weekStart": "2025-10-13",
+      "declaredKg": 21586.51,
+      "collectedKg": 15123.11
+    },
+    {
+      "weekStart": "2025-10-20",
+      "declaredKg": 21527.25,
+      "collectedKg": 15426.68
+    },
+    {
+      "weekStart": "2025-10-27",
+      "declaredKg": 22424.14,
+      "collectedKg": 15994.65
+    },
+    {
+      "weekStart": "2025-11-03",
+      "declaredKg": 21157.88,
+      "collectedKg": 14967.68
+    },
+    {
+      "weekStart": "2025-11-10",
+      "declaredKg": 21936.81,
+      "collectedKg": 15426.83
+    },
+    {
+      "weekStart": "2025-11-17",
+      "declaredKg": 23988.95,
+      "collectedKg": 17002.14
+    },
+    {
+      "weekStart": "2025-11-24",
+      "declaredKg": 25054.84,
+      "collectedKg": 17658.92
+    },
+    {
+      "weekStart": "2025-12-01",
+      "declaredKg": 23239.68,
+      "collectedKg": 16563.45
+    },
+    {
+      "weekStart": "2025-12-08",
+      "declaredKg": 21509.15,
+      "collectedKg": 15294.56
+    },
+    {
+      "weekStart": "2025-12-15",
+      "declaredKg": 21843.12,
+      "collectedKg": 15692.88
+    },
+    {
+      "weekStart": "2025-12-22",
+      "declaredKg": 21338.86,
+      "collectedKg": 15291.82
+    },
+    {
+      "weekStart": "2025-12-29",
+      "declaredKg": 21168.26,
+      "collectedKg": 15485.11
+    },
+    {
+      "weekStart": "2026-01-05",
+      "declaredKg": 20676.48,
+      "collectedKg": 14808.74
+    },
+    {
+      "weekStart": "2026-01-12",
+      "declaredKg": 20811.16,
+      "collectedKg": 14613.47
+    },
+    {
+      "weekStart": "2026-01-19",
+      "declaredKg": 20586.75,
+      "collectedKg": 14838.86
+    },
+    {
+      "weekStart": "2026-01-26",
+      "declaredKg": 18198.02,
+      "collectedKg": 12966.16
+    },
+    {
+      "weekStart": "2026-02-02",
+      "declaredKg": 17502.22,
+      "collectedKg": 12548.4
+    },
+    {
+      "weekStart": "2026-02-09",
+      "declaredKg": 17939.43,
+      "collectedKg": 12905.2
+    },
+    {
+      "weekStart": "2026-02-16",
+      "declaredKg": 17403.4,
+      "collectedKg": 12627.71
+    },
+    {
+      "weekStart": "2026-02-23",
+      "declaredKg": 18128.06,
+      "collectedKg": 13191.37
+    },
+    {
+      "weekStart": "2026-03-02",
+      "declaredKg": 16694.03,
+      "collectedKg": 12050.56
+    },
+    {
+      "weekStart": "2026-03-09",
+      "declaredKg": 16870.02,
+      "collectedKg": 12281.58
+    },
+    {
+      "weekStart": "2026-03-16",
+      "declaredKg": 16447.43,
+      "collectedKg": 11926.34
+    },
+    {
+      "weekStart": "2026-03-23",
+      "declaredKg": 16382.9,
+      "collectedKg": 11789.84
+    },
+    {
+      "weekStart": "2026-03-30",
+      "declaredKg": 15667.95,
+      "collectedKg": 11277.44
+    },
+    {
+      "weekStart": "2026-04-06",
+      "declaredKg": 16161.63,
+      "collectedKg": 11836.07
+    },
+    {
+      "weekStart": "2026-04-13",
+      "declaredKg": 17564.84,
+      "collectedKg": 13016.63
+    },
+    {
+      "weekStart": "2026-04-20",
+      "declaredKg": 17344.58,
+      "collectedKg": 12648
+    },
+    {
+      "weekStart": "2026-04-27",
+      "declaredKg": 19133.04,
+      "collectedKg": 13976.91
+    },
+    {
+      "weekStart": "2026-05-04",
+      "declaredKg": 18320.21,
+      "collectedKg": 13372.69
+    },
+    {
+      "weekStart": "2026-05-11",
+      "declaredKg": 19452.4,
+      "collectedKg": 14198.88
+    },
+    {
+      "weekStart": "2026-05-18",
+      "declaredKg": 19575.29,
+      "collectedKg": 14608.86
+    },
+    {
+      "weekStart": "2026-05-25",
+      "declaredKg": 19191.77,
+      "collectedKg": 14184.9
+    },
+    {
+      "weekStart": "2026-06-01",
+      "declaredKg": 22224.32,
+      "collectedKg": 16151.45
+    },
+    {
+      "weekStart": "2026-06-08",
+      "declaredKg": 23961.8,
+      "collectedKg": 17815.02
+    },
+    {
+      "weekStart": "2026-06-15",
+      "declaredKg": 21820.96,
+      "collectedKg": 16211.19
+    },
+    {
+      "weekStart": "2026-06-22",
+      "declaredKg": 23102.18,
+      "collectedKg": 17110.62
+    },
+    {
+      "weekStart": "2026-06-29",
+      "declaredKg": 25907.37,
+      "collectedKg": 19220.04
+    },
+    {
+      "weekStart": "2026-07-06",
+      "declaredKg": 23632.25,
+      "collectedKg": 17624.98
+    },
+    {
+      "weekStart": "2026-07-13",
+      "declaredKg": 24756.98,
+      "collectedKg": 18470.27
+    },
+    {
+      "weekStart": "2026-07-20",
+      "declaredKg": 24298.82,
+      "collectedKg": 18136.15
+    },
+    {
+      "weekStart": "2026-07-27",
+      "declaredKg": 24328.15,
+      "collectedKg": 18090.85
+    },
+    {
+      "weekStart": "2026-08-03",
+      "declaredKg": 24515.82,
+      "collectedKg": 18056.79
+    },
+    {
+      "weekStart": "2026-08-10",
+      "declaredKg": 24779.28,
+      "collectedKg": 18412.42
+    },
+    {
+      "weekStart": "2026-08-17",
+      "declaredKg": 23134.34,
+      "collectedKg": 17415.82
+    },
+    {
+      "weekStart": "2026-08-24",
+      "declaredKg": 25037.38,
+      "collectedKg": 18790.36
+    },
+    {
+      "weekStart": "2026-08-31",
+      "declaredKg": 23199.91,
+      "collectedKg": 17285.54
+    },
+    {
+      "weekStart": "2026-09-07",
+      "declaredKg": 24636.84,
+      "collectedKg": 18850.82
+    },
+    {
+      "weekStart": "2026-09-14",
+      "declaredKg": 23719.33,
+      "collectedKg": 17852.51
+    },
+    {
+      "weekStart": "2026-09-21",
+      "declaredKg": 24609.18,
+      "collectedKg": 18723.34
+    },
+    {
+      "weekStart": "2026-09-28",
+      "declaredKg": 25147.27,
+      "collectedKg": 19287.14
+    },
+    {
+      "weekStart": "2026-10-05",
+      "declaredKg": 23101.27,
+      "collectedKg": 17450.33
+    }
+  ],
+  "forecast": [
+    {
+      "weekStart": "2026-10-12",
+      "declaredKg": 23101.27,
+      "collectedKg": 17450.33,
+      "declaredLowerKg": 21914.88,
+      "declaredUpperKg": 24287.66,
+      "collectedLowerKg": 16561.22,
+      "collectedUpperKg": 18339.44
+    },
+    {
+      "weekStart": "2026-10-19",
+      "declaredKg": 23101.27,
+      "collectedKg": 17450.33,
+      "declaredLowerKg": 21845.6,
+      "declaredUpperKg": 24356.94,
+      "collectedLowerKg": 16530.44,
+      "collectedUpperKg": 18370.22
+    },
+    {
+      "weekStart": "2026-10-26",
+      "declaredKg": 23101.27,
+      "collectedKg": 17450.33,
+      "declaredLowerKg": 21423.84,
+      "declaredUpperKg": 24778.7,
+      "collectedLowerKg": 16164.19,
+      "collectedUpperKg": 18736.47
+    },
+    {
+      "weekStart": "2026-11-02",
+      "declaredKg": 23101.27,
+      "collectedKg": 17450.33,
+      "declaredLowerKg": 20928.26,
+      "declaredUpperKg": 25274.28,
+      "collectedLowerKg": 15828.86,
+      "collectedUpperKg": 19071.8
+    }
+  ],
+  "totals": {
+    "declaredKg": 92405.08,
+    "collectedKg": 69801.32
+  },
+  "models": {
+    "declared": {
+      "method": "last-value",
+      "validation": {
+        "maeKg": 1022.59,
+        "wapePercent": 5.8,
+        "biasKg": -309.37,
+        "predictions": 60,
+        "intervalCoveragePercent": null
+      },
+      "test": {
+        "maeKg": 1121.64,
+        "wapePercent": 4.64,
+        "biasKg": -242.9,
+        "predictions": 60,
+        "intervalCoveragePercent": 75
+      }
+    },
+    "collected": {
+      "method": "last-value",
+      "validation": {
+        "maeKg": 794.2,
+        "wapePercent": 6.18,
+        "biasKg": -286.59,
+        "predictions": 60,
+        "intervalCoveragePercent": null
+      },
+      "test": {
+        "maeKg": 883.58,
+        "wapePercent": 4.88,
+        "biasKg": -267.01,
+        "predictions": 60,
+        "intervalCoveragePercent": 68.33
+      }
+    }
+  },
+  "preferences": {
+    "windowWeeks": 52,
+    "testBrierScore": 0.211,
+    "baselineBrierScore": 0.2397,
+    "testLogLoss": 0.6112,
+    "testOffers": 1440,
+    "ranked": [
+      {
+        "materialCategory": "Cotton",
+        "offers": 675,
+        "selected": 534,
+        "selectionProbability": 0.7902511078286558,
+        "observedSelectedSharePercent": 21.84,
+        "changePoints": -0.8,
+        "weeklyRates": [
+          1,
+          1,
+          0.7272727272727273,
+          0.8461538461538461,
+          0.9230769230769231,
+          0.7857142857142857,
+          0.8666666666666667,
+          0.9230769230769231,
+          0.7272727272727273,
+          0.875,
+          0.8571428571428571,
+          0.7222222222222222
+        ]
+      },
+      {
+        "materialCategory": "Denim",
+        "offers": 696,
+        "selected": 544,
+        "selectionProbability": 0.7808022922636103,
+        "observedSelectedSharePercent": 22.25,
+        "changePoints": 8.04,
+        "weeklyRates": [
+          0.7,
+          0.8461538461538461,
+          0.9090909090909091,
+          0.9090909090909091,
+          0.9166666666666666,
+          0.875,
+          0.7272727272727273,
+          0.8,
+          0.5,
+          0.8823529411764706,
+          0.75,
+          0.875
+        ]
+      },
+      {
+        "materialCategory": "Uniforms",
+        "offers": 694,
+        "selected": 426,
+        "selectionProbability": 0.6135057471264368,
+        "observedSelectedSharePercent": 17.42,
+        "changePoints": -0.2,
+        "weeklyRates": [
+          0.7222222222222222,
+          0.8333333333333334,
+          0.6666666666666666,
+          0.4,
+          0.6,
+          0.75,
+          0.8571428571428571,
+          0.7058823529411765,
+          0.6153846153846154,
+          0.6428571428571429,
+          0.6363636363636364,
+          0.5
+        ]
+      },
+      {
+        "materialCategory": "Household linen",
+        "offers": 707,
+        "selected": 414,
+        "selectionProbability": 0.5853314527503526,
+        "observedSelectedSharePercent": 16.93,
+        "changePoints": -1.91,
+        "weeklyRates": [
+          0.6153846153846154,
+          0.5882352941176471,
+          0.625,
+          0.5882352941176471,
+          0.7333333333333333,
+          0.5,
+          0.42857142857142855,
+          0.4666666666666667,
+          0.6875,
+          0.38461538461538464,
+          0.75,
+          0.7272727272727273
+        ]
+      },
+      {
+        "materialCategory": "Polyester",
+        "offers": 680,
+        "selected": 301,
+        "selectionProbability": 0.44281524926686217,
+        "observedSelectedSharePercent": 12.31,
+        "changePoints": -1.28,
+        "weeklyRates": [
+          0.23076923076923078,
+          0.5333333333333333,
+          0.45454545454545453,
+          0.5454545454545454,
+          0.5833333333333334,
+          0.4166666666666667,
+          0.45454545454545453,
+          0.3125,
+          0.3684210526315789,
+          0.26666666666666666,
+          0.5,
+          0.4444444444444444
+        ]
+      },
+      {
+        "materialCategory": "Mixed fabric",
+        "offers": 708,
+        "selected": 226,
+        "selectionProbability": 0.31971830985915495,
+        "observedSelectedSharePercent": 9.24,
+        "changePoints": -1.17,
+        "weeklyRates": [
+          0.46153846153846156,
+          0.2857142857142857,
+          0.375,
+          0.38461538461538464,
+          0.3333333333333333,
+          0.5,
+          0.3333333333333333,
+          0.3333333333333333,
+          0.18181818181818182,
+          0.23076923076923078,
+          0.5,
+          0.3125
+        ]
+      }
+    ]
+  },
+  "limitations": [
+    "Synthetic proof of concept only. No real-world model validation or methodology approval is implied.",
+    "9,600 event records aggregate to 120 weekly observations, not 9,600 independent weekly time points.",
+    "Declared waste means material reported to this simulated platform; it is not a national waste-generation or landfill estimate.",
+    "Collection is constrained not to exceed declared mass. Weekly bands are empirical validation-error ranges at nominal 80%, not guaranteed coverage or a four-week-total interval.",
+    "Material selection scores estimate a simulated offer being selected, conditional on its category. They are not shares, do not sum to 100%, and do not represent real recycler preferences.",
+    "Model selection uses validation only. Final tests use rolling origins: previous observed test weeks may become inputs, but future outcomes never enter a forecast.",
+    "Final demonstration forecasts refit the selected methods on available past observations through the fixed dataset cutoff. History display filters do not change the training window."
+  ]
+}

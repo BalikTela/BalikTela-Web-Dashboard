@@ -1,0 +1,46 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { buildPredictiveReport, trainingCsv } from '../server/analytics/predictive.js';
+import { syntheticDataset } from '../server/analytics/synthetic.js';
+
+const directory = new URL('../data/predictive/v1/', import.meta.url);
+await mkdir(directory, { recursive: true });
+const report = buildPredictiveReport({ historyWeeks: 120 });
+const dictionary = {
+  purpose: 'Bundled, entirely synthetic BalikTela predictive analytics proof of concept. Never imported into live operational tables.',
+  unit: 'Canonical kilograms; the dashboard displays metric tons (1 t = 1,000 kg).',
+  grain: 'One simulated material declaration, collection and offer-response observation. These are linked simulated outcomes, not three independently summed masses.',
+  population: '80 observations per Monday-Sunday week, across four regions and six textile categories. Sixteen fictitious recycler IDs. No personal data.',
+  fields: {
+    id: 'Unique synthetic observation ID; never an operational batch ID.',
+    weekStart: 'Monday UTC date; all linked outcomes occur within this week.',
+    occurredAt: 'Simulated declaration/offer timestamp, UTC.',
+    collectionAt: 'Simulated collection timestamp, one day after declaration.',
+    selectionAt: 'Simulated offer-response timestamp, two days after declaration, whether selected or not.',
+    region: 'Synthetic operating region; not a claim of actual regional coverage.',
+    materialCategory: 'Offered textile category.',
+    recyclerId: 'Fictitious recipient used to simulate category-conditioned choices; no individual recycler predictions.',
+    declaredKg: 'Nonnegative mass declared to the simulated platform. Not total Philippine waste generation.',
+    collectedKg: 'Collected portion of declaredKg; never larger than declaredKg.',
+    recyclerSelected: 'Bernoulli response to an offer. A selected offer is not proof of completed recycling, diversion, or additional mass.',
+    partition: 'Training, validation or test, assigned by complete chronological weeks.',
+    isSynthetic: 'Always true.',
+  },
+  generation: 'Seeded LCG; category masses, regional scales, annual/half-year seasonal factors, trend and random shocks. Category response probabilities include synthetic period variation. These assumptions deliberately create learnable patterns and cannot validate real-world performance.',
+  protocol: {
+    split: '70/15/15 by complete weeks. 84 training, 18 validation, 18 test weeks. No random split.',
+    forecast: 'Four competing statistical baselines: last value, trailing 8-week mean, trailing 26-week OLS trend, and 52-week seasonal naive. Lowest validation MAE selects each target; the method is frozen before test scoring.',
+    evaluation: '15 rolling origins per held-out block, each with four horizons (60 overlapping predictions). An origin sees earlier weeks only, including already observed test weeks. Test forecasts are not independent samples.',
+    ranges: 'Per-horizon 80th percentile absolute validation error. Empirical nominal 80% ranges, with held-out coverage reported, not calibrated confidence guarantees. Collection is constrained by declared mass. Four-week totals have no advertised interval.',
+    preferences: 'Beta(1,1)-smoothed category-conditioned binary selection probability. Recency window (8/13/26/52 weeks) selected by validation log loss, test Brier score compared with pooled category-blind baseline. Not multiclass shares or individualized recommendations.',
+    regionalGate: 'At least 600 records and 104 active weeks for any selected scope. Counts are PoC heuristics, not a research-approved sufficiency test.',
+    productionGate: 'Always non-production. Requires real data validation, approved targets/denominators, methodology owner, acceptance thresholds and monitoring before operational decision support.',
+    checksum: 'manifest.sha256 hashes JSON.stringify of canonical generated observation objects, not the CSV byte representation.',
+  },
+  references: ['https://simple-statistics.github.io/docs/', 'https://otexts.com/fpp3/toolbox.html'],
+};
+await writeFile(new URL('observations.csv', directory), trainingCsv());
+for (const [name, value] of Object.entries({ manifest: syntheticDataset.manifest, evaluation: report, 'data-dictionary': dictionary })) {
+  await writeFile(new URL(`${name}.json`, directory), `${JSON.stringify(value, null, 2)}\n`);
+}
+console.log(JSON.stringify({ directory: fileURLToPath(directory), records: syntheticDataset.manifest.recordCount, partitions: syntheticDataset.manifest.partitions, checksum: syntheticDataset.manifest.sha256, forecasts: report.totals, models: report.models, preferences: report.preferences && { windowWeeks: report.preferences.windowWeeks, testBrierScore: report.preferences.testBrierScore, baselineBrierScore: report.preferences.baselineBrierScore } }, null, 2));

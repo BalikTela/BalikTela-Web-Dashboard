@@ -12,6 +12,7 @@ import {
   hashSessionToken, issueToken, passwordPolicyError, publicUser, requireAuth, securitySubjectHash, sessionIdFromRefreshToken, type AuthenticatedRequest,
 } from './auth.js';
 import { createSeedData } from './seed.js';
+import { registerPredictiveRoutes } from './analytics/routes.js';
 import { createStore } from './store.js';
 import { calculateOperationalMass, canIssueReward } from './domain.js';
 import { formatMass, hasDiscrepancy, percentage, toTons } from '../shared/metrics.js';
@@ -920,6 +921,7 @@ app.get('/api/wallet', requireAuth, permit('wallet.read'), async (req: Authentic
 });
 
 registerManagementRoutes(app, store);
+registerPredictiveRoutes(app, store);
 if (process.env.NODE_ENV === 'production' || process.env.SERVE_WEB === 'true') serveWebApp(app);
 
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {

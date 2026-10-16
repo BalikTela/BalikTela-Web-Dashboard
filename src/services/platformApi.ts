@@ -1,5 +1,7 @@
 import type { AccessSummary, AuditRecord, AuthSessionSummary, BarterListing, BarterOffer, ChatMessage, Conversation, DashboardAnalytics, DataQualityResult, GovernanceData, MaterialBatch, OperationsAnalytics, Organization, PlatformConfiguration, PlatformFacility, PlatformUser, RecoveryRecord, ReportDefinition, Transfer, WalletEntry } from '../platformTypes';
 
+import type { PredictiveReport } from '../../shared/predictive';
+
 const CSRF_KEY = 'baliktela_csrf';
 let accessToken: string | null = null;
 let refreshPromise: Promise<void> | null = null;
@@ -122,6 +124,13 @@ export const platformApi = {
   updateRecoveryRecord: (id: string, body: Record<string, unknown>) => request<{record:RecoveryRecord}>(`/recovery-records/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(body)}),
   operationsAnalytics: (filters?: Record<string, unknown>) => request<OperationsAnalytics>(`/analytics/operations${queryString(filters)}`),
   dashboardAnalytics: (filters?: Record<string, unknown>, signal?: AbortSignal) => request<DashboardAnalytics>(`/analytics/dashboard${queryString(filters)}`, { signal }),
+  predictiveAnalytics: (filters?: Record<string, unknown>, signal?: AbortSignal) => request<PredictiveReport>(`/analytics/predictive${queryString(filters)}`, { signal }),
+  async exportPredictiveDataset(filters?: Record<string, unknown>) {
+    const { csv, filename } = await request<{ csv: string; filename: string }>(`/analytics/predictive/dataset${queryString(filters)}`);
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  },
   dataQuality: (filters?: Record<string, unknown>) => request<DataQualityResult>(`/data-quality${queryString(filters)}`),
   auditRecords: (filters?: Record<string, unknown>) => request<{ records: AuditRecord[] }>(`/audit-records${queryString(filters)}`),
   configuration: () => request<{ configuration: PlatformConfiguration }>('/configuration'),

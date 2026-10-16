@@ -68,6 +68,7 @@ function DashboardWorkspace() {
   const [activePage, setActivePage] = useState<PageKey>('overview');
   const [visitedPages, setVisitedPages] = useState<Set<PageKey>>(() => new Set(['overview']));
   const [filters, setFilters] = useState<Filters>(initialFilters);
+  const [advancedMode, setAdvancedMode] = useState('Diagnostic');
   const restricted = !canAccessPage(access, activePage) || Boolean(user?.scope.aggregateOnly && ['listings', 'materials', 'operations'].includes(activePage));
   const currentPage: PageKey = restricted ? 'overview' : activePage;
   const dashboardScopeKey = useMemo(() => JSON.stringify({ id: user?.id, role: user?.role, organizationId: user?.organizationId, scope: user?.scope }), [user]);
@@ -103,7 +104,7 @@ function DashboardWorkspace() {
     if (page === 'stakeholders' && data) return <Stakeholders data={data} />;
     if (page === 'facilities' && data) return <Facilities data={data} />;
     if (page === 'geographic' && data) return <Geographic data={data} />;
-    if (page === 'advanced' && data) return <AdvancedAnalytics data={data} />;
+    if (page === 'advanced' && data) return <AdvancedAnalytics data={data} onModeChange={setAdvancedMode} />;
     if (page === 'quality') return <DataQuality filters={filters} />;
     if (page === 'governance') return <Governance />;
     if (page === 'reports') return <Reports />;
@@ -116,9 +117,9 @@ function DashboardWorkspace() {
   };
 
   return (
-    <Layout activePage={currentPage} onPageChange={openPage}>
+    <Layout activePage={currentPage} onPageChange={openPage} dataContextLabel={currentPage === 'advanced' && advancedMode === 'Predictive' ? 'Synthetic PoC · Fixed snapshot' : undefined}>
       <div className="space-y-6">
-        {filterablePages.has(currentPage) ? <FilterBar filters={filters} onChange={setFilters} /> : null}
+        {filterablePages.has(currentPage) && (currentPage !== 'advanced' || advancedMode === 'Diagnostic') ? <FilterBar filters={filters} onChange={setFilters} /> : null}
         {needsDashboardData && isRefreshing && data ? <p className="flex items-center gap-2 text-xs text-[#66736e]" role="status"><LoaderCircle size={14} className="animate-spin" />Refreshing analytics…</p> : null}
         {needsDashboardData && isLoading && !data ? <LoadingBlock /> : null}
         {needsDashboardData && error && !data ? <ErrorBlock message={error} /> : null}

@@ -42,7 +42,7 @@ const pageMeta: Record<PageKey, { title: string; description: string }> = {
   stakeholders: { title: 'Stakeholders', description: 'Participation and performance across the ecosystem' },
   facilities: { title: 'Recycling Facilities', description: 'Capacity, utilization, and processing operations' },
   geographic: { title: 'Geographic Insights', description: 'Regional activity and collection coverage' },
-  advanced: { title: 'Advanced Analytics', description: 'Diagnostic, predictive, and prescriptive views' },
+  advanced: { title: 'Advanced Analytics', description: 'Diagnostic and predictive views' },
   quality: { title: 'Data Quality', description: 'Validation coverage, discrepancies, and integrity findings' },
   governance: { title: 'Governance & Policy', description: 'Methodology, privacy, policy readiness, and constraints' },
   reports: { title: 'Reports', description: 'Exportable summaries for program stakeholders' },
@@ -53,7 +53,7 @@ const pageMeta: Record<PageKey, { title: string; description: string }> = {
   settings: { title: 'Settings', description: 'Governance, privacy, and data source controls' },
 };
 
-export function Layout({ activePage, onPageChange, children }: { activePage: PageKey; onPageChange: (page: PageKey) => void; children: ReactNode }) {
+export function Layout({ activePage, onPageChange, children, dataContextLabel = 'Demo data · Sep 21, 2026' }: { activePage: PageKey; onPageChange: (page: PageKey) => void; children: ReactNode; dataContextLabel?: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, access, logout, storageMode } = useAuth();
   const meta = pageMeta[activePage];
@@ -87,7 +87,7 @@ export function Layout({ activePage, onPageChange, children }: { activePage: Pag
           <div className="flex min-h-[64px] items-center gap-2 px-3 sm:min-h-[72px] sm:gap-3 sm:px-6 xl:px-8 2xl:px-10">
             <Button variant="ghost" size="icon" className="shrink-0 xl:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu size={19} /></Button>
             <div className="min-w-0 flex-1"><h1 className="truncate text-[17px] font-semibold text-[#17201d]">{meta.title}</h1><p className="hidden truncate text-xs text-[#718079] sm:block">{meta.description}</p></div>
-            <div className="hidden items-center gap-2 rounded-md border border-[#dfe5e2] bg-[#f7f9f8] px-2.5 py-1.5 text-[11px] font-medium text-[#66736e] 2xl:flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />Demo data · Sep 21, 2026</div>
+            <div className="hidden items-center gap-2 rounded-md border border-[#dfe5e2] bg-[#f7f9f8] px-2.5 py-1.5 text-[11px] font-medium text-[#66736e] 2xl:flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />{dataContextLabel}</div>
             <div className="hidden h-6 w-px bg-slate-200 sm:block" /><button type="button" onClick={() => navigate('profile')} className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-900 text-xs font-semibold text-white" aria-label="Open my profile">{initials(user?.fullName ?? 'BT')}</button>
             <Button variant="ghost" size="icon" onClick={logout} title="Sign out" aria-label="Sign out"><LogOut size={17} /></Button>
           </div>

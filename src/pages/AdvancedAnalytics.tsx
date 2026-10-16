@@ -5,28 +5,28 @@ import { SectionHeader } from '../components/SectionHeader';
 import type { getDashboardData } from '../services/dashboardService';
 import { Panel } from '../components/Panel';
 import { cn } from '../lib/utils';
+import { PredictiveAnalytics } from '../components/PredictiveAnalytics';
 
 type Data = Awaited<ReturnType<typeof getDashboardData>>;
-type Tab = 'Diagnostic' | 'Predictive' | 'Prescriptive';
+type Tab = 'Diagnostic' | 'Predictive';
 
-export function AdvancedAnalytics({ data }: { data: Data }) {
+export function AdvancedAnalytics({ data, onModeChange }: { data: Data; onModeChange?: (mode: Tab) => void }) {
   const [tab, setTab] = useState<Tab>('Diagnostic');
   return (
     <Panel>
       <SectionHeader
         title="Advanced Analytics"
-        eyebrow="Diagnostic, predictive, and prescriptive views"
+        eyebrow="Diagnostic and predictive views"
         actions={
-          <div className="flex rounded-md bg-slate-100 p-1">
-            {(['Diagnostic', 'Predictive', 'Prescriptive'] as Tab[]).map((item) => (
-              <button key={item} type="button" onClick={() => setTab(item)} className={cn('h-8 rounded px-3 text-sm font-medium transition-colors', tab === item ? 'bg-white text-slate-950 ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-900')}>{item}</button>
+          <div className="flex flex-wrap rounded-md bg-slate-100 p-1">
+            {(['Diagnostic', 'Predictive'] as Tab[]).map((item) => (
+              <button key={item} type="button" aria-pressed={tab === item} onClick={() => { setTab(item); onModeChange?.(item); }} className={cn('h-8 rounded px-3 text-sm font-medium transition-colors', tab === item ? 'bg-white text-slate-950 ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-900')}>{item}</button>
             ))}
           </div>
         }
       />
       {tab === 'Diagnostic' ? <Diagnostic data={data} /> : null}
-      {tab === 'Predictive' ? <Predictive data={data} /> : null}
-      {tab === 'Prescriptive' ? <Prescriptive data={data} /> : null}
+      {tab === 'Predictive' ? <PredictiveAnalytics /> : null}
     </Panel>
   );
 }
@@ -58,18 +58,4 @@ function DiagnosticMetric({ label, value, detail, warning = false }: { label: st
 
 function ChartSection({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
   return <section className={cn('min-w-0 border-t border-slate-200 pt-4', className)}><h3 className="mb-3 text-sm font-medium text-slate-700">{title}</h3>{children}</section>;
-}
-
-function Predictive({ data: _data }: { data: Data }) {
-  return (
-    <ModelGate title="Predictive analytics unavailable" detail="Forecasts remain disabled until a model, training dataset, validation protocol, performance thresholds, and approval owner are documented." />
-  );
-}
-
-function Prescriptive({ data: _data }: { data: Data }) {
-  return <ModelGate title="Prescriptive analytics unavailable" detail="Automated recommendations remain disabled until their decision rules, evidence requirements, risk controls, and governance process are approved." />;
-}
-
-function ModelGate({ title, detail }: { title: string; detail: string }) {
-  return <div className="section-enter grid min-h-80 place-items-center border-y border-slate-200 bg-slate-50/60 p-8 text-center"><div className="max-w-lg"><p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Non-production capability</p><h3 className="mt-3 text-xl font-semibold text-slate-950">{title}</h3><p className="mt-3 text-sm leading-6 text-slate-600">{detail}</p></div></div>;
 }

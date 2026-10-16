@@ -13,7 +13,7 @@ export const PERMISSIONS = [
   'facilities.read', 'facilities.manage',
   'transfers.read', 'transfers.manage',
   'recovery.read', 'recovery.create', 'recovery.manage',
-  'analytics.read', 'dataQuality.read', 'audit.read',
+  'analytics.read', 'analytics.predictive.read', 'dataQuality.read', 'audit.read',
   'configuration.read', 'configuration.manage',
   'governance.read', 'reports.read', 'reports.export',
   'messages.read', 'messages.create', 'wallet.read',
@@ -27,8 +27,8 @@ const organizationMonitoring: Permission[] = ['organizations.read', 'analytics.r
 
 export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   Administrator: PERMISSIONS,
-  Government: [...profile, 'organizations.read', 'facilities.read', 'analytics.read', 'audit.read', 'configuration.read', 'governance.read', 'reports.read', 'reports.export'],
-  Researcher: [...profile, 'organizations.read', 'listings.read', 'batches.read', 'facilities.read', 'transfers.read', 'recovery.read', 'analytics.read', 'dataQuality.read', 'configuration.read', 'governance.read', 'reports.read', 'reports.export'],
+  Government: [...profile, 'organizations.read', 'facilities.read', 'analytics.read', 'analytics.predictive.read', 'audit.read', 'configuration.read', 'governance.read', 'reports.read', 'reports.export'],
+  Researcher: [...profile, 'organizations.read', 'listings.read', 'batches.read', 'facilities.read', 'transfers.read', 'recovery.read', 'analytics.read', 'analytics.predictive.read', 'dataQuality.read', 'configuration.read', 'governance.read', 'reports.read', 'reports.export'],
   Producer: [...profile, ...discovery, ...organizationMonitoring, 'recovery.read'],
   Recycler: [...profile, ...discovery, ...organizationMonitoring, 'facilities.manage', 'recovery.read', 'recovery.create'],
   Upcycler: [...profile, ...discovery, ...organizationMonitoring, 'facilities.manage', 'recovery.read', 'recovery.create'],

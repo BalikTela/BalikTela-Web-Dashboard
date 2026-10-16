@@ -1,0 +1,33 @@
+{
+  "version": "baliktela-synthetic-predictive-v1",
+  "seed": 20261016,
+  "sha256": "2fdd302722d89744208cf8f2516baca1e9fce867d6f6db379d6d81a2e941d390",
+  "recordCount": 9600,
+  "weeklyObservations": 120,
+  "periodStart": "2024-06-24",
+  "cutoffExclusive": "2026-10-12T00:00:00.000Z",
+  "partitions": [
+    {
+      "name": "training",
+      "records": 6720,
+      "weeks": 84,
+      "start": "2024-06-24",
+      "endExclusive": "2026-02-02"
+    },
+    {
+      "name": "validation",
+      "records": 1440,
+      "weeks": 18,
+      "start": "2026-02-02",
+      "endExclusive": "2026-06-08"
+    },
+    {
+      "name": "test",
+      "records": 1440,
+      "weeks": 18,
+      "start": "2026-06-08",
+      "endExclusive": "2026-10-12"
+    }
+  ],
+  "disclosure": "Entirely synthetic proof-of-concept observations. No real participant identities, operational measurements, or validated real-world accuracy claims."
+}

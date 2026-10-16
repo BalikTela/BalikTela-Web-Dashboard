@@ -6,7 +6,7 @@ export type Permission =
   | 'profile.read' | 'profile.update' | 'users.read' | 'users.manage' | 'organizations.read' | 'organizations.manage'
   | 'listings.read' | 'listings.create' | 'listings.match' | 'listings.manage' | 'offers.read' | 'offers.create' | 'offers.manage' | 'batches.read' | 'batches.manage'
   | 'facilities.read' | 'facilities.manage' | 'transfers.read' | 'transfers.manage' | 'recovery.read' | 'recovery.create' | 'recovery.manage'
-  | 'analytics.read' | 'dataQuality.read' | 'audit.read' | 'configuration.read' | 'configuration.manage'
+  | 'analytics.read' | 'analytics.predictive.read' | 'dataQuality.read' | 'audit.read' | 'configuration.read' | 'configuration.manage'
   | 'governance.read' | 'reports.read' | 'reports.export' | 'messages.read' | 'messages.create' | 'wallet.read';
 
 export interface AccessSummary {

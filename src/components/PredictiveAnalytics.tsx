@@ -8,13 +8,14 @@ import { Button } from './ui/button';
 import { Select } from './ui/select';
 import { ForecastPlot, RateSparkline } from './PredictiveCharts';
 import '../styles/predictive.css';
+import { createSessionCache } from '../lib/sessionCache';
 
 type View = 'Collection forecast' | 'Declared waste' | 'Recycler tendencies';
 const views: View[] = ['Collection forecast', 'Declared waste', 'Recycler tendencies'];
 const number = (value: number) => value.toLocaleString('en-PH');
 const date = (value: string) => new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const endDate = (value: string) => date(new Date(Date.parse(value) - 86400000).toISOString());
-const reportCache = new Map<string, { report: PredictiveReport; expiresAt: number }>();
+const reportCache = createSessionCache<string, { report: PredictiveReport; expiresAt: number }>();
 
 export function PredictiveAnalytics() {
   const { user, access } = useAuth();

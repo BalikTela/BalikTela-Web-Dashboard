@@ -53,7 +53,8 @@ function App() {
   useEffect(() => {
     document.title = 'Web Dashboard | BalikTelaPH';
     if (user && !emailCallback && window.location.pathname !== '/dashboard') window.history.replaceState({}, '', '/dashboard');
-  }, [user, emailCallback]);
+    if (!user && !authLoading && !emailCallback && window.location.pathname !== '/login') window.history.replaceState({}, '', '/login');
+  }, [user, emailCallback, authLoading]);
 
   if (emailCallback) return <AuthPage onAuthenticated={() => setEmailCallback(false)} />;
 

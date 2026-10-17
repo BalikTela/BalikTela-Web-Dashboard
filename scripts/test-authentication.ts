@@ -163,6 +163,18 @@ try {
   }
   checks.push('pending institutional restriction, administrator-only approval, approval revocation, researcher permission boundary');
 
+  if (!live) {
+    await call(`/users/${researcher.id}`, { role: 'Government', reason: 'Verify role-change reauthentication' }, adminLogin.accessToken, 200, 'PATCH');
+    assert.equal((await call('/auth/me', undefined, research.accessToken, 401)).data.code, 'ACCOUNT_CHANGED');
+    await call('/auth/refresh', { refreshToken: research.refreshToken }, undefined, 401);
+    const changedRole = await signIn(researcher.email, initial);
+    assert.equal(changedRole.user.role, 'Government');
+    await call(`/users/${researcher.id}`, { role: 'Researcher', reason: 'Restore isolated audit role' }, adminLogin.accessToken, 200, 'PATCH');
+    assert.equal((await call('/auth/me', undefined, changedRole.accessToken, 401)).data.code, 'ACCOUNT_CHANGED');
+    research = await signIn(researcher.email, initial);
+    checks.push('administrator role edits revoke existing access and refresh credentials; next login receives the new role');
+  }
+
   const web = await call('/auth/login', { email: researcher.email, password: initial, client: 'web' });
   const cookie = web.response.headers.getSetCookie().find(value => value.startsWith('baliktela_refresh='))!;
   assert.ok(cookie.includes('HttpOnly') && cookie.includes('SameSite=Lax') && cookie.includes('Path=/api/auth'));

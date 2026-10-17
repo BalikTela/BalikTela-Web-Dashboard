@@ -2,14 +2,32 @@ import type { AccessSummary, AuditRecord, AuthSessionSummary, BarterListing, Bar
 
 import type { PredictiveReport } from '../../shared/predictive';
 import type { ReportDocument } from '../../shared/reporting';
+import { reauthenticationCode, REAUTHENTICATION_MESSAGES, type ReauthenticationCode } from '../../shared/sessionPolicy';
 
 const CSRF_KEY = 'baliktela_csrf';
 let accessToken: string | null = null;
 let refreshPromise: Promise<void> | null = null;
+let authenticationEpoch = 0;
+const REAUTH_KEY = 'baliktela_reauthentication';
+
+export function pendingReauthentication() { return reauthenticationCode(sessionStorage.getItem(REAUTH_KEY)); }
+export function clearReauthenticationNotice() { sessionStorage.removeItem(REAUTH_KEY); }
+export function requireReauthentication(code: ReauthenticationCode) {
+  const token = accessToken;
+  const hadSession = Boolean(token || localStorage.getItem(CSRF_KEY));
+  if (!hadSession) return;
+  sessionStorage.setItem(REAUTH_KEY, code);
+  clearToken();
+  window.dispatchEvent(new CustomEvent('baliktela:auth-expired', { detail: code }));
+  if (token) {
+    // Revoke only the old bearer session. Ignore cookies so a late response cannot clear a new login.
+    void fetch('/api/auth/logout', { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: '{}' }).catch(() => {});
+  }
+}
 
 export function getStoredToken() { return accessToken; }
 export function storeToken(token: string, csrfToken?: string) { accessToken = token; if (csrfToken) localStorage.setItem(CSRF_KEY, csrfToken); }
-export function clearToken() { accessToken = null; localStorage.removeItem(CSRF_KEY); localStorage.removeItem('baliktela_session'); }
+export function clearToken() { authenticationEpoch++; accessToken = null; localStorage.removeItem(CSRF_KEY); localStorage.removeItem('baliktela_session'); window.dispatchEvent(new Event('baliktela:auth-cleared')); }
 
 interface AuthenticationResult {
   token: string;
@@ -37,6 +55,7 @@ interface RegistrationResult {
 async function refreshAccessToken() {
   if (!refreshPromise) {
     refreshPromise = (async () => {
+      const epoch = authenticationEpoch;
       const csrfToken = localStorage.getItem(CSRF_KEY);
       const response = await fetch('/api/auth/refresh', {
         method: 'POST', credentials: 'include',
@@ -44,8 +63,9 @@ async function refreshAccessToken() {
         body: '{}',
       });
       const payload = await response.json().catch(() => ({}));
+      if (epoch !== authenticationEpoch) throw new Error('The authentication state changed during this request.');
       if (!response.ok) {
-        if ([401, 403].includes(response.status)) { const hadSession = Boolean(accessToken || csrfToken); clearToken(); if (hadSession) window.dispatchEvent(new Event('baliktela:auth-expired')); }
+        if ([401, 403].includes(response.status)) requireReauthentication(reauthenticationCode(payload.code) ?? 'SESSION_EXPIRED');
         throw new Error(payload.message ?? 'Your session has expired.');
       }
       storeToken(payload.accessToken ?? payload.token, payload.csrfToken);
@@ -56,20 +76,32 @@ async function refreshAccessToken() {
 
 async function request<T>(path: string, init: RequestInit = {}, allowRefresh = true, responseType: 'json' | 'text' = 'json'): Promise<T> {
   const token = accessToken;
+  const epoch = authenticationEpoch;
   const response = await fetch(`/api${path}`, {
     ...init,
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init.headers },
   });
-  if (response.status === 401 && allowRefresh && !['/auth/login', '/auth/register', '/auth/refresh'].includes(path)) {
-    if (!accessToken || accessToken === token) await refreshAccessToken();
-    return request<T>(path, init, false, responseType);
-  }
+  if (epoch !== authenticationEpoch) throw new Error('The authentication state changed during this request.');
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
+    if (epoch !== authenticationEpoch) throw new Error('The authentication state changed during this request.');
+    const code = reauthenticationCode(payload.code);
+    if ([401, 403].includes(response.status) && code) {
+      requireReauthentication(code);
+      throw new Error(REAUTHENTICATION_MESSAGES[code]);
+    }
+    if (response.status === 401 && !['/auth/login', '/auth/register', '/auth/refresh'].includes(path)) {
+      if (allowRefresh) {
+        if (!accessToken || accessToken === token) await refreshAccessToken();
+        return request<T>(path, init, false, responseType);
+      }
+      requireReauthentication('SESSION_EXPIRED');
+    }
     throw new Error(payload.message ?? 'The BalikTela service could not complete this request.');
   }
   const payload = responseType === 'text' ? await response.text() : await response.json().catch(() => ({}));
+  if (epoch !== authenticationEpoch) throw new Error('The authentication state changed during this request.');
   if (init.method && init.method !== 'GET' && !path.startsWith('/auth/')) window.dispatchEvent(new CustomEvent('baliktela:records-changed', {detail:path}));
   return payload as T;
 }
@@ -98,7 +130,7 @@ export const platformApi = {
   logoutAll: () => request<{ revokedSessions: number }>('/auth/logout-all', { method: 'POST' }),
   sessions: () => request<{ sessions: AuthSessionSummary[] }>('/auth/sessions'),
   revokeSession: (sessionId: string) => request<void>(`/auth/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
-  me: () => request<{ user: PlatformUser; access: AccessSummary; storage: string }>('/auth/me'),
+  me: (signal?: AbortSignal) => request<{ user: PlatformUser; access: AccessSummary; storage: string }>('/auth/me', { signal }),
   updateProfile: (body: Partial<PlatformUser>) => request<{ user: PlatformUser }>('/users/me', { method: 'PATCH', body: JSON.stringify(body) }),
   users: () => request<{ users: PlatformUser[] }>('/users'),
   setVerification: (userId: string, verification: PlatformUser['verification']) => request<{ user: PlatformUser }>(`/users/${userId}/verification`, { method: 'PATCH', body: JSON.stringify({ verification }) }),

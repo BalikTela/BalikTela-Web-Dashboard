@@ -326,7 +326,7 @@ app.post('/api/auth/refresh', async (req, res) => {
   const session = await store.findSession(sessionId);
   if (!session || session.revokedAt || new Date(session.expiresAt).getTime() <= Date.now()) {
     clearRefreshCookie(res);
-    return res.status(401).json({ message: 'The refresh session is invalid, revoked, or expired.' });
+    return res.status(401).json({ code: session?.revokedAt ? 'SESSION_REVOKED' : 'SESSION_EXPIRED', message: 'The refresh session is invalid, revoked, or expired.' });
   }
 
   const presentedHash = hashSessionToken(refreshToken);
@@ -334,7 +334,7 @@ app.post('/api/auth/refresh', async (req, res) => {
     await store.rotateSessionToken(session.id, presentedHash, '', '', new Date().toISOString());
     clearRefreshCookie(res);
     await audit(session.userId, 'auth.refresh.replay', 'Session', session.id, 'A previously used refresh token was replayed; the session was revoked.');
-    return res.status(401).json({ message: 'Refresh-token replay detected. Sign in again.' });
+    return res.status(401).json({ code: 'SESSION_REVOKED', message: 'Refresh-token replay detected. Sign in again.' });
   }
   if (session.client === 'web' && hashSessionToken(String(req.headers['x-csrf-token'] ?? '')) !== session.csrfHash) {
     return res.status(403).json({ message: 'Refresh request failed CSRF validation.' });
@@ -344,7 +344,7 @@ app.post('/api/auth/refresh', async (req, res) => {
   if (!user || ['Suspended','Deactivated'].includes(user.accountStatus)) {
     await store.revokeSession(session.id, session.userId, new Date().toISOString());
     clearRefreshCookie(res);
-    return res.status(403).json({ message: 'The account linked to this session is unavailable.' });
+    return res.status(403).json({ code: 'ACCOUNT_UNAVAILABLE', message: 'The account linked to this session is unavailable.' });
   }
 
   const nextRefreshToken = createRefreshToken(session.id);
@@ -353,7 +353,7 @@ app.post('/api/auth/refresh', async (req, res) => {
   if (rotated !== 'rotated') {
     clearRefreshCookie(res);
     if (rotated === 'replayed') await audit(session.userId, 'auth.refresh.replay', 'Session', session.id, 'Concurrent refresh-token replay detected; the session was revoked.');
-    return res.status(401).json({ message: rotated === 'replayed' ? 'Refresh-token replay detected. Sign in again.' : 'The refresh credential is invalid.' });
+    return res.status(401).json({ code: 'SESSION_REVOKED', message: rotated === 'replayed' ? 'Refresh-token replay detected. Sign in again.' : 'The refresh credential is invalid.' });
   }
 
   const accessToken = issueToken(user.id, user.role, session.id);
@@ -488,7 +488,7 @@ app.patch('/api/users/:id', requireAuth, permit('users.manage'), async (req: Aut
   if (req.body.approve===true && accountStatus==='Active') patch.verification='Demo verified';
   const updated={...target,...patch};
   await saveManagement(store,req.actor!,[{name:'users',previous:target,record:updated}],'user.access.updated',target.id,String(req.body.reason ?? 'Account information or access updated.'));
-  const accessChanged = target.role !== updated!.role || target.organizationId !== updated!.organizationId || target.accountStatus !== updated!.accountStatus || JSON.stringify(target.scope) !== JSON.stringify(updated!.scope);
+  const accessChanged = target.role !== updated!.role || target.organizationId !== updated!.organizationId || target.verification !== updated.verification || target.accountStatus !== updated!.accountStatus || JSON.stringify(target.scope) !== JSON.stringify(updated!.scope);
   const revokedSessions = accessChanged ? await store.revokeUserSessions(target.id, new Date().toISOString()) : 0;
   if (usesSupabaseAuth && target.authUserId && target.accountStatus !== updated!.accountStatus) await identity.setSuspended(target.authUserId, ['Suspended','Deactivated'].includes(updated!.accountStatus));
   res.json({ user: publicUser(updated!), revokedSessions });

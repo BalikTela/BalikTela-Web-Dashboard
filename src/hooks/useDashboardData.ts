@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getDashboardData } from '../services/dashboardService';
 import type { Filters } from '../types';
 import { manilaDate } from '../../shared/reporting';
+import { createSessionCache } from '../lib/sessionCache';
 
 type DashboardData = Awaited<ReturnType<typeof getDashboardData>>;
 type CacheEntry = { data: DashboardData; cachedAt: number };
 
-const clientCache = new Map<string, CacheEntry>();
+const clientCache = createSessionCache<string, CacheEntry>();
 const freshForMs = 30_000;
 const maximumEntries = 24;
 
@@ -44,7 +45,8 @@ export function useDashboardData(filters: Filters, scopeKey: string, enabled = t
   useEffect(()=>{
     const invalidate=()=>{ clientCache.clear();setRevision(value=>value+1); };
     window.addEventListener('baliktela:records-changed',invalidate);
-    return ()=>window.removeEventListener('baliktela:records-changed',invalidate);
+    window.addEventListener('baliktela:auth-cleared',invalidate);
+    return ()=>{window.removeEventListener('baliktela:records-changed',invalidate);window.removeEventListener('baliktela:auth-cleared',invalidate);};
   },[]);
 
   useEffect(() => { dataRef.current = data; }, [data]);

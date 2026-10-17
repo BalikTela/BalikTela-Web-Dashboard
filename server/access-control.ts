@@ -59,11 +59,19 @@ export function authorize(store: Store, permission: Permission) {
       store.findSession(req.auth.sessionId),
       store.findById('users', req.auth.userId),
     ]);
-    if (!session || session.userId !== req.auth.userId || session.revokedAt || new Date(session.expiresAt).getTime() <= Date.now()) {
-      return res.status(401).json({ message: 'Your database session is invalid, revoked, or expired.' });
+    if (!session || session.userId !== req.auth.userId) {
+      return res.status(401).json({ code: 'SESSION_REVOKED', message: 'Your database session is invalid, revoked, or expired.' });
     }
-    if (!actor) return res.status(401).json({ message: 'The account linked to this session no longer exists.' });
-    if (['Suspended', 'Deactivated'].includes(actor.accountStatus)) return res.status(403).json({ message: 'This account is suspended or deactivated. Contact a BalikTela administrator.' });
+    if (!actor) return res.status(401).json({ code: 'ACCOUNT_UNAVAILABLE', message: 'The account linked to this session no longer exists.' });
+    if (actor.role !== req.auth.role) {
+      if (!session.revokedAt) await store.revokeSession(session.id, actor.id, new Date().toISOString());
+      return res.status(401).json({ code: 'ACCOUNT_CHANGED', message: 'Your account role has changed. Sign in again to load your current access.' });
+    }
+    const sessionEnded = Boolean(session.revokedAt) || new Date(session.expiresAt).getTime() <= Date.now();
+    if (['Suspended', 'Deactivated'].includes(actor.accountStatus)) return res.status(sessionEnded ? 401 : 403).json({ code: 'ACCOUNT_UNAVAILABLE', message: 'This account is suspended or deactivated. Contact a BalikTela administrator.' });
+    if (sessionEnded) {
+      return res.status(401).json({ code: session.revokedAt ? 'SESSION_REVOKED' : 'SESSION_EXPIRED', message: 'Your database session is invalid, revoked, or expired.' });
+    }
     if (!hasPermission(actor, permission)) {
       const message = actor.accountStatus === 'Pending verification'
         ? 'This account must be verified before using this function.'

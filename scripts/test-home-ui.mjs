@@ -8,7 +8,7 @@ await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
 const checks = [];
 try {
-  for (const viewport of [{ width: 320, height: 740 }, { width: 375, height: 812 }, { width: 768, height: 1024 }, { width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 2560, height: 1440 }]) {
+  for (const viewport of [{ width: 320, height: 740 }, { width: 375, height: 812 }, { width: 768, height: 1024 }, { width: 1024, height: 600 }, { width: 1280, height: 650 }, { width: 1366, height: 768 }, { width: 1440, height: 900 }, { width: 1512, height: 861 }, { width: 1920, height: 1080 }, { width: 2560, height: 1440 }]) {
     const context = await browser.newContext({ viewport, reducedMotion: 'reduce' });
     const page = await context.newPage();
     await context.route('https://baliktelaprogressive.vercel.app/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Isolated mobile app destination fixture</h1>' }));
@@ -36,7 +36,16 @@ try {
     });
     assert.ok(photo.width > 1000 && photo.colors > 100, 'Hero photograph must be loaded and nonblank.');
     if (viewport.width >= 960) {
-      assert.ok(await page.locator('.home-institutions').evaluate(element => element.getBoundingClientRect().top < innerHeight), 'The first viewport must show the beginning of the next section.');
+      const intro = await page.evaluate(() => {
+        const hero = document.querySelector('.home-hero').getBoundingClientRect();
+        const copy = document.querySelector('.home-hero-copy').getBoundingClientRect();
+        const institutions = document.querySelector('.home-institutions').getBoundingClientRect();
+        const logos = [...document.querySelectorAll('.home-institution-logos a')].map(element => element.getBoundingClientRect().toJSON());
+        return { hero: hero.toJSON(), copy: copy.toJSON(), institutions: institutions.toJSON(), logos, height: innerHeight, width: innerWidth };
+      });
+      assert.ok(intro.institutions.bottom <= intro.height + 1, `${viewport.width}x${viewport.height}: the entire institution strip must fit in the first viewport.`);
+      assert.ok(intro.copy.top >= intro.hero.top && intro.copy.bottom <= intro.hero.bottom + 1, 'Hero text and both calls to action must not be clipped.');
+      for (const logo of intro.logos) assert.ok(logo.top >= intro.institutions.top && logo.bottom <= intro.height && logo.left >= 0 && logo.right <= intro.width, 'Every institution logo must be fully visible without scrolling.');
     } else {
       const toggle = page.locator('#public-menu-toggle');
       await toggle.click();
@@ -115,6 +124,17 @@ try {
   await motionPage.waitForTimeout(650);
   assert.equal(await motionPage.locator('.home-path-layout').evaluate(element => Number(getComputedStyle(element).opacity)), 1, 'Scroll entrance must settle without leaving content hidden.');
   await motionPage.screenshot({ path: `${output}/pathways-motion-1440.png` });
+  for (const viewport of [{ width: 960, height: 600 }, { width: 1366, height: 768 }, { width: 1512, height: 861 }, { width: 1512, height: 650 }, { width: 1920, height: 800 }, { width: 2560, height: 1440 }]) {
+    await motionPage.setViewportSize(viewport);
+    await motionPage.evaluate(() => scrollTo(0, 0));
+    const resized = await motionPage.evaluate(() => {
+      const hero = document.querySelector('.home-hero').getBoundingClientRect();
+      const copy = document.querySelector('.home-hero-copy').getBoundingClientRect();
+      const logos = document.querySelector('.home-institutions').getBoundingClientRect();
+      return logos.bottom <= innerHeight + 1 && copy.top >= hero.top && copy.bottom <= hero.bottom + 1;
+    });
+    assert.ok(resized, `${viewport.width}x${viewport.height}: resizing must keep the hero copy and complete logo strip visible.`);
+  }
   await motionContext.close();
-  console.log(JSON.stringify({ result: 'passed', checks, motion: 'Normal and reduced-motion presentation verified', screenshots: output, liveDatabaseWrites: 0, emailsSent: 0 }, null, 2));
+  console.log(JSON.stringify({ result: 'passed', checks, resize: 'Six desktop resize cases keep the complete logo strip and hero copy visible', motion: 'Normal and reduced-motion presentation verified', screenshots: output, liveDatabaseWrites: 0, emailsSent: 0 }, null, 2));
 } finally { await browser.close(); }

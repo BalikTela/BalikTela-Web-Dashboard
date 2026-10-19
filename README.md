@@ -6,6 +6,10 @@ Development scope: this repository focuses on the web dashboard, its public home
 
 Database integration baseline: [Supabase Migration and Shared Schema](docs/Supabase_Migration.md)
 
+Shared Hub roles, approvals and weighing mappings: [Hub Integration](docs/Hub_Integration.md)
+
+Current mobile compatibility and cross-client validation: [Mobile / Web Hub Handoff](docs/Mobile_Web_Hub_Contract.md)
+
 Current prototype model: [BalikTela ERD](docs/BalikTela_ERD.md)
 
 Deployment: [Render Setup](docs/Render_Deployment.md). The repository includes `render.yaml` for one web service serving the dashboard and API together.

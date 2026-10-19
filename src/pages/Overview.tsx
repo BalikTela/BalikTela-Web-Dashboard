@@ -14,11 +14,11 @@ type Data = Awaited<ReturnType<typeof getDashboardData>>;
 
 export function Overview({ data }: { data: Data }) {
   const highestGap = [...data.regionalActivity].sort((a, b) => b.wasteGapKg - a.wasteGapKg)[0];
-  const lowestRecovery = [...data.categoryShares].sort((a, b) => a.recoveryRate - b.recoveryRate)[0];
+  const lowestRecovery = data.categoryShares.filter(item => item.recoveryRateAvailable !== false).sort((a, b) => a.recoveryRate - b.recoveryRate)[0];
   const spareFacility = [...data.facilities].sort((a, b) => a.utilization - b.utilization)[0];
   const insights = [
-    highestGap ? [`${highestGap.region} has the largest filtered waste gap`, `${formatMass(highestGap.wasteGapKg)} remains outside reuse or recycling outcomes during ${data.metadata.periodLabel}.`] : null,
-    lowestRecovery ? [`${lowestRecovery.category} has the lowest recovery rate`, `${lowestRecovery.recoveryRate}% of collected ${lowestRecovery.category.toLowerCase()} is reused or recycled in the filtered period.`] : null,
+    highestGap ? [`${highestGap.region}: outcome evidence review`, `${formatMass(highestGap.wasteGapKg)} of declared mass has no confirmed reuse or recycling outcome. This is an evidence gap, not measured landfill waste.`] : null,
+    lowestRecovery ? [`${lowestRecovery.category}: confirmed recovery share`, `${lowestRecovery.recoveryRate}% of validated collection has a confirmed final outcome in this registration cohort.`] : null,
     spareFacility ? [`${spareFacility.name}: capacity review`, spareFacility.utilization > 100 ? `${spareFacility.utilization}% utilization exceeds prorated period capacity; review intake and capacity records.` : `${Number((100 - spareFacility.utilization).toFixed(1))}% of prorated period capacity remains available for compatible intake.`] : null,
   ].filter((item): item is [string, string] => item !== null);
   if (!['Administrator', 'Government', 'Researcher'].includes(data.operations.scope.role)) return <div className="space-y-6"><OperationalSnapshot data={data} /><OperationalRoleDetail data={data} /></div>;
@@ -26,38 +26,56 @@ export function Overview({ data }: { data: Data }) {
     <div className="space-y-6">
       <section>
         <div className="mb-3 flex flex-col items-start gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0"><p className="text-sm font-semibold text-[#17201d]">Program Analytics</p><p className="mt-1 text-xs leading-5 text-[#718079]">Coherent sample figures for national material flow, recovery, and participation</p></div>
+          <div className="min-w-0"><p className="text-sm font-semibold text-[#17201d]">Program Analytics</p><p className="mt-1 text-xs leading-5 text-[#718079]">Shared material flow, recovery evidence, and participation</p></div>
           <p className="shrink-0 rounded-md border border-[#dfe5e2] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#53615c]">{data.metadata.periodLabel}</p>
         </div>
         <div className="stagger-grid grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:auto-rows-[minmax(132px,auto)] xl:grid-cols-4 2xl:grid-cols-6">
-          {data.kpis.map((metric, index) => <MetricCard key={metric.label} metric={metric} featured={index === 0} sparkline={index === 0 ? data.wasteTrend.map((point) => point.collected) : undefined} sparklineStart={`${data.wasteTrend[0]?.month ?? 'Start'} 2026`} sparklineEnd={`${data.wasteTrend[data.wasteTrend.length - 1]?.month ?? 'Current'} 2026`} />)}
+          {data.kpis.map((metric, index) => <MetricCard key={metric.label} metric={metric} featured={index === 0} sparkline={index === 0 && data.circularFlow.collectedAvailable !== false ? data.wasteTrend.map((point) => point.hasCollectionEvidence === false ? null : point.collected) : undefined} sparklineStart={data.wasteTrend[0]?.month ?? 'Start'} sparklineEnd={data.wasteTrend[data.wasteTrend.length - 1]?.month ?? 'Current'} />)}
         </div>
+        {data.materialEvidence ? <div className="mt-4 border-l-2 border-slate-300 pl-4 text-xs leading-5 text-slate-600">
+          <p className="font-semibold text-slate-800">Evidence coverage</p>
+          {data.sharedActivity?.demoBatches ? <p>Includes {data.sharedActivity.demoBatches} synthetic demo batches and {data.sharedActivity.operationalBatches} operational batches. Demo figures are illustrative, not measured national totals.</p> : null}
+          <p>{data.materialEvidence.missingCollectionBatches} batches await validated intake evidence. {data.materialEvidence.completedReportedWeight} completed transfers use reported receipt weights; {data.materialEvidence.completedMissingWeight} have no final weight and are excluded from transfer mass.</p>
+          <p>Hub intake establishes collection, not diversion. Only validated final outcomes establish reuse or recycling; landfill avoidance remains uncalculated.</p>
+          {data.materialEvidence.collectionConflicts + data.materialEvidence.outcomeConflicts > 0 ? <p className="mt-1 text-amber-800">{data.materialEvidence.collectionConflicts} collection and {data.materialEvidence.outcomeConflicts} outcome batch allocations need review. Ambiguous mass is withheld, not capped.</p> : null}
+          {data.materialEvidence.unlinkedOutcomeKg > 0 ? <p>{formatMass(data.materialEvidence.unlinkedOutcomeKg)} of confirmed outcomes has no matching validated intake and is excluded from the recovery-share numerator.</p> : null}
+          <p className="mt-1">Dates select batch registration; charts group that cohort by registration month, with outcomes known as of {new Date(data.metadata.period.asOf).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })}.</p>
+        </div> : null}
       </section>
 
       <OperationalSnapshot data={data} supporting />
 
+      {data.sharedActivity ? <section className="border-y border-slate-200 py-5" aria-label="Shared platform activity">
+        <SectionHeader title="Shared Platform Activity" eyebrow={`${data.sharedActivity.operationalBatches} operational batches · ${data.sharedActivity.demoBatches} demo batches in the selected cohort`} />
+        <dl className="grid grid-cols-2 gap-5 lg:grid-cols-4">{[
+          ['Material listings', data.sharedActivity.listings], ['Pending / revised requests', data.sharedActivity.pendingRequests],
+          ['Hub-weighed batches', data.sharedActivity.hubWeighedBatches], ['Completed transfers', data.sharedActivity.completedTransfers],
+        ].map(([label, count]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-2 text-2xl font-semibold tabular-nums">{Number(count).toLocaleString()}</dd></div>)}</dl>
+        <p className="mt-4 text-xs leading-5 text-slate-500">{data.sharedActivity.completionAwaitingVerification} completed transfers have no independent validation weight. Transfer completion alone does not prove reuse, recycling or diversion. {data.sharedActivity.missingGeography ? `${data.sharedActivity.missingGeography} batches have incomplete structured location data.` : ''}</p>
+      </section> : null}
+
       <section className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
         <Panel>
-          <SectionHeader title="Waste Trend" eyebrow="Recorded vs recovered streams" />
+          <SectionHeader title="Textile Evidence Trend" eyebrow="Registration-month cohorts · gaps indicate missing evidence" />
           <div className="h-64 sm:h-72"><WasteTrendChart data={data.wasteTrend} /></div>
         </Panel>
         <Panel>
-          <SectionHeader title="Waste by Textile Category" eyebrow="Collection mix" />
+          <SectionHeader title="Collected Textile Categories" eyebrow="Validated intake only" />
           <div className="h-64 sm:h-72"><CategoryDoughnut data={data.categoryShares} /></div>
         </Panel>
       </section>
 
       <section className="border-y border-slate-200 py-5">
-        <SectionHeader title="Circular Textile Flow" eyebrow="Return / barter / donation / collection to final outcome" />
+        <SectionHeader title="Material Evidence Summary" eyebrow="Stage totals overlap; they are not additive flows" />
         <CircularFlow data={data.circularFlow} />
-        <p className="mt-3 text-xs text-slate-500">Residual includes uncollected material and sorting/processing losses. {data.metadata.denominatorNote}</p>
+        <p className="mt-3 text-xs leading-5 text-slate-500">Unconfirmed collected mass may include stock, losses, rejects or missing outcome records; it is not automatically landfill disposal. {data.metadata.denominatorNote}</p>
       </section>
 
       <PlatformEngagement data={data.engagementMetrics} periodLabel={data.metadata.periodLabel} />
 
       <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <Panel>
-          <SectionHeader title="Philippine Regional Activity" eyebrow="Mock geographic view" />
+          <SectionHeader title="Philippine Regional Activity" eyebrow="Recorded regional activity" />
           <PhilippinesMapMock regions={data.regionalActivity} />
         </Panel>
         <Panel>
@@ -68,7 +86,7 @@ export function Overview({ data }: { data: Data }) {
 
       <section className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
         <Panel>
-          <SectionHeader title="Recent Transactions" eyebrow="Traceable sample activity" />
+          <SectionHeader title="Recent Transactions" eyebrow="Latest recorded lifecycle states" />
           {data.transactions.length ? (
             <div className="overflow-x-auto scrollbar-thin">
               <table className="w-full min-w-[760px] text-left text-sm">
@@ -81,7 +99,7 @@ export function Overview({ data }: { data: Data }) {
                       <td className="py-3 font-semibold text-textile-ink">{item.id}</td>
                       <td>{item.source}</td>
                       <td>{item.type}</td>
-                      <td>{formatMass(item.weightKg)}</td>
+                      <td>{formatMass(item.weightKg)}<p className="text-xs text-slate-500">{item.weightEvidence}</p></td>
                       <td><StatusBadge status={item.status} /></td>
                       <td className="text-textile-ink/65">{item.status === 'Completed' ? 'Lifecycle recorded' : 'Outcome pending'}</td>
                     </tr>
@@ -92,7 +110,7 @@ export function Overview({ data }: { data: Data }) {
           ) : <EmptyBlock />}
         </Panel>
         <Panel>
-          <SectionHeader title="Sample Insights" eyebrow="Recommendation cues" />
+          <SectionHeader title="Monitoring Notes" eyebrow="Evidence and capacity review" />
           <div className="space-y-3">
             {insights.map(([title, body]) => (
               <article key={title} className="border-l-2 border-emerald-600 py-1 pl-4">

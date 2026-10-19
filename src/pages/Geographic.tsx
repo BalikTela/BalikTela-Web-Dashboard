@@ -34,9 +34,9 @@ export function Geographic({ data }: { data: Data }) {
     </section>
 
     <section className="geo-summary" aria-label="Geographic summary">
-      <article className="geo-summary-primary"><p>Collected material</p><strong>{formatMass(collected)}</strong><span>Across {regions.length} represented regions</span></article>
-      <article><p>Verified recycling</p><strong>{formatMass(recycled)}</strong><span>Completed recycling outcomes</span></article>
-      <article><p>Recovery gap</p><strong>{formatMass(recoveryGap)}</strong><span>Outside reuse and recycling outcomes</span></article>
+      <article className="geo-summary-primary"><p>Collected material</p><strong>{data.circularFlow.collectedAvailable === false ? 'Pending evidence' : formatMass(collected)}</strong><span>Across {regions.length} represented regions</span></article>
+      <article><p>Confirmed recycling</p><strong>{data.circularFlow.recycledAvailable === false ? 'Pending evidence' : formatMass(recycled)}</strong><span>Validated final output only</span></article>
+      <article><p>Declared outcome gap</p><strong>{formatMass(recoveryGap)}</strong><span>Not measured disposal or landfill waste</span></article>
       <article><p>Regional network</p><strong>{collectionPoints.toLocaleString()}<span> collection points</span></strong><span>{recyclers} recycler involvements across regions</span></article>
     </section>
 
@@ -47,7 +47,7 @@ export function Geographic({ data }: { data: Data }) {
           <thead><tr><th>Region</th><th>Collected</th><th>Recycled</th><th>Recovery gap</th><th>Share of {metricLabel.toLowerCase()}</th></tr></thead>
           <tbody>{ordered.map(region => <tr key={region.region} data-selected={selected === region.region}>
             <td><button type="button" className="geo-region-button" aria-pressed={selected === region.region} aria-label={`Locate ${region.region}`} onClick={() => setSelection(selected === region.region ? null : region.region)}><MapPin size={14} aria-hidden="true" /><span>{region.region}</span><ArrowUpRight size={13} aria-hidden="true" /></button><p>{region.collectionPoints} collection points · {region.recyclers} recyclers</p></td>
-            <td>{formatMass(region.collectionKg)}</td><td>{formatMass(region.recyclingKg)}</td><td>{formatMass(region.wasteGapKg)}</td>
+            <td>{region.collectionAvailable === false ? 'Pending evidence' : formatMass(region.collectionKg)}</td><td>{region.recyclingAvailable === false ? 'Pending evidence' : formatMass(region.recyclingKg)}</td><td>{formatMass(region.wasteGapKg)}</td>
             <td><div className="geo-share"><span className={metric === 'wasteGapKg' ? 'geo-share-track geo-share-gap' : 'geo-share-track'}><span style={{ width: `${percentage(geographicValue(region, metric), total)}%` }} /></span><span>{total > 0 ? `${percentage(geographicValue(region, metric), total)}%` : 'Not available'}</span></div></td>
           </tr>)}</tbody>
         </table></div> : <EmptyBlock label="No regions match the current filters." />}

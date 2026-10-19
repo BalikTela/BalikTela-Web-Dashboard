@@ -40,7 +40,7 @@ test('report previews and exports enforce current permissions, filters, formats 
     assert.equal((await store.all('auditRecords')).length, auditCount);
     const csv = await get('/material-flow/export?textileType=Cotton', 'Administrator');
     assert.equal(csv.status, 200); assert.match(csv.headers.get('content-type')!, /text\/csv/);
-    assert.match(csv.headers.get('content-disposition')!, /2026-07-20-2026-10-17\.csv/);
+    assert.match(csv.headers.get('content-disposition')!, /2026-08-01-2026-10-17\.csv/);
     const body = await csv.text(); assert.ok(body.includes('Cotton')); assert.ok(!body.includes('Denim'));
     assert.equal((await store.all('auditRecords')).length, auditCount + 1);
     const printable = await get('/organizations/export?format=print', 'Administrator'); assert.equal(printable.status, 200);

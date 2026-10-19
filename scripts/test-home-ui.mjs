@@ -43,7 +43,7 @@ try {
         const logos = [...document.querySelectorAll('.home-institution-logos a')].map(element => element.getBoundingClientRect().toJSON());
         return { hero: hero.toJSON(), copy: copy.toJSON(), institutions: institutions.toJSON(), logos, height: innerHeight, width: innerWidth };
       });
-      assert.ok(intro.institutions.bottom <= intro.height + 1, `${viewport.width}x${viewport.height}: the entire institution strip must fit in the first viewport.`);
+      assert.ok(Math.abs(intro.institutions.bottom - intro.height) <= 1, `${viewport.width}x${viewport.height}: the institution strip must align with the viewport bottom, not just fit somewhere above it.`);
       assert.ok(intro.copy.top >= intro.hero.top && intro.copy.bottom <= intro.hero.bottom + 1, 'Hero text and both calls to action must not be clipped.');
       for (const logo of intro.logos) assert.ok(logo.top >= intro.institutions.top && logo.bottom <= intro.height && logo.left >= 0 && logo.right <= intro.width, 'Every institution logo must be fully visible without scrolling.');
     } else {
@@ -124,17 +124,17 @@ try {
   await motionPage.waitForTimeout(650);
   assert.equal(await motionPage.locator('.home-path-layout').evaluate(element => Number(getComputedStyle(element).opacity)), 1, 'Scroll entrance must settle without leaving content hidden.');
   await motionPage.screenshot({ path: `${output}/pathways-motion-1440.png` });
-  for (const viewport of [{ width: 960, height: 600 }, { width: 1366, height: 768 }, { width: 1512, height: 861 }, { width: 1512, height: 650 }, { width: 1920, height: 800 }, { width: 2560, height: 1440 }]) {
+  for (const viewport of [{ width: 960, height: 600 }, { width: 1366, height: 768 }, { width: 1512, height: 861 }, { width: 1512, height: 650 }, { width: 1920, height: 800 }, { width: 2560, height: 1440 }, { width: 2560, height: 1310 }, { width: 1512, height: 828 }]) {
     await motionPage.setViewportSize(viewport);
     await motionPage.evaluate(() => scrollTo(0, 0));
     const resized = await motionPage.evaluate(() => {
       const hero = document.querySelector('.home-hero').getBoundingClientRect();
       const copy = document.querySelector('.home-hero-copy').getBoundingClientRect();
       const logos = document.querySelector('.home-institutions').getBoundingClientRect();
-      return logos.bottom <= innerHeight + 1 && copy.top >= hero.top && copy.bottom <= hero.bottom + 1;
+      return Math.abs(logos.bottom - innerHeight) <= 1 && copy.top >= hero.top && copy.bottom <= hero.bottom + 1;
     });
     assert.ok(resized, `${viewport.width}x${viewport.height}: resizing must keep the hero copy and complete logo strip visible.`);
   }
   await motionContext.close();
-  console.log(JSON.stringify({ result: 'passed', checks, resize: 'Six desktop resize cases keep the complete logo strip and hero copy visible', motion: 'Normal and reduced-motion presentation verified', screenshots: output, liveDatabaseWrites: 0, emailsSent: 0 }, null, 2));
+  console.log(JSON.stringify({ result: 'passed', checks, resize: 'Eight desktop resize cases keep the logo strip aligned with the viewport bottom and the hero copy visible', motion: 'Normal and reduced-motion presentation verified', screenshots: output, liveDatabaseWrites: 0, emailsSent: 0 }, null, 2));
 } finally { await browser.close(); }

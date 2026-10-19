@@ -5,10 +5,10 @@ export type Region =
   | 'Western Visayas'
   | 'Davao Region';
 
-export type TextileType = 'Cotton' | 'Polyester' | 'Denim' | 'Mixed fabric' | 'Uniforms' | 'Household linen';
+export type TextileType = typeof import('../shared/workflows.js').MATERIAL_CATEGORIES[number];
 export type TransactionType = 'Barter' | 'Return' | 'Donation' | 'Collection' | 'Recycling' | 'Redistribution';
-export type TransactionStatus = 'Completed' | 'In sorting' | 'In transit' | 'Pending validation' | 'Flagged';
-export type StakeholderType = 'Producer' | 'Recycler' | 'Consumer' | 'NGO' | 'Administrator' | 'Government' | 'Researcher' | 'LGU/Collection Point' | 'Upcycler';
+export type TransactionStatus = import('../shared/workflows.js').TransferStatus | 'In sorting' | 'In transit' | 'Pending validation' | 'Flagged';
+export type StakeholderType = 'Producer' | 'Recycler' | 'Consumer' | 'NGO' | 'Administrator' | 'Government' | 'Researcher' | 'LGU/Collection Point' | 'Upcycler' | 'BalikTela Hub';
 
 export interface Filters {
   dateRange: string;
@@ -22,8 +22,8 @@ export interface Filters {
   producer: string;
   recycler: string;
   wasteSource: 'All sources' | 'Pre-consumer' | 'Post-consumer' | 'Obsolete inventory' | 'Household' | 'Institutional' | 'Unknown';
-  circularPathway: 'All pathways' | 'Reuse' | 'Repair' | 'Redistribution' | 'Upcycling' | 'Recycling' | 'For assessment';
-  weightStatus: 'All weight statuses' | 'Estimated' | 'Measured' | 'Verified';
+  circularPathway: 'All pathways' | typeof import('../shared/workflows.js').CIRCULAR_PATHWAYS[number];
+  weightStatus: 'All weight statuses' | 'Awaiting weighing' | 'Estimated' | 'Measured' | 'Verified';
   facilityId: string;
   organizationId: string;
   transactionStatus: string;
@@ -34,6 +34,7 @@ export interface Kpi {
   value: string;
   delta: string;
   tone: 'moss' | 'ocean' | 'clay' | 'denim';
+  description?: string;
 }
 
 export interface WastePoint {
@@ -42,6 +43,9 @@ export interface WastePoint {
   collected: number;
   recycled: number;
   reused: number;
+  hasCollectionEvidence?: boolean;
+  hasRecyclingEvidence?: boolean;
+  hasReuseEvidence?: boolean;
 }
 
 export interface WasteRecord {
@@ -68,6 +72,7 @@ export interface CategoryShare {
   category: TextileType;
   kilograms: number;
   recoveryRate: number;
+  recoveryRateAvailable?: boolean;
 }
 
 export interface Transaction {
@@ -77,7 +82,8 @@ export interface Transaction {
   destination: string;
   type: TransactionType;
   textileCategory: TextileType;
-  weightKg: number;
+  weightKg: number | null;
+  weightEvidence?: string;
   location: string;
   region: Exclude<Region, 'All regions'>;
   status: TransactionStatus;
@@ -86,7 +92,7 @@ export interface Transaction {
   sourceStakeholderId?: string;
   destinationStakeholderId?: string;
   lifecycle: LifecycleEvent[];
-  isDemo: true;
+  isDemo: boolean;
 }
 
 export interface LifecycleEvent {
@@ -106,6 +112,7 @@ export interface Stakeholder {
   city: string;
   region: Exclude<Region, 'All regions'>;
   recoveredKg: number;
+  recoveredAvailable?: boolean;
   generatedKg: number;
   capacityKg?: number;
   utilization?: number;
@@ -128,9 +135,10 @@ export interface Facility {
   utilization: number;
   intakeKg: number;
   processedKg: number;
+  processedAvailable?: boolean;
   processingTimeDays: number;
   status: 'Available' | 'Near capacity' | 'Maintenance' | 'Pilot onboarding';
-  isDemo: true;
+  isDemo: boolean;
 }
 
 export interface RegionActivity {
@@ -138,6 +146,8 @@ export interface RegionActivity {
   city: string;
   collectionKg: number;
   recyclingKg: number;
+  collectionAvailable?: boolean;
+  recyclingAvailable?: boolean;
   wasteGapKg: number;
   producers: number;
   collectionPoints: number;
@@ -153,14 +163,18 @@ export interface CircularFlowMetrics {
   reusedKg: number;
   recycledKg: number;
   residualKg: number;
+  collectedAvailable?: boolean;
+  sortedAvailable?: boolean;
+  reusedAvailable?: boolean;
+  recycledAvailable?: boolean;
 }
 
 export interface ImpactMetrics {
   landfillAvoidedKg: number | null;
   estimatedCo2eKg: number | null;
   estimatedWaterLiters: number | null;
-  diversionRate: number;
-  sortingYield: number;
+  diversionRate: number | null;
+  sortingYield: number | null;
   methodologyStatus: 'Disabled pending approved methodology';
 }
 

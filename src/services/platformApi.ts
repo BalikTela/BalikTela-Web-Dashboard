@@ -1,7 +1,9 @@
 import type { AccessSummary, AuditRecord, AuthSessionSummary, BarterListing, BarterOffer, ChatMessage, Conversation, DashboardAnalytics, DataQualityResult, GovernanceData, MaterialBatch, OperationsAnalytics, Organization, PlatformConfiguration, PlatformFacility, PlatformUser, RecoveryRecord, ReportDefinition, Transfer, WalletEntry } from '../platformTypes';
 
 import type { PredictiveReport } from '../../shared/predictive';
+import type { HubDirectory, WeighingMonitoring, HubDisposalMonitoring } from '../../shared/hubs';
 import type { ReportDocument } from '../../shared/reporting';
+import type { ImportPreview, ImportResult, ImportOptions } from '../../shared/imports';
 import { reauthenticationCode, REAUTHENTICATION_MESSAGES, type ReauthenticationCode } from '../../shared/sessionPolicy';
 
 const CSRF_KEY = 'baliktela_csrf';
@@ -102,7 +104,7 @@ async function request<T>(path: string, init: RequestInit = {}, allowRefresh = t
   }
   const payload = responseType === 'text' ? await response.text() : await response.json().catch(() => ({}));
   if (epoch !== authenticationEpoch) throw new Error('The authentication state changed during this request.');
-  if (init.method && init.method !== 'GET' && !path.startsWith('/auth/')) window.dispatchEvent(new CustomEvent('baliktela:records-changed', {detail:path}));
+  if (init.method && init.method !== 'GET' && !path.startsWith('/auth/') && path !== '/imports/preview') window.dispatchEvent(new CustomEvent('baliktela:records-changed', {detail:path}));
   return payload as T;
 }
 
@@ -143,7 +145,7 @@ export const platformApi = {
   updateListing: (id: string, body: Record<string, unknown>) => request<{listing: BarterListing}>(`/barter/listings/${encodeURIComponent(id)}`, {method:'PATCH',body:JSON.stringify(body)}),
   createListing: (body: Record<string, unknown>) => request<{ listing: BarterListing }>('/barter/listings', { method: 'POST', body: JSON.stringify(body) }),
   matches: (listingId: string) => request<{ source: BarterListing; matches: Array<{ listing: BarterListing; score: number; reasons: string[] }>; method: string }>(`/barter/listings/${listingId}/matches`),
-  offers: () => request<{ offers: BarterOffer[] }>('/barter/offers'),
+  offers: (filters?: Record<string, unknown>) => request<{ offers: BarterOffer[] }>(`/barter/offers${queryString(filters)}`),
   createOffer: (listingId: string, body: Record<string, unknown>) => request<{ offer: BarterOffer }>(`/barter/listings/${listingId}/offers`, { method: 'POST', body: JSON.stringify(body) }),
   decideOffer: (offerId: string, status: 'Accepted' | 'Declined') => request<{ offer: BarterOffer }>(`/barter/offers/${offerId}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   manageOffer: (id: string, body: Record<string, unknown>) => request<{offer:BarterOffer}>(`/barter/offers/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(body)}),
@@ -153,6 +155,13 @@ export const platformApi = {
   createMaterialBatch: (body: Record<string, unknown>) => request<{batch:MaterialBatch}>('/material-batches',{method:'POST',body:JSON.stringify(body)}),
   updateMaterialBatch: (id: string, body: Record<string, unknown>) => request<{batch:MaterialBatch}>(`/material-batches/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(body)}),
   facilities: (filters?: Record<string, unknown>) => request<{ facilities: PlatformFacility[] }>(`/facilities${queryString(filters)}`),
+  hubs: (filters?: Record<string, unknown>) => request<HubDirectory>(`/hubs${queryString(filters)}`),
+  updateHub: (id: string, body: Record<string, unknown>) => request<{ message: string; revokedSessions: number }>(`/hubs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  weighing: (filters?: Record<string, unknown>) => request<WeighingMonitoring>(`/weighing${queryString(filters)}`),
+  hubDisposals: (filters?: Record<string, unknown>) => request<HubDisposalMonitoring>(`/hub-disposals${queryString(filters)}`),
+  importOptions: () => request<ImportOptions>('/imports/options'),
+  previewImport: (csvChunks: string[]) => request<ImportPreview>('/imports/preview', { method:'POST',body:JSON.stringify({csvChunks}) }),
+  commitImport: (csvChunks: string[], previewHash: string, reason: string) => request<ImportResult>('/imports/commit', {method:'POST',body:JSON.stringify({csvChunks,previewHash,reason})}),
   createFacility: (body: Record<string, unknown>) => request<{ facility: PlatformFacility }>('/facilities', { method: 'POST', body: JSON.stringify(body) }),
   updateFacility: (id: string, body: Record<string, unknown>) => request<{ facility: PlatformFacility }>(`/facilities/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   recoveryRecords: (filters?: Record<string, unknown>) => request<{ records: RecoveryRecord[] }>(`/recovery-records${queryString(filters)}`),

@@ -7,7 +7,7 @@ import boundaryUrl from '../assets/maps/philippines-context.geo.json?url';
 import referenceLocations from '../assets/maps/regional-anchors.json';
 import type { RegionActivity } from '../types';
 import { formatMass } from '../../shared/metrics';
-import { geographicMetrics, geographicValue, markerDiameter, type GeographicMetric } from '../lib/geography';
+import { geographicMetrics, geographicValue, hasGeographicEvidence, markerDiameter, type GeographicMetric } from '../lib/geography';
 import { Button } from './ui/button';
 
 const anchors: Record<string, { city: string; latitude: number; longitude: number }> = referenceLocations.anchors;
@@ -101,6 +101,7 @@ export function GeographicMap({ regions, metric, onMetricChange, selectedRegion,
       const location = anchors[region.region];
       if (!location) continue;
       const value = geographicValue(region, metric);
+      const reading = hasGeographicEvidence(region, metric) ? formatMass(value) : 'Pending evidence';
       const diameter = markerDiameter(value, maximum);
       const content = document.createElement('div');
       content.className = 'geo-pin-content';
@@ -114,10 +115,10 @@ export function GeographicMap({ regions, metric, onMetricChange, selectedRegion,
       content.append(dot, label);
       const marker = L.marker([location.latitude, location.longitude], {
         icon: L.divIcon({ className: `geo-pin${value === 0 ? ' geo-pin-zero' : ''}${metric === 'wasteGapKg' ? ' geo-pin-gap' : ''}`, html: content, iconSize: [44, 44], iconAnchor: [22, 22] }),
-        title: `${region.region}: ${formatMass(value)} ${activeMetric.label.toLowerCase()}`, keyboard: true, bubblingMouseEvents: false,
+        title: `${region.region}: ${reading} ${activeMetric.label.toLowerCase()}`, keyboard: true, bubblingMouseEvents: false,
       }).addTo(instance);
       const element = marker.getElement();
-      element?.setAttribute('aria-label', `Select ${region.region}, ${formatMass(value)} ${activeMetric.label.toLowerCase()}`);
+      element?.setAttribute('aria-label', `Select ${region.region}, ${reading} ${activeMetric.label.toLowerCase()}`);
       marker.on('click', () => select.current(selected.current === region.region ? null : region.region));
       markers.current.set(region.region, marker);
     }
@@ -160,11 +161,11 @@ export function GeographicMap({ regions, metric, onMetricChange, selectedRegion,
       </div>
       {activeRegion && ready ? <aside className="geo-map-detail" aria-label="Selected region">
         <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm font-semibold">{activeRegion.region}</p><p className="mt-1 text-xs text-[#66736e]">Reference location: {anchors[activeRegion.region]?.city ?? 'Not mapped'}</p></div><Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" title="Close regional detail" aria-label="Close regional detail" onClick={() => onSelectRegion(null)}><X size={15} /></Button></div>
-        <p className="mt-4 text-xs text-[#66736e]">{activeMetric.description}</p><p className="mt-1 text-2xl font-semibold tabular-nums">{formatMass(geographicValue(activeRegion, metric))}</p>
+        <p className="mt-4 text-xs text-[#66736e]">{activeMetric.description}</p><p className="mt-1 text-2xl font-semibold tabular-nums">{hasGeographicEvidence(activeRegion, metric) ? formatMass(geographicValue(activeRegion, metric)) : 'Pending evidence'}</p>
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-[#e5eae7] pt-3 text-xs text-[#66736e]"><span>{activeRegion.collectionPoints} collection points</span><span>{activeRegion.recyclers} recyclers</span></div>
       </aside> : null}
       {!regions.length && ready ? <div className="geo-map-message" role="status">No regional activity matches the current filters.</div> : null}
     </div>
-    <div className="geo-map-footer"><p><span className={maximum === 0 ? 'geo-legend-dot geo-legend-zero' : metric === 'wasteGapKg' ? 'geo-legend-dot geo-legend-gap' : 'geo-legend-dot'} />{activeMetric.label} <span className="tabular-nums">0–{formatMass(maximum)}</span></p><p>Sample activity · indicative regional locations</p></div>
+    <div className="geo-map-footer"><p><span className={maximum === 0 ? 'geo-legend-dot geo-legend-zero' : metric === 'wasteGapKg' ? 'geo-legend-dot geo-legend-gap' : 'geo-legend-dot'} />{activeMetric.label} <span className="tabular-nums">{regions.some(region => hasGeographicEvidence(region, metric)) ? `0–${formatMass(maximum)}` : 'Pending evidence'}</span></p><p>Sample activity · indicative regional locations</p></div>
   </div>;
 }

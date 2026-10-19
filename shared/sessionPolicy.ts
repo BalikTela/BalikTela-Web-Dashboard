@@ -14,12 +14,13 @@ export function reauthenticationCode(value: unknown): ReauthenticationCode | und
 interface AccountAccess {
   id: string; email: string; role: string; organizationId: string | null; verification: string; accountStatus: string;
   emailVerifiedAt: string | null; passwordChangedAt: string | null;
+  organizationVerified?: boolean;
   scope: { organizationIds: string[]; facilityIds: string[]; regions: string[]; aggregateOnly: boolean; canExport: boolean };
 }
 export function accountAccessSignature(user: AccountAccess, permissions: readonly string[]) {
   const sorted = (values: readonly string[]) => [...new Set(values)].sort();
   const timestamp = (value: string | null) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : value;
   return JSON.stringify([user.id, user.email, user.role, user.organizationId, user.verification, user.accountStatus,
-    timestamp(user.emailVerifiedAt), timestamp(user.passwordChangedAt), sorted(user.scope.organizationIds), sorted(user.scope.facilityIds),
+    timestamp(user.emailVerifiedAt), timestamp(user.passwordChangedAt), user.organizationVerified, sorted(user.scope.organizationIds), sorted(user.scope.facilityIds),
     sorted(user.scope.regions), user.scope.aggregateOnly, user.scope.canExport, sorted(permissions)]);
 }

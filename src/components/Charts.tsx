@@ -49,10 +49,10 @@ export function WasteTrendChart({ data }: { data: WastePoint[] }) {
       data={{
         labels: data.map((item) => item.month),
         datasets: [
-          { label: 'Recorded (t)', data: data.map((item) => toTons(item.recorded)), borderColor: '#34423d', backgroundColor: 'rgba(52, 66, 61, 0.05)', tension: 0.35, fill: true, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
-          { label: 'Collected (t)', data: data.map((item) => toTons(item.collected)), borderColor: '#27775c', backgroundColor: 'transparent', tension: 0.35, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
-          { label: 'Recycled (t)', data: data.map((item) => toTons(item.recycled)), borderColor: '#3e8c91', backgroundColor: 'transparent', tension: 0.35, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
-          { label: 'Reused (t)', data: data.map((item) => toTons(item.reused)), borderColor: '#bd7a2f', backgroundColor: 'transparent', tension: 0.35, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
+          { label: 'Declared (t)', data: data.map((item) => toTons(item.recorded)), borderColor: '#34423d', backgroundColor: 'rgba(52, 66, 61, 0.05)', tension: 0.35, fill: true, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
+          { label: 'Validated collection (t)', data: data.map((item) => item.hasCollectionEvidence === false ? null : toTons(item.collected)), borderColor: '#27775c', backgroundColor: 'transparent', tension: 0.35, pointRadius: 2, pointHoverRadius: 4, borderWidth: 2 },
+          { label: 'Confirmed recycling (t)', data: data.map((item) => item.hasRecyclingEvidence === false ? null : toTons(item.recycled)), borderColor: '#3e8c91', backgroundColor: 'transparent', tension: 0.35, pointRadius: 2, pointHoverRadius: 4, borderWidth: 2 },
+          { label: 'Confirmed reuse (t)', data: data.map((item) => item.hasReuseEvidence === false ? null : toTons(item.reused)), borderColor: '#bd7a2f', backgroundColor: 'transparent', tension: 0.35, pointRadius: 2, pointHoverRadius: 4, borderWidth: 2 },
         ],
       }}
     />
@@ -88,8 +88,8 @@ export function RegionalBarChart({ data }: { data: RegionActivity[] }) {
       data={{
         labels: data.map((item) => item.region),
         datasets: [
-          { label: 'Collected (t)', data: data.map((item) => toTons(item.collectionKg)), backgroundColor: '#27775c', borderRadius: 3 },
-          { label: 'Recycled (t)', data: data.map((item) => toTons(item.recyclingKg)), backgroundColor: '#9bc6b6', borderRadius: 3 },
+          { label: 'Collected (t)', data: data.map((item) => item.collectionAvailable === false ? null : toTons(item.collectionKg)), backgroundColor: '#27775c', borderRadius: 3 },
+          { label: 'Confirmed recycling (t)', data: data.map((item) => item.recyclingAvailable === false ? null : toTons(item.recyclingKg)), backgroundColor: '#9bc6b6', borderRadius: 3 },
         ],
       }}
     />

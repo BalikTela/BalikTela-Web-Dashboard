@@ -1,4 +1,5 @@
 export const REPORTING_TIME_ZONE = 'Asia/Manila';
+export const DEFAULT_REPORTING_RANGE = 'Last 3 calendar months';
 const DAY = 86_400_000;
 const OFFSET = 8 * 3_600_000;
 
@@ -49,7 +50,7 @@ export function proratedMonths(start: number, end: number) {
 }
 export function resolveReportingPeriod(query: Record<string, unknown>, now = new Date(), firstRecordAt?: string): ReportingPeriod {
   for (const key of ['dateRange', 'startDate', 'endDate']) if (query[key] !== undefined && typeof query[key] !== 'string') throw new ReportingInputError(`Invalid ${key}.`);
-  const range = String(query.dateRange ?? 'Last 90 days');
+  const range = String(query.dateRange ?? DEFAULT_REPORTING_RANGE);
   if (range !== 'Custom range' && (query.startDate || query.endDate)) throw new ReportingInputError('Select Custom range when supplying start and end dates.');
   const today = manilaDate(now);
   const dayStart = midnight(today);
@@ -61,6 +62,9 @@ export function resolveReportingPeriod(query: Record<string, unknown>, now = new
   if (range === 'Last 30 days' || range === 'Last 90 days') {
     const days = range === 'Last 30 days' ? 30 : 90;
     start = dayStart - (days - 1) * DAY;
+  } else if (range === DEFAULT_REPORTING_RANGE) {
+    // Current month to date plus the preceding two whole Manila calendar months.
+    start = Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 3, 1) - OFFSET;
   } else if (range === 'Year to date') {
     start = midnight(`${today.slice(0, 4)}-01-01`);
     const year = Number(today.slice(0, 4)) - 1;

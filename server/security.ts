@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import { clientOrigin } from './runtimeConfig.js';
+import { DatabaseOperationError } from './database/errors.js';
 
 type Environment = Record<string, string | undefined>;
 
@@ -88,13 +89,19 @@ export function installSecurity(app: Express, env: Environment = process.env, li
   });
 }
 
-export const securityErrorHandler: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
+export const securityErrorHandler: ErrorRequestHandler = (error: unknown, req, res, _next) => {
   const err = error as { status?: unknown; type?: string; name?: string; message?: string; code?: unknown };
   const status = err?.name === 'SupabaseAuthError' ? 400 : typeof err?.status === 'number' && Number.isInteger(err.status) && err.status >= 400 && err.status <= 599 ? err.status : 500;
   if (status >= 500 || err?.name === 'SupabaseAuthError') {
     // Never log request bodies, credentials, provider messages, SQL details or URL query strings.
-    const code = typeof err?.code === 'string' && /^[a-z0-9_]{1,80}$/.test(err.code) ? err.code : 'unavailable';
-    console.error('Request failed.', { requestId: res.getHeader('X-Request-ID'), type: err?.name === 'SupabaseAuthError' ? 'identity' : 'internal', code });
+    const code = typeof err?.code === 'string' && /^[a-zA-Z0-9_]{1,80}$/.test(err.code) && !/^sb_(?:secret|publishable)_/i.test(err.code) ? err.code : 'unavailable';
+    const route = typeof req.route?.path === 'string' && /^\/[a-zA-Z0-9_:/.-]{0,199}$/.test(req.route.path) ? req.route.path : 'unmatched';
+    console.error('Request failed.', {
+      requestId: res.getHeader('X-Request-ID'),
+      method: ['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS'].includes(req.method) ? req.method : 'OTHER',
+      route, status, type: error instanceof DatabaseOperationError ? 'database' : err?.name === 'SupabaseAuthError' ? 'identity' : 'internal', code,
+      ...(error instanceof DatabaseOperationError ? { operation: error.operation } : {}),
+    });
   }
   const safeDomainError = error instanceof Error && ['ManagementError', 'ReportingInputError', 'MutationConflict'].includes(error.constructor.name);
   const message = err?.type === 'entity.parse.failed' ? 'Malformed JSON request.'

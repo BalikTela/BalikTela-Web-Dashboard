@@ -11,7 +11,7 @@ export function BarterActivity({ data, periodLabel }: { data: BarterMetrics; per
   ];
   return (
     <section className="dashboard-panel rounded-md border border-slate-200 bg-white p-5">
-      <SectionHeader title="Barter Activity" eyebrow={`${periodLabel} · demo platform activity`} />
+      <SectionHeader title="Barter Activity" eyebrow={`${periodLabel} · shared platform activity`} />
       <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
         <div className="stagger-grid grid grid-cols-2 overflow-hidden rounded-md border border-slate-200 sm:grid-cols-4 sm:divide-x sm:divide-slate-200">
           {stages.map((stage, index) => {
@@ -26,9 +26,9 @@ export function BarterActivity({ data, periodLabel }: { data: BarterMetrics; per
           })}
         </div>
         <div className="border-t border-slate-200 pt-3 lg:w-44 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
-          <p className="text-xs text-slate-500">Reward activity</p>
+          <p className="text-xs text-slate-500">Net reward credits</p>
           <p className="mt-1 text-xl font-semibold text-slate-950">{data.rewardCredits.toLocaleString()}</p>
-          <p className="mt-1 text-xs text-slate-500">Demo credits issued after completed barter validation</p>
+          <p className="mt-1 text-xs text-slate-500">Issued ledger credits including reversals and adjustments</p>
         </div>
       </div>
     </section>

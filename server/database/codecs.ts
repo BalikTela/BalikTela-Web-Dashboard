@@ -1,5 +1,6 @@
 import type { Document } from 'mongodb';
 import type { DatabaseShape, LifecycleEventRecord } from '../types.js';
+import { BATCH_STATUSES, LISTING_STATUSES, OFFER_STATUSES, TRANSFER_STATUSES, canonicalStatus } from '../../shared/workflows.js';
 
 export type DomainCollectionName = keyof DatabaseShape;
 export type DomainRecord<K extends DomainCollectionName> = DatabaseShape[K][number];
@@ -8,6 +9,7 @@ const now = () => new Date();
 const toDate = (value: unknown) => value instanceof Date ? value : new Date(String(value));
 const toIso = (value: unknown) => value instanceof Date ? value.toISOString() : new Date(String(value)).toISOString();
 const nullableIso = (value: unknown) => value ? toIso(value) : null;
+const nullableNumber = (input: unknown) => input === null || input === undefined ? null : Number(input);
 const value = <T>(input: unknown, fallback: T): T => input === undefined || input === null ? fallback : input as T;
 const stringArray = (input: unknown) => Array.isArray(input) ? input.map(String) : [];
 
@@ -15,19 +17,14 @@ const accountStatusToDb = { Active: 'active', 'Pending verification': 'pending_v
 const accountStatusFromDb = { active: 'Active', pending_verification: 'Pending verification', suspended: 'Suspended', deactivated: 'Deactivated' } as const;
 const verificationToDb = { 'Demo verified': 'verified', 'Pending demo review': 'pending' } as const;
 const verificationFromDb = { verified: 'Demo verified', pending: 'Pending demo review', rejected: 'Pending demo review', suspended: 'Pending demo review' } as const;
-const listingStatusToDb = { Open: 'available', Matched: 'matched', Reserved: 'reserved', Completed: 'completed', Closed: 'closed' } as const;
-const listingStatusFromDb = { draft: 'Closed', available: 'Open', matched: 'Matched', reserved: 'Reserved', completed: 'Completed', closed: 'Closed', archived: 'Closed' } as const;
-const offerStatusToDb = { Pending: 'pending', Accepted: 'accepted', Declined: 'rejected', Withdrawn: 'withdrawn' } as const;
-const offerStatusFromDb = { pending: 'Pending', revised: 'Pending', accepted: 'Accepted', rejected: 'Declined', withdrawn: 'Withdrawn', expired: 'Declined' } as const;
-const transferStatusToDb = { Reserved: 'reserved', 'Handed over': 'handed_over', Received: 'received', Validated: 'validated', Completed: 'completed', Cancelled: 'cancelled', Rejected: 'rejected', Disputed: 'disputed' } as const;
-const transferStatusFromDb = { reserved: 'Reserved', in_progress: 'Reserved', handed_over: 'Handed over', collected: 'Received', received: 'Received', processing: 'Received', validated: 'Validated', completed: 'Completed', cancelled: 'Cancelled', rejected: 'Rejected', disputed: 'Disputed' } as const;
+const listingStatusFromDb = LISTING_STATUSES;
+const offerStatusFromDb = OFFER_STATUSES;
+const transferStatusFromDb = TRANSFER_STATUSES;
 
 const batchStatusToDb: Record<string, string> = {
   Recorded: 'recorded', Listed: 'listed', Reserved: 'reserved', 'In transit': 'in_transit', Received: 'received', Validated: 'received', Recovered: 'recovered', Closed: 'closed', Archived: 'archived',
 };
-const batchStatusFromDb: Record<string, string> = {
-  recorded: 'Recorded', draft: 'Recorded', listed: 'Listed', reserved: 'Reserved', in_transit: 'In transit', collected: 'Received', received: 'Received', validated: 'Validated', processing: 'Received', reused: 'Recovered', upcycled: 'Recovered', recycled: 'Recovered', recovered: 'Recovered', rejected: 'Closed', closed: 'Closed', archived: 'Archived',
-};
+const batchStatusFromDb: Record<string, string> = BATCH_STATUSES;
 
 const measurementStageToDb: Record<string, string> = { Declaration: 'declaration', Handover: 'handover', Receipt: 'receipt', Validation: 'validation', Recovery: 'recovery_output' };
 const measurementStageFromDb: Record<string, string> = { declaration: 'Declaration', listing: 'Declaration', handover: 'Handover', collection: 'Receipt', receipt: 'Receipt', processing_input: 'Recovery', recovery_output: 'Recovery', rejection: 'Recovery', loss: 'Recovery', validation: 'Validation' };
@@ -41,8 +38,8 @@ export function encodeRecord<K extends DomainCollectionName>(name: K, record: Do
   const r = record as any;
   switch (name) {
     case 'users': return {
-      _id: r.id, auth_user_id: r.authUserId, email: r.email, passwordHash: r.passwordHash, name: r.fullName, role: r.role, active: !['Suspended', 'Deactivated'].includes(r.accountStatus), stakeholder: r.role,
-      organization_id: r.organizationId, organization: r.organization, organization_verified: r.verification === 'Demo verified', verification_status: verificationToDb[r.verification as keyof typeof verificationToDb],
+      _id: r.id, auth_user_id: r.authUserId, email: r.email, passwordHash: r.passwordHash, name: r.fullName, role: r.role, active: !['Suspended', 'Deactivated'].includes(r.accountStatus), stakeholder: r.stakeholder || (r.role === 'BalikTela Hub' ? 'Collection personnel' : r.role),
+      organization_id: r.organizationId, organization: r.organization, organization_verified: r.accountStatus === 'Active' && r.verification === 'Demo verified' && r.organizationVerified !== false, verification_status: verificationToDb[r.verification as keyof typeof verificationToDb],
       account_status: accountStatusToDb[r.accountStatus as keyof typeof accountStatusToDb], bio: '', location: [r.city, r.region].filter(Boolean).join(', '), city: r.city, region: r.region,
       phone: '', avatar_uri: null, rating: 5, swaps: 0, privacy_consent: Boolean(r.consentAt), research_consent: r.role === 'Researcher', notification_enabled: true,
       scope: { organization_ids: r.scope.organizationIds, facility_ids: r.scope.facilityIds, regions: r.scope.regions, can_export: r.scope.canExport, aggregate_only: r.scope.aggregateOnly },
@@ -64,30 +61,33 @@ export function encodeRecord<K extends DomainCollectionName>(name: K, record: Do
       _id: r.id, source_user_id: r.sourceUserId, source_organization_id: r.sourceOrganizationId, material_category: r.materialCategory, composition: '', waste_source: r.wasteSource,
       waste_form: r.wasteForm, condition: r.condition, intended_pathway: r.circularPathway, final_pathway: r.currentStatus === 'Recovered' ? r.circularPathway : null,
       declared_weight_kg: r.declaredWeightKg, current_weight_kg: r.currentWeightKg, weight_status: r.weightStatus, secondary_quantity: r.secondaryQuantity, secondary_unit: r.secondaryUnit,
-      location: { city: r.city, region: r.region, barangay: '', latitude: null, longitude: null }, current_status: batchStatusToDb[r.currentStatus] ?? 'recorded',
+      location: { city: r.city, region: r.region, barangay: '', latitude: null, longitude: null }, current_status: r.canonicalStatus && (batchStatusFromDb[r.canonicalStatus] ?? 'Unknown') === r.currentStatus ? r.canonicalStatus : batchStatusToDb[r.currentStatus] ?? canonicalStatus(r.currentStatus, r.canonicalStatus, BATCH_STATUSES),
       current_custodian_id: r.currentCustodianId, validation_status: r.weightStatus === 'Verified' ? 'valid' : 'pending', is_demo: r.isDemo, archived_at: r.archivedAt ? toDate(r.archivedAt) : null, created_at: toDate(r.createdAt), updated_at: toDate(r.updatedAt),
     };
     case 'measurements': return {
       _id: r.id, batch_id: r.batchId, transfer_id: r.transferId, facility_id: null, flow_event_id: null, stage: measurementStageToDb[r.stage] ?? 'declaration', weight_kg: r.weightKg,
       weight_status: r.status, method: r.method, measurement_context: r.note || r.method, recorded_by: r.recordedBy, verified_by: r.verifiedBy, measured_at: toDate(r.timestamp),
-      note: r.note, supersedes_measurement_id: null, created_at: toDate(r.timestamp),
+      note: r.note, supersedes_measurement_id: r.supersedesMeasurementId ?? null, created_at: toDate(r.timestamp),
+      ...(r.canonicalStage ? { stage: r.canonicalStage } : {}), ...(r.facilityId ? { facility_id: r.facilityId } : {}),
     };
     case 'listings': return {
       _id: r.id, batch_id: r.batchId, owner_id: r.ownerId, owner_organization_id: r.ownerOrganizationId, owner_name: r.ownerName, title: r.title, description: r.description,
-      looking_for: r.exchangeFor ? [r.exchangeFor] : [], media: [], available_weight_kg: r.quantityKg, reserved_kg: ['Reserved', 'Completed'].includes(r.status) ? r.quantityKg : 0,
+      looking_for: r.exchangeFor ? [r.exchangeFor] : [], media: [], available_weight_kg: r.availableWeightKg === undefined ? r.quantityKg : r.availableWeightKg, reserved_kg: r.reservedKg ?? (['Reserved', 'Completed'].includes(r.status) ? r.quantityKg ?? 0 : 0),
       category: r.textileType, condition: r.quality, location: [r.city, r.region].filter(Boolean).join(', '), city: r.city, region: r.region, weight_kg: r.quantityKg,
       weight_status: r.weightStatus, waste_source: r.wasteSource, waste_form: r.wasteForm, pathway: r.circularPathway, reward_points: Math.round(r.rewardCredits), is_demo: r.isDemo,
-      status: listingStatusToDb[r.status as keyof typeof listingStatusToDb], published_at: toDate(r.createdAt), created_at: toDate(r.createdAt), updated_at: now(),
+      status: canonicalStatus(r.status, r.canonicalStatus, LISTING_STATUSES), published_at: toDate(r.createdAt), created_at: toDate(r.createdAt), updated_at: now(),
+      ...(r.weighingHubId !== undefined ? { weighing_hub_id: r.weighingHubId } : {}),
+      ...(r.deliveryRoute ? { delivery_route: r.deliveryRoute } : {}),
     };
     case 'offers': return {
       _id: r.id, requester_id: r.recipientId, requester_organization_id: null, listing_id: r.listingId, listing_title: r.listingTitle, requester_name: r.recipientName,
-      provider_id: r.providerId, requested_kg: r.quantityKg, terms: r.terms, incentive_points: Math.round(r.offeredCredits), status: offerStatusToDb[r.status as keyof typeof offerStatusToDb],
-      version: 1, previous_terms: [], responded_by: r.status === 'Pending' || r.status === 'Withdrawn' ? null : r.providerId, responded_at: r.status === 'Pending' ? null : toDate(r.updatedAt),
+      provider_id: r.providerId, requested_kg: r.quantityKg, terms: r.terms, incentive_points: Math.round(r.offeredCredits), status: canonicalStatus(r.status, r.canonicalStatus, OFFER_STATUSES),
+      version: r.version ?? 1, previous_terms: r.previousTerms ?? [], responded_by: ['Pending', 'Revised', 'Withdrawn'].includes(r.status) ? null : r.providerId, responded_at: ['Pending', 'Revised'].includes(r.status) ? null : toDate(r.updatedAt),
       created_at: toDate(r.createdAt), updated_at: toDate(r.updatedAt),
     };
     case 'transfers': return {
       _id: r.id, listing_id: r.listingId, batch_id: r.batchId, match_request_id: r.offerId, provider_id: r.providerId, provider_organization_id: null, recipient_id: r.recipientId,
-      recipient_organization_id: null, material_category: r.materialCategory, agreed_weight_kg: r.agreedWeightKg, transfer_type: 'barter', status: transferStatusToDb[r.status as keyof typeof transferStatusToDb],
+      recipient_organization_id: null, material_category: r.materialCategory, agreed_weight_kg: r.agreedWeightKg, transfer_type: 'barter', status: canonicalStatus(r.status, r.canonicalStatus, TRANSFER_STATUSES),
       agreed_terms: r.agreedTerms, circular_outcome: r.circularOutcome, discrepancy_kg: r.discrepancyKg, discrepancy_reason: r.discrepancyReason,
       pending_reward_points: Math.round(r.pendingRewardCredits), reward_issued_at: r.rewardIssuedAt ? toDate(r.rewardIssuedAt) : null, is_demo: r.isDemo,
       validation_status: ['Validated', 'Completed'].includes(r.status) ? 'valid' : r.status === 'Disputed' ? 'flagged' : 'pending', completed_at: r.status === 'Completed' ? toDate(r.updatedAt) : null,
@@ -95,7 +95,7 @@ export function encodeRecord<K extends DomainCollectionName>(name: K, record: Do
     };
     case 'recoveryRecords': return {
       _id: r.id, transfer_id: r.transferId, batch_id: r.batchId, facility_id: r.facilityId, organization_id: r.organizationId, actor_id: r.recordedBy, validated_by: r.validatedBy,
-      stage: r.stage, input_kg: r.inputWeightKg, output_kg: r.outputWeightKg, rejected_kg: r.residualWeightKg, loss_kg: 0, outcome: r.outcome,
+      stage: r.stage, input_kg: r.inputWeightKg, output_kg: r.outputWeightKg, rejected_kg: r.residualWeightKg, loss_kg: r.lossWeightKg ?? 0, outcome: r.outcome,
       status: String(r.status).toLowerCase(), is_demo: r.isDemo, note: r.note, created_at: toDate(r.timestamp), updated_at: toDate(r.timestamp),
     };
     case 'conversations': return {
@@ -136,7 +136,8 @@ export function decodeRecord<K extends DomainCollectionName>(name: K, document: 
       city: value(d.city, ''), region: value(d.region, ''), joinedAt: toIso(d.created_at), consentAt: d.privacy_consent ? toIso(d.created_at) : '',
       emailVerifiedAt: d._security ? nullableIso(d._security.email_verified_at) : Object.hasOwn(d, 'email_verified_at') ? nullableIso(d.email_verified_at) : (d.verification_status === 'verified' ? toIso(d.created_at) : null),
       passwordChangedAt: d._security ? nullableIso(d._security.password_changed_at) : Object.hasOwn(d, 'password_changed_at') ? nullableIso(d.password_changed_at) : toIso(d.created_at),
-      verification: verificationFromDb[value(d.verification_status, d.organization_verified ? 'verified' : 'pending') as keyof typeof verificationFromDb],
+      verification: verificationFromDb[value(d.verification_status, d.organization_verified ? 'verified' : 'pending') as keyof typeof verificationFromDb], canonicalVerification: d.verification_status,
+      organizationVerified: Boolean(d.organization_verified), stakeholder: value(d.stakeholder, ''), location: value(d.location, ''),
       accountStatus: accountStatusFromDb[value(d.account_status, d.active ? 'active' : 'suspended') as keyof typeof accountStatusFromDb],
       scope: { organizationIds: stringArray(d.scope?.organization_ids), facilityIds: stringArray(d.scope?.facility_ids), regions: stringArray(d.scope?.regions), canExport: Boolean(d.scope?.can_export), aggregateOnly: Boolean(d.scope?.aggregate_only) },
       trustPlaceholder: Number(value(d.trust_placeholder, 50)), profile: { ageGroup: value(d.profile?.age_group, ''), organizationSize: value(d.profile?.organization_size, ''), productionVolumeKg: Number(value(d.profile?.production_volume_kg, 0)), recyclingPractices: value(d.profile?.recycling_practices, ''), acceptedTextiles: stringArray(d.profile?.accepted_textiles), sustainabilityInterests: stringArray(d.profile?.sustainability_interests) },
@@ -152,49 +153,57 @@ export function decodeRecord<K extends DomainCollectionName>(name: K, document: 
     }; break;
     case 'materialBatches': decoded = {
       id: String(d._id), sourceUserId: d.source_user_id, sourceOrganizationId: value(d.source_organization_id, null), materialCategory: d.material_category, wasteSource: d.waste_source,
-      wasteForm: d.waste_form, condition: d.condition, circularPathway: value(d.final_pathway, d.intended_pathway), declaredWeightKg: Number(d.declared_weight_kg), currentWeightKg: Number(d.current_weight_kg),
-      weightStatus: d.weight_status, secondaryQuantity: value(d.secondary_quantity, null), secondaryUnit: value(d.secondary_unit, null), city: d.location.city, region: d.location.region,
-      currentStatus: d.current_status === 'received' && d.weight_status === 'Verified' ? 'Validated' : batchStatusFromDb[d.current_status] ?? 'Recorded', archivedAt: nullableIso(d.archived_at), currentCustodianId: d.current_custodian_id, createdAt: toIso(d.created_at), updatedAt: toIso(d.updated_at), isDemo: Boolean(d.is_demo),
+      wasteForm: d.waste_form, condition: d.condition, circularPathway: value(d.final_pathway, d.intended_pathway), declaredWeightKg: nullableNumber(d.declared_weight_kg), currentWeightKg: nullableNumber(d.current_weight_kg),
+      weightStatus: d.weight_status, secondaryQuantity: value(d.secondary_quantity, null), secondaryUnit: value(d.secondary_unit, null), city: value(d.location?.city, value(d.city, '')), region: value(d.location?.region, value(d.region, '')),
+      currentStatus: batchStatusFromDb[d.current_status] ?? 'Unknown', canonicalStatus: d.current_status, archivedAt: nullableIso(d.archived_at), currentCustodianId: d.current_custodian_id, createdAt: toIso(d.created_at), updatedAt: toIso(d.updated_at), isDemo: Boolean(d.is_demo),
     }; break;
     case 'measurements': decoded = {
       id: String(d._id), batchId: d.batch_id, transferId: value(d.transfer_id, null), stage: measurementStageFromDb[d.stage] ?? 'Declaration', weightKg: Number(d.weight_kg), status: d.weight_status,
-      method: d.method, recordedBy: d.recorded_by, verifiedBy: value(d.verified_by, null), timestamp: toIso(d.measured_at), note: value(d.note, ''),
+      method: d.method, recordedBy: d.recorded_by, verifiedBy: value(d.verified_by, null), timestamp: toIso(d.measured_at), note: d.note || d.measurement_context || '',
+      canonicalStage: d.stage, facilityId: value(d.facility_id, null), supersedesMeasurementId: value(d.supersedes_measurement_id, null),
     }; break;
     case 'listings': {
       const batch = d._batch ?? {};
       decoded = {
         id: String(d._id), batchId: d.batch_id, ownerId: d.owner_id, ownerOrganizationId: value(d.owner_organization_id, null), ownerName: value(d.owner_name, ''), title: d.title, description: d.description,
         textileType: value(d.category, batch.material_category ?? ''), wasteSource: value(d.waste_source, batch.waste_source ?? 'Unknown'), wasteForm: value(d.waste_form, batch.waste_form ?? 'Other'),
-        circularPathway: value(d.pathway, batch.intended_pathway ?? 'For assessment'), quantityKg: Number(value(d.weight_kg, d.available_weight_kg)), weightStatus: value(d.weight_status, batch.weight_status ?? 'Estimated'),
+        circularPathway: value(d.pathway, batch.intended_pathway ?? 'For assessment'), quantityKg: nullableNumber(d.weight_kg === undefined ? d.available_weight_kg : d.weight_kg), weightStatus: d.weight_status === undefined ? batch.weight_status ?? null : d.weight_status,
+        availableWeightKg: d.available_weight_kg === undefined ? undefined : nullableNumber(d.available_weight_kg), reservedKg: Number(d.reserved_kg ?? 0), weighingHubId: value(d.weighing_hub_id, null), deliveryRoute: value(d.delivery_route, null), disposedAt: nullableIso(d.disposed_at), disposedWeightKg: Number(d.disposed_weight_kg ?? 0), remainderPending: Boolean(d.remainder_pending), remainderOfId: value(d.remainder_of_listing_id, null),
         quality: value(d.condition, batch.condition ?? 'For assessment'), exchangeFor: stringArray(d.looking_for).join('; '), rewardCredits: Number(value(d.reward_points, 0)), city: value(d.city, batch.location?.city ?? ''), region: value(d.region, batch.location?.region ?? ''),
-        status: listingStatusFromDb[d.status as keyof typeof listingStatusFromDb], createdAt: toIso(d.created_at), isDemo: Boolean(d.is_demo),
+        status: listingStatusFromDb[d.status as keyof typeof listingStatusFromDb] ?? 'Unknown', canonicalStatus: d.status, createdAt: toIso(d.created_at), isDemo: Boolean(d.is_demo),
       };
       break;
     }
     case 'offers': decoded = {
       id: String(d._id), listingId: d.listing_id, listingTitle: value(d.listing_title, d._listing?.title ?? ''), recipientId: d.requester_id, recipientName: value(d.requester_name, d._requester?.name ?? ''),
       providerId: value(d.provider_id, d._listing?.owner_id ?? ''), quantityKg: Number(d.requested_kg), terms: d.terms, offeredCredits: Number(value(d.incentive_points, 0)),
-      status: offerStatusFromDb[d.status as keyof typeof offerStatusFromDb], createdAt: toIso(d.created_at), updatedAt: toIso(d.updated_at),
+      status: offerStatusFromDb[d.status as keyof typeof offerStatusFromDb] ?? 'Unknown', canonicalStatus: d.status, version: Number(d.version ?? 1), previousTerms: Array.isArray(d.previous_terms) ? d.previous_terms : [], createdAt: toIso(d.created_at), updatedAt: toIso(d.updated_at),
     }; break;
     case 'transfers': {
       const measurements = Array.isArray(d._measurements) ? d._measurements : [];
       const measured = (stage: string) => {
         const compactValue = d[`_${stage}_weight_kg`];
         if (compactValue !== undefined && compactValue !== null) return Number(compactValue);
-        return measurements.filter((m: any) => m.stage === stage).sort((a: any, b: any) => +toDate(b.measured_at) - +toDate(a.measured_at))[0]?.weight_kg ?? null;
+        const latest = measurements.filter((m: any) => m.stage === stage).sort((a: any, b: any) => +toDate(b.measured_at) - +toDate(a.measured_at))[0];
+        if (latest) return nullableNumber(latest.weight_kg);
+        // Flow-only participant evidence remains reported, never promoted to verification.
+        if (stage === 'validation') return null;
+        const flow = (d._flow_events ?? []).filter((event: any) => event.stage === stage && event.weight_kg != null)
+          .sort((a: any, b: any) => +toDate(b.occurred_at) - +toDate(a.occurred_at))[0];
+        return nullableNumber(flow?.weight_kg);
       };
       decoded = {
         id: String(d._id), listingId: d.listing_id, batchId: d.batch_id, offerId: d.match_request_id, providerId: d.provider_id, recipientId: d.recipient_id,
         materialCategory: value(d.material_category, ''), agreedWeightKg: Number(d.agreed_weight_kg), handoverWeightKg: measured('handover'), receiptWeightKg: measured('receipt'), verifiedWeightKg: measured('validation'),
-        status: transferStatusFromDb[d.status as keyof typeof transferStatusFromDb], discrepancyKg: value(d.discrepancy_kg, null), discrepancyReason: value(d.discrepancy_reason, ''), circularOutcome: value(d.circular_outcome, null),
+        status: transferStatusFromDb[d.status as keyof typeof transferStatusFromDb] ?? 'Unknown', canonicalStatus: d.status, discrepancyKg: value(d.discrepancy_kg, null), discrepancyReason: value(d.discrepancy_reason, ''), circularOutcome: value(d.circular_outcome, null),
         agreedTerms: d.agreed_terms, pendingRewardCredits: Number(value(d.pending_reward_points, 0)), rewardIssuedAt: nullableIso(d.reward_issued_at), events: (d._flow_events ?? []).map(decodeFlowEvent),
         createdAt: toIso(d.created_at), updatedAt: toIso(d.updated_at), isDemo: Boolean(d.is_demo),
       };
       break;
     }
     case 'recoveryRecords': decoded = {
-      id: String(d._id), transferId: d.transfer_id, batchId: d.batch_id, facilityId: d.facility_id, organizationId: d.organization_id, stage: d.stage, inputWeightKg: Number(d.input_kg),
-      outputWeightKg: value(d.output_kg, null), residualWeightKg: value(d.rejected_kg, null), outcome: value(d.outcome, null), status: d.status === 'validated' ? 'Validated' : d.status === 'flagged' ? 'Flagged' : d.status === 'reversed' ? 'Reversed' : 'Recorded',
+      id: String(d._id), transferId: d.transfer_id, batchId: d.batch_id, facilityId: d.facility_id, organizationId: d.organization_id, stage: value(d.stage, 'Processing'), inputWeightKg: Number(d.input_kg),
+      outputWeightKg: value(d.output_kg, null), residualWeightKg: value(d.rejected_kg, null), lossWeightKg: Number(d.loss_kg ?? 0), outcome: value(d.outcome, null), status: d.status === 'validated' ? 'Validated' : d.status === 'flagged' ? 'Flagged' : d.status === 'reversed' ? 'Reversed' : 'Recorded',
       recordedBy: d.actor_id, validatedBy: value(d.validated_by, null), timestamp: toIso(d.created_at), note: value(d.note, ''), isDemo: Boolean(d.is_demo),
     }; break;
     case 'conversations': decoded = { id: String(d._id), listingId: d.listing_id, listingTitle: value(d._listing?.title, ''), participantIds: stringArray(d.participant_ids), participantNames: stringArray(d.participant_names), updatedAt: toIso(d.updated_at) }; break;
@@ -216,16 +225,17 @@ export function decodeRecord<K extends DomainCollectionName>(name: K, document: 
 }
 
 export function encodeFlowEvent(transferId: string, batchId: string, listingId: string, event: LifecycleEventRecord, sequence: number): Document {
-  const stage = ({ 'Offer accepted': 'reserved', Handover: 'handover', Receipt: 'receipt', Validation: 'validation', Completion: 'completion', Cancellation: 'cancellation', Rejection: 'rejection', Dispute: 'dispute' } as Record<string, string>)[event.type];
+  const stage = ({ 'Offer accepted': 'reserved', Handover: 'handover', Receipt: 'receipt', Validation: 'validation', Completion: 'completion', Cancellation: 'cancellation', Rejection: 'rejection', Dispute: 'dispute', Collection: 'collection', Processing: 'processing' } as Record<string, string>)[event.type];
+  if (!event.canonicalStage && !stage) throw new Error('Lifecycle event requires a supported canonical stage.');
   return {
-    _id: event.id, batch_id: batchId, listing_id: listingId, transfer_id: transferId, actor_id: event.actorId, actor_name: event.actorName, facility_id: null, stage, sequence,
-    event_status: event.status === 'Exception' ? 'exception' : 'completed', weight_kg: null, weight_status: null, measurement_id: event.measurementId, location: event.location,
+    _id: event.id, batch_id: batchId, listing_id: listingId, transfer_id: transferId, actor_id: event.actorId, actor_name: event.actorName, facility_id: null, stage: event.canonicalStage ?? stage, sequence,
+    event_status: event.status === 'Exception' ? 'exception' : 'completed', weight_kg: event.weightKg ?? null, weight_status: event.weightStatus ?? null, measurement_id: event.measurementId, location: event.location,
     note: event.note, occurred_at: toDate(event.timestamp), created_at: toDate(event.timestamp),
   };
 }
 
 function decodeFlowEvent(document: Document): LifecycleEventRecord {
   const d = document as any;
-  const type = ({ reserved: 'Offer accepted', handover: 'Handover', receipt: 'Receipt', validation: 'Validation', completion: 'Completion', cancellation: 'Cancellation', rejection: 'Rejection', dispute: 'Dispute', collection: 'Receipt', processing: 'Validation' } as Record<string, string>)[d.stage] ?? 'Validation';
-  return { id: String(d._id ?? d.id), type, actorId: d.actor_id, actorName: value(d.actor_name, ''), timestamp: toIso(d.occurred_at), status: d.event_status === 'exception' ? 'Exception' : 'Completed', location: value(d.location, ''), note: value(d.note, ''), measurementId: value(d.measurement_id, null) } as LifecycleEventRecord;
+  const type = ({ reserved: 'Offer accepted', handover: 'Handover', receipt: 'Receipt', validation: 'Validation', completion: 'Completion', cancellation: 'Cancellation', rejection: 'Rejection', dispute: 'Dispute', collection: 'Collection', processing: 'Processing' } as Record<string, string>)[d.stage] ?? 'Activity';
+  return { id: String(d._id ?? d.id), type, canonicalStage: d.stage, weightKg: nullableNumber(d.weight_kg), weightStatus: value(d.weight_status, null), actorId: d.actor_id, actorName: value(d.actor_name, ''), timestamp: toIso(d.occurred_at), status: d.event_status === 'exception' ? 'Exception' : 'Completed', location: value(d.location, ''), note: value(d.note, ''), measurementId: value(d.measurement_id, null) } as LifecycleEventRecord;
 }

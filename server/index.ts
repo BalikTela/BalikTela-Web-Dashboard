@@ -13,11 +13,17 @@ import {
 } from './auth.js';
 import { createSeedData } from './seed.js';
 import { registerPredictiveRoutes } from './analytics/routes.js';
+import { registerHubRoutes } from './hubs.js';
+import { isHubCandidate } from '../shared/hubs.js';
+import { availableStockKg, isTerminalTransfer } from '../shared/workflows.js';
 import { createStore } from './store.js';
 import { canIssueReward } from './domain.js';
 import { formatMass } from '../shared/metrics.js';
 import { resolveReportingPeriod, manilaDate } from '../shared/reporting.js';
 import { buildDataQuality } from './dataQuality.js';
+import { buildGovernance } from './governance.js';
+import { registerImportRoutes } from './imports.js';
+import { canActOnTransfer } from './access-control.js';
 import { registerReportRoutes } from './reports.js';
 import { buildDashboardAnalytics, filterBatches, loadDashboardAnalyticsSnapshot, selectAnalyticsCohort, type DashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
 import { AsyncTtlCache, dashboardAnalyticsCacheKey } from './asyncCache.js';
@@ -52,7 +58,10 @@ const permit = (permission: Permission) => authorize(store, permission);
 type DashboardAnalytics = Awaited<ReturnType<typeof buildDashboardAnalytics>>;
 const dashboardAnalyticsCache = new AsyncTtlCache<DashboardAnalytics>(dashboardCacheTtlMs, 200);
 const dashboardSnapshotCache = new AsyncTtlCache<DashboardAnalyticsSnapshot>(dashboardSnapshotTtlMs, 1);
-const dashboardMutationPrefixes = ['/api/users', '/api/organizations', '/api/barter', '/api/facilities', '/api/material-batches', '/api/transfers', '/api/recovery-records', '/api/configuration'];
+async function readDashboardSnapshot() {
+  return (await dashboardSnapshotCache.getOrCreate('current', () => loadDashboardAnalyticsSnapshot(store))).value;
+}
+const dashboardMutationPrefixes = ['/api/users', '/api/organizations', '/api/barter', '/api/facilities', '/api/material-batches', '/api/transfers', '/api/recovery-records', '/api/configuration', '/api/hubs', '/api/imports/commit'];
 
 installSecurity(app);
 app.use('/api/auth', (_req, res, next) => {
@@ -95,6 +104,7 @@ app.use((req, res, next) => {
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 registerSetupRoutes(app, { store, identity, enabled: usesSupabaseAuth });
+registerHubRoutes(app, store);
 
 app.post('/api/auth/login', async (req, res) => {
   const email = String(req.body.email ?? '').trim().toLowerCase();
@@ -431,9 +441,9 @@ app.patch('/api/users/:id/verification', requireAuth, permit('users.manage'), as
   if (verification === 'Demo verified' && (!target.emailVerifiedAt || !target.passwordChangedAt)) {
     return res.status(409).json({ message: 'Email verification and replacement of the temporary password are required before administrator approval.' });
   }
-  const updated = await store.update('users', String(req.params.id), { verification: verification as UserRecord['verification'], accountStatus: verification === 'Demo verified' ? 'Active' : 'Pending verification' });
+  const updated = await store.update('users', String(req.params.id), { verification: verification as UserRecord['verification'], organizationVerified: verification === 'Demo verified', accountStatus: verification === 'Demo verified' ? 'Active' : 'Pending verification' });
   if (!updated) return res.status(500).json({ message: 'The user account could not be updated.' });
-  const accessChanged = target.verification !== verification || target.accountStatus !== updated.accountStatus;
+  const accessChanged = target.verification !== verification || target.organizationVerified !== updated.organizationVerified || target.accountStatus !== updated.accountStatus;
   const revokedSessions = accessChanged ? await store.revokeUserSessions(updated.id, new Date().toISOString()) : 0;
   if (usesSupabaseAuth && updated.authUserId) await identity.setSuspended(updated.authUserId, false);
   await audit(req.auth!.userId, 'user.verification.updated', 'User', updated.id, `Verification set to ${verification}.`);
@@ -445,7 +455,7 @@ app.post('/api/users', requireAuth, permit('users.manage'), async (req: Authenti
   const email = String(req.body.email ?? '').trim().toLowerCase();
   const organizationId = String(req.body.organizationId ?? '').trim();
   const organization = await store.findOne('organizations', (item) => item.id === organizationId);
-  if (!email.includes('@') || !String(req.body.fullName ?? '').trim() || !organization || !(['Administrator', 'Government', 'Researcher', 'Producer', 'Recycler', 'NGO', 'LGU/Collection Point', 'Upcycler'] as UserRole[]).includes(role)) return res.status(400).json({ message: 'A valid institutional role, organization, name, and email are required.' });
+  if (!email.includes('@') || !String(req.body.fullName ?? '').trim() || !organization || !(['Administrator', 'Government', 'Researcher', 'Producer', 'Recycler', 'BalikTela Hub', 'NGO', 'LGU/Collection Point', 'Upcycler'] as UserRole[]).includes(role)) return res.status(400).json({ message: 'A valid institutional role, organization, name, and email are required.' });
   if (await store.findOne('users', (item) => item.email === email)) return res.status(409).json({ message: 'An account already exists for this email.' });
   const now = new Date().toISOString();
   const aggregateOnly = role === 'Government' || role === 'Researcher';
@@ -469,7 +479,7 @@ app.post('/api/users', requireAuth, permit('users.manage'), async (req: Authenti
 app.patch('/api/users/:id', requireAuth, permit('users.manage'), async (req: AuthenticatedRequest, res) => {
   const target = await store.findOne('users', (item) => item.id === req.params.id); if (!target) return res.status(404).json({ message: 'User account not found.' });
   const role = (req.body.role ?? target.role) as UserRole;
-  const roles: UserRole[] = ['Administrator', 'Government', 'Researcher', 'Producer', 'Recycler', 'Consumer', 'NGO', 'LGU/Collection Point', 'Upcycler'];
+  const roles: UserRole[] = ['Administrator', 'Government', 'Researcher', 'Producer', 'Recycler', 'Consumer', 'NGO', 'LGU/Collection Point', 'Upcycler', 'BalikTela Hub'];
   if (!roles.includes(role)) return res.status(400).json({ message: 'Select a valid account role.' });
   const organizationId = req.body.organizationId === undefined ? target.organizationId : String(req.body.organizationId || '') || null;
   const organization = organizationId ? await store.findOne('organizations', (item) => item.id === organizationId) : null;
@@ -485,10 +495,17 @@ app.patch('/api/users/:id', requireAuth, permit('users.manage'), async (req: Aut
   }
   if (organizationId && !organization) throw new ManagementError('Select a valid organization.');
   const patch: Partial<UserRecord> = { fullName:managementText(req.body.fullName ?? target.fullName,'Full name'), city:managementText(req.body.city ?? target.city,'City',false), region:managementText(req.body.region ?? target.region,'Region',false), role, organizationId, organization: organization?.name ?? 'Individual participant', accountStatus, scope: { organizationIds: organizationId && !aggregateOnly ? [organizationId] : [], facilityIds: stringArray(req.body.facilityIds, target.scope.facilityIds), regions: stringArray(req.body.regions, target.scope.regions), canExport: req.body.canExport === undefined ? target.scope.canExport : Boolean(req.body.canExport), aggregateOnly } };
-  if (req.body.approve===true && accountStatus==='Active') patch.verification='Demo verified';
+  if (req.body.approve===true && accountStatus==='Active') {
+    patch.verification='Demo verified';
+    // Ordinary account edits must not restore weighing approval revoked in Hub Management.
+    patch.organizationVerified=isHubCandidate({role}) ? target.organizationVerified === true : true;
+  }
+  if (isHubCandidate({role}) && (role !== target.role || organizationId !== target.organizationId)) patch.organizationVerified=false;
+  if (role !== target.role && role === 'BalikTela Hub') patch.stakeholder='Collection personnel';
+  if (accountStatus !== 'Active') patch.organizationVerified=false;
   const updated={...target,...patch};
   await saveManagement(store,req.actor!,[{name:'users',previous:target,record:updated}],'user.access.updated',target.id,String(req.body.reason ?? 'Account information or access updated.'));
-  const accessChanged = target.role !== updated!.role || target.organizationId !== updated!.organizationId || target.verification !== updated.verification || target.accountStatus !== updated!.accountStatus || JSON.stringify(target.scope) !== JSON.stringify(updated!.scope);
+  const accessChanged = target.role !== updated!.role || target.organizationId !== updated!.organizationId || target.verification !== updated.verification || target.organizationVerified !== updated.organizationVerified || target.accountStatus !== updated!.accountStatus || JSON.stringify(target.scope) !== JSON.stringify(updated!.scope);
   const revokedSessions = accessChanged ? await store.revokeUserSessions(target.id, new Date().toISOString()) : 0;
   if (usesSupabaseAuth && target.authUserId && target.accountStatus !== updated!.accountStatus) await identity.setSuspended(target.authUserId, ['Suspended','Deactivated'].includes(updated!.accountStatus));
   res.json({ user: publicUser(updated!), revokedSessions });
@@ -510,7 +527,7 @@ app.patch('/api/organizations/:id', requireAuth, permit('organizations.manage'),
   const current = await store.findOne('organizations', (item) => item.id === req.params.id); if (!current) return res.status(404).json({ message: 'Organization not found.' });
   const updated = organizationValues(req.body,current);
   if (updated.status === 'Inactive' && current.status !== 'Inactive') {
-    const active = (await store.all('transfers')).filter(item=> !['Completed','Cancelled','Rejected'].includes(item.status));
+    const active = (await store.all('transfers')).filter(item=> !isTerminalTransfer(item.status));
     const batches = await store.all('materialBatches');
     const users = await store.all('users');
     if (active.some(item=>batches.some(batch=>batch.id===item.batchId && batch.sourceOrganizationId===current.id) || users.some(user=>user.organizationId===current.id && [item.providerId,item.recipientId].includes(user.id)))) throw new ManagementError('Resolve active transfers before deactivating this organization.',409);
@@ -530,6 +547,10 @@ app.get('/api/barter/listings', requireAuth, permit('listings.read'), async (req
     .filter((item) => textileType === 'All textiles' || item.textileType === textileType)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   if (actor.scope.aggregateOnly) listings = [];
+  else if (actor.role === 'BalikTela Hub' || actor.role === 'Producer') {
+    const history = new Set((await store.all('measurements')).filter(item => item.recordedBy === actor.id).map(item => item.batchId));
+    listings = listings.filter(item => item.ownerId === actor.id || actor.role === 'BalikTela Hub' && (item.weighingHubId === actor.id || history.has(item.batchId)));
+  } else if (actor.role === 'Researcher' && actor.scope.regions.length) listings = listings.filter(item => actor.scope.regions.includes(item.region));
   res.json({ listings });
 });
 
@@ -564,8 +585,8 @@ app.post('/api/barter/listings', requireAuth, permit('listings.create'), async (
 
 app.get('/api/material-batches', requireAuth, permit('batches.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
-  const snapshot = await loadDashboardAnalyticsSnapshot(store);
-  const scoped = scopeBatches(actor, snapshot.allBatches);
+  const snapshot = await readDashboardSnapshot();
+  const scoped = actor.role === 'Researcher' ? snapshot.allBatches.filter(item => !actor.scope.regions.length || actor.scope.regions.includes(item.region)) : scopeBatches(actor, snapshot.allBatches, snapshot);
   const period = resolveReportingPeriod({ ...req.query, dateRange: req.query.dateRange ?? 'All time' }, new Date(), scoped.map(item => item.createdAt).sort()[0]);
   const batches = filterBatches(scoped, period, req.query, { transfers: snapshot.allTransfers, recoveryRecords: snapshot.recoveryRecords.filter(item => item.status !== 'Reversed'), users: snapshot.users, organizations: snapshot.organizations });
   const measurements = snapshot.measurements;
@@ -616,7 +637,10 @@ app.get('/api/barter/listings/:id/matches', requireAuth, permit('listings.match'
 
 app.get('/api/barter/offers', requireAuth, permit('offers.read'), async (req: AuthenticatedRequest, res) => {
   const actor = req.actor!;
-  const offers = (await store.all('offers')).filter((item) => actor.role === 'Administrator' || item.recipientId === actor.id || item.providerId === actor.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const snapshot = await readDashboardSnapshot();
+  const cohort = Object.keys(req.query).length ? selectAnalyticsCohort(snapshot, actor, { ...req.query, dateRange: req.query.dateRange ?? 'All time' }) : null;
+  const listingIds = new Set(snapshot.listings.filter(item => !cohort || cohort.currentBatchIds.has(item.batchId)).map(item => item.id));
+  const offers = snapshot.offers.filter((item) => listingIds.has(item.listingId) && (actor.role === 'Administrator' || item.recipientId === actor.id || item.providerId === actor.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.json({ offers });
 });
 
@@ -627,7 +651,9 @@ app.post('/api/barter/listings/:id/offers', requireAuth, permit('offers.create')
   if (!listing || !['Open', 'Matched'].includes(listing.status)) return res.status(404).json({ message: 'This listing is not available.' });
   if (listing.ownerId === user.id) return res.status(400).json({ message: 'You cannot make a proposal on your own listing.' });
   const quantityKg = managementNumber(req.body.quantityKg,'Quantity',0.001);
-  if (quantityKg <= 0 || quantityKg > listing.quantityKg || !String(req.body.terms ?? '').trim()) return res.status(400).json({ message: 'Enter valid terms and a quantity within the available amount.' });
+  const available = availableStockKg(listing);
+  if (available === null) return res.status(409).json({ message: 'This textile is awaiting Hub weighing before requests can begin.' });
+  if (quantityKg <= 0 || quantityKg > available || !String(req.body.terms ?? '').trim()) return res.status(400).json({ message: 'Enter valid terms and a quantity within the available amount.' });
   const createdAt = new Date().toISOString();
   const offer: OfferRecord = { id: id('OFR'), listingId: listing.id, listingTitle: listing.title, recipientId: user.id, recipientName: user.organization || user.fullName, providerId: listing.ownerId, quantityKg, terms: String(req.body.terms).trim(), offeredCredits: Math.max(0, Number(req.body.offeredCredits ?? listing.rewardCredits)), status: 'Pending', createdAt, updatedAt: createdAt };
   offer.offeredCredits=managementNumber(req.body.offeredCredits ?? listing.rewardCredits,'Offered credits');
@@ -643,20 +669,21 @@ app.patch('/api/barter/offers/:id', requireAuth, permit('offers.manage'), async 
   const offer = await store.findOne('offers', (item) => item.id === req.params.id);
   if (!offer) return res.status(404).json({ message: 'Offer not found.' });
   if (req.body.action==='edit') {
+    if (actor.role === 'Producer') throw new ManagementError('Producer accounts manage supplied material, not recipient requests.',403);
     if (actor.role!=='Administrator' && actor.id!==offer.recipientId) throw new ManagementError('You cannot edit this proposal.',403);
-    if (offer.status!=='Pending') throw new ManagementError('Only pending proposals can be edited.',409);
+    if (!['Pending','Revised'].includes(offer.status)) throw new ManagementError('Only pending or revised proposals can be edited.',409);
     const listing=await store.findById('listings',offer.listingId);
     if (!listing || !['Open','Matched'].includes(listing.status)) throw new ManagementError('The linked listing is not available.',409);
     const quantityKg=managementNumber(req.body.quantityKg ?? offer.quantityKg,'Requested weight',0.001);
-    if(quantityKg>listing.quantityKg) throw new ManagementError('Requested weight exceeds available material.');
+    if(availableStockKg(listing) === null || quantityKg>availableStockKg(listing)!) throw new ManagementError('Requested weight exceeds available material or is awaiting Hub weighing.');
     const updated={...offer,quantityKg,terms:managementText(req.body.terms ?? offer.terms,'Terms'),offeredCredits:managementNumber(req.body.offeredCredits ?? offer.offeredCredits,'Credits'),updatedAt:new Date().toISOString()};
     await saveManagement(store,actor,[{name:'offers',previous:offer,record:updated}],'offer.corrected',offer.id,managementText(req.body.reason,'Reason'));
     return res.json({offer:updated});
   }
   const status = String(req.body.status);
-  const providerDecision = offer.providerId === actor.id || actor.role === 'Administrator';
-  const recipientWithdrawal = offer.recipientId === actor.id && status === 'Withdrawn';
-  if ((!providerDecision && !recipientWithdrawal) || !['Accepted', 'Declined', 'Withdrawn'].includes(status) || offer.status !== 'Pending') return res.status(403).json({ message: 'This proposal cannot be updated by this account.' });
+  const providerDecision = offer.providerId === actor.id && actor.role !== 'Consumer' || actor.role === 'Administrator';
+  const recipientWithdrawal = actor.role !== 'Producer' && offer.recipientId === actor.id && status === 'Withdrawn';
+  if ((!providerDecision && !recipientWithdrawal) || !['Accepted', 'Declined', 'Withdrawn'].includes(status) || !['Pending','Revised'].includes(offer.status)) return res.status(403).json({ message: 'This proposal cannot be updated by this account.' });
   const updatedAt = new Date().toISOString();
   const updated = {...offer,status:status as OfferRecord['status'],updatedAt};
   const changes: RecordMutation[] = [{name:'offers',previous:offer,record:updated}];
@@ -664,7 +691,7 @@ app.patch('/api/barter/offers/:id', requireAuth, permit('offers.manage'), async 
     const listing = await store.findOne('listings', (item) => item.id === offer.listingId);
     if (!listing) return res.status(404).json({ message: 'The listing linked to this proposal no longer exists.' });
     const batch = await store.findById('materialBatches',listing.batchId);
-    if (!batch || batch.currentStatus === 'Archived' || !['Open','Matched'].includes(listing.status) || offer.quantityKg > listing.quantityKg) throw new ManagementError('This listing is no longer available for this offer.',409);
+    if (!batch || batch.currentStatus === 'Archived' || !['Open','Matched'].includes(listing.status) || availableStockKg(listing) === null || offer.quantityKg > availableStockKg(listing)!) throw new ManagementError('This listing is no longer available for this offer.',409);
     changes.push({name:'listings',previous:listing,record:{...listing,status:'Reserved'}});
     changes.push({name:'materialBatches',previous:batch,record:{...batch,currentStatus:'Reserved',updatedAt}});
     const rewardRate = (await store.findOne('configurations', (item) => item.id === 'platform'))?.rewardCreditsPerVerifiedKg ?? 0;
@@ -679,10 +706,15 @@ app.patch('/api/barter/offers/:id', requireAuth, permit('offers.manage'), async 
 
 app.get('/api/transfers', requireAuth, permit('transfers.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
-  const snapshot = await loadDashboardAnalyticsSnapshot(store);
-  const selected = Object.keys(req.query).length ? selectAnalyticsCohort(snapshot, actor, { ...req.query, dateRange: req.query.dateRange ?? 'All time' }).currentTransfers : snapshot.allTransfers;
-  const transfers = scopeTransfers(actor, selected);
-  res.json({ transfers: transfers.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) });
+  const snapshot = await readDashboardSnapshot();
+  const selected = Object.keys(req.query).length || ['BalikTela Hub', 'Researcher'].includes(actor.role) ? selectAnalyticsCohort(snapshot, actor, { ...req.query, dateRange: req.query.dateRange ?? 'All time' }).currentTransfers : snapshot.allTransfers;
+  const transfers = actor.scope.aggregateOnly ? [] : ['BalikTela Hub', 'Researcher'].includes(actor.role) ? selected : scopeTransfers(actor, selected, snapshot);
+  const requesterNames = new Map(snapshot.users.map(user => [user.id, user.fullName?.trim() || null]));
+  const categories = new Map(snapshot.allBatches.map(batch => [batch.id, batch.materialCategory]));
+  res.json({ transfers: transfers.map(transfer => ({ ...transfer,
+    requesterName: requesterNames.get(transfer.recipientId) ?? null,
+    materialCategory: transfer.materialCategory || categories.get(transfer.batchId) || 'Not recorded',
+  })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) });
 });
 
 app.patch('/api/transfers/:id', requireAuth, permit('transfers.manage'), async (req: AuthenticatedRequest, res) => {
@@ -694,8 +726,9 @@ app.patch('/api/transfers/:id', requireAuth, permit('transfers.manage'), async (
   const isProvider = transfer.providerId === actor.id;
   const isRecipient = transfer.recipientId === actor.id;
   const action = String(req.body.action ?? '');
+  if (!canActOnTransfer(actor, transfer, action)) throw new ManagementError('This action belongs to a different participant role or account.',403);
   const at = new Date().toISOString();
-  if (['Completed','Cancelled','Rejected'].includes(transfer.status)) throw new ManagementError('This transfer is final. Its lifecycle history cannot be changed.',409);
+  if (isTerminalTransfer(transfer.status)) throw new ManagementError('This transfer is final. Its lifecycle history cannot be changed.',409);
   const batch = await store.findById('materialBatches',transfer.batchId);
   const listing = await store.findById('listings',transfer.listingId);
   if (!batch || !listing) throw new ManagementError('The transfer is missing its linked batch or listing.',409);
@@ -706,19 +739,21 @@ app.patch('/api/transfers/:id', requireAuth, permit('transfers.manage'), async (
 
   if (action === 'handover' && transfer.status === 'Reserved' && (isProvider || isAdmin)) {
     const weightKg = validWeight(req.body.weightKg, res); if (weightKg === null) return;
-    measurement = makeMeasurement(transfer, actor, 'Handover', weightKg, 'Measured', req.body.method, req.body.note);
+    const weightStatus = actor.role === 'Producer' ? 'Estimated' as const : 'Measured' as const;
+    measurement = makeMeasurement(transfer, actor, 'Handover', weightKg, weightStatus, req.body.method, req.body.note);
     event = lifecycleEvent('Handover', actor, String(req.body.location ?? actor.city), `${weightKg} kg handed over.`, measurement.id);
     patch = { ...patch, status: 'Handed over', handoverWeightKg: weightKg, events: [...transfer.events, event] };
-    changes.push({name:'materialBatches',previous:batch,record:{...batch,currentStatus:'In transit',currentWeightKg:weightKg,weightStatus:'Measured',updatedAt:at}});
+    changes.push({name:'materialBatches',previous:batch,record:{...batch,currentStatus:'In transit',currentWeightKg:weightKg,weightStatus,updatedAt:at}});
   } else if (action === 'receipt' && transfer.status === 'Handed over' && (isRecipient || isAdmin)) {
     const weightKg = validWeight(req.body.weightKg, res); if (weightKg === null) return;
     const discrepancyKg = Number((weightKg - (transfer.handoverWeightKg ?? transfer.agreedWeightKg)).toFixed(3));
     const reason = String(req.body.discrepancyReason ?? '').trim();
     if (Math.abs(discrepancyKg) > 0.01 && !reason) return res.status(400).json({ message: 'Document a reason for the receipt weight discrepancy.' });
-    measurement = makeMeasurement(transfer, actor, 'Receipt', weightKg, 'Measured', req.body.method, req.body.note);
+    const weightStatus = actor.role === 'Consumer' ? 'Estimated' as const : 'Measured' as const;
+    measurement = makeMeasurement(transfer, actor, 'Receipt', weightKg, weightStatus, req.body.method, req.body.note);
     event = lifecycleEvent('Receipt', actor, String(req.body.location ?? actor.city), `${weightKg} kg received${discrepancyKg ? `; ${discrepancyKg > 0 ? '+' : ''}${discrepancyKg} kg variance documented` : ''}.`, measurement.id);
     patch = { ...patch, status: 'Received', receiptWeightKg: weightKg, discrepancyKg, discrepancyReason: reason, events: [...transfer.events, event] };
-    changes.push({name:'materialBatches',previous:batch,record:{...batch,currentStatus:'Received',currentCustodianId:transfer.recipientId,currentWeightKg:weightKg,weightStatus:'Measured',updatedAt:at}});
+    changes.push({name:'materialBatches',previous:batch,record:{...batch,currentStatus:'Received',currentCustodianId:transfer.recipientId,currentWeightKg:weightKg,weightStatus,updatedAt:at}});
   } else if (action === 'validate' && transfer.status === 'Received' && (isRecipient || isAdmin)) {
     const weightKg = validWeight(req.body.weightKg ?? transfer.receiptWeightKg, res); if (weightKg === null) return;
     if (weightKg > (transfer.receiptWeightKg ?? 0)) throw new ManagementError('Verified weight cannot exceed received weight.');
@@ -762,11 +797,11 @@ app.patch('/api/transfers/:id', requireAuth, permit('transfers.manage'), async (
 
 app.get('/api/recovery-records', requireAuth, permit('recovery.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
-  const snapshot = await loadDashboardAnalyticsSnapshot(store);
+  const snapshot = await readDashboardSnapshot();
   const { currentBatchIds } = selectAnalyticsCohort(snapshot, actor, { ...req.query, dateRange: req.query.dateRange ?? 'All time' });
-  let records = scopeRecoveryRecords(actor, snapshot.recoveryRecords).filter(item => currentBatchIds.has(item.batchId));
-  const status = String(req.query.transactionStatus ?? 'All statuses'); const facilityId = String(req.query.facilityId ?? 'All facilities');
-  records = records.filter((item) => (status === 'All statuses' || item.status === status) && (facilityId === 'All facilities' || item.facilityId === facilityId));
+  let records = (actor.role === 'Researcher' && !actor.scope.aggregateOnly ? snapshot.recoveryRecords : scopeRecoveryRecords(actor, snapshot.recoveryRecords, snapshot)).filter(item => currentBatchIds.has(item.batchId));
+  const facilityId = String(req.query.facilityId ?? 'All facilities');
+  records = records.filter((item) => facilityId === 'All facilities' || item.facilityId === facilityId);
   res.json({ records: records.sort((a, b) => b.timestamp.localeCompare(a.timestamp)) });
 });
 
@@ -777,21 +812,22 @@ app.post('/api/recovery-records', requireAuth, permit('recovery.create'), async 
   const facility = await store.findOne('facilities', (item) => item.id === String(req.body.facilityId));
   const inputWeightKg = managementNumber(req.body.inputWeightKg,'Input weight',0.001);
   const outputWeightKg = managementNumber(req.body.outputWeightKg,'Output weight');
-  const residualWeightKg = managementNumber(req.body.residualWeightKg ?? Number((inputWeightKg-outputWeightKg).toFixed(3)),'Residual weight');
+  const lossWeightKg = managementNumber(req.body.lossWeightKg ?? 0, 'Processing loss');
+  const residualWeightKg = managementNumber(req.body.residualWeightKg ?? Number((inputWeightKg-outputWeightKg-lossWeightKg).toFixed(3)),'Reject weight');
   if (!transfer || !facility || inputWeightKg <= 0) return res.status(400).json({ message: 'Valid transfer, facility, and input weight are required.' });
   if (!isWithinOperationalScope(actor, { organizationIds: [facility.organizationId], facilityIds: [facility.id] })) return res.status(403).json({ message: 'This facility is outside your assigned scope.' });
   if (!isWithinOperationalScope(actor,{userIds:[transfer.providerId,transfer.recipientId]})) throw new ManagementError('This transfer is outside your assigned scope.',403);
   if (facility.status==='Inactive') throw new ManagementError('Select an active facility.');
-  if (Math.abs(inputWeightKg-outputWeightKg-residualWeightKg)>0.01) throw new ManagementError('Input must equal output plus residual kilograms.');
+  if (Math.abs(inputWeightKg-outputWeightKg-residualWeightKg-lossWeightKg)>0.01) throw new ManagementError('Input must equal output plus rejects and processing loss.');
   if (outputWeightKg !== null && outputWeightKg > inputWeightKg) return res.status(400).json({ message: 'Output weight cannot exceed input weight.' });
-  const record: RecoveryRecord = { id: id('RCV'), transferId: transfer.id, batchId: transfer.batchId, facilityId: facility.id, organizationId: facility.organizationId, stage: ['Collection', 'Sorting', 'Processing', 'Recovery', 'Rejection'].includes(String(req.body.stage)) ? req.body.stage : 'Processing', inputWeightKg, outputWeightKg, residualWeightKg, outcome: req.body.stage === 'Rejection' ? 'Rejected' : req.body.outcome ? validPathway(req.body.outcome) : null, status: req.body.validate === true ? 'Validated' : 'Recorded', recordedBy: actor.id, validatedBy: req.body.validate === true ? actor.id : null, timestamp: new Date().toISOString(), note: String(req.body.note ?? ''), isDemo: store.mode === 'memory-demo' };
+  const record: RecoveryRecord = { id: id('RCV'), transferId: transfer.id, batchId: transfer.batchId, facilityId: facility.id, organizationId: facility.organizationId, stage: ['Collection', 'Sorting', 'Processing', 'Recovery', 'Rejection'].includes(String(req.body.stage)) ? req.body.stage : 'Processing', inputWeightKg, outputWeightKg, residualWeightKg, lossWeightKg, outcome: req.body.stage === 'Rejection' ? 'Rejected' : req.body.outcome ? validPathway(req.body.outcome) : null, status: req.body.validate === true ? 'Validated' : 'Recorded', recordedBy: actor.id, validatedBy: req.body.validate === true ? actor.id : null, timestamp: new Date().toISOString(), note: String(req.body.note ?? ''), isDemo: store.mode === 'memory-demo' };
   if (record.outcome===null || record.outcome==='For assessment') throw new ManagementError('Select a confirmed recovery outcome.');
   await saveManagement(store,actor,[{name:'recoveryRecords',record}],'recovery.recorded',record.id,managementText(req.body.note,'Operational note')); res.status(201).json({ record });
 });
 
 app.get('/api/analytics/operations', requireAuth, permit('analytics.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
-  const data = await buildDashboardAnalytics(store, actor, req.query);
+  const data = await buildDashboardAnalytics(store, actor, req.query, await readDashboardSnapshot());
   res.json(data.operations);
 });
 
@@ -801,8 +837,7 @@ app.get('/api/analytics/dashboard', requireAuth, permit('analytics.read'), async
   const now = new Date();
   resolveReportingPeriod(req.query, now);
   const result = await dashboardAnalyticsCache.getOrCreate(dashboardAnalyticsCacheKey(actor, { ...req.query, reportingDay: manilaDate(now) }), async () => {
-    const snapshot = await dashboardSnapshotCache.getOrCreate('current', () => loadDashboardAnalyticsSnapshot(store));
-    return buildDashboardAnalytics(store, actor, req.query, snapshot.value, now);
+    return buildDashboardAnalytics(store, actor, req.query, await readDashboardSnapshot(), now);
   });
   const durationMs = performance.now() - startedAt;
   res.setHeader('Cache-Control', 'private, no-store');
@@ -813,11 +848,11 @@ app.get('/api/analytics/dashboard', requireAuth, permit('analytics.read'), async
 
 app.get('/api/data-quality', requireAuth, permit('dataQuality.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
-  const snapshot = await loadDashboardAnalyticsSnapshot(store);
+  const snapshot = await readDashboardSnapshot();
   const now = new Date();
   const { currentBatches: batches, currentTransfers: transfers } = selectAnalyticsCohort(snapshot, actor, req.query, now);
   const threshold = (await store.findOne('configurations', item => item.id === 'platform'))?.discrepancyThresholdPercent ?? 5;
-  res.json(buildDataQuality(actor, batches, transfers, threshold, now));
+  res.json(buildDataQuality(actor, batches, transfers, threshold, now, snapshot));
 });
 
 app.get('/api/audit-records', requireAuth, permit('audit.read'), async (req: AuthenticatedRequest, res) => {
@@ -852,10 +887,11 @@ app.patch('/api/configuration', requireAuth, permit('configuration.manage'), asy
 app.get('/api/governance', requireAuth, permit('governance.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
   const configuration = await store.findOne('configurations', (item) => item.id === 'platform');
-  res.json({ methodology: { environmentalImpact: 'Disabled pending approved methodology', predictiveAnalytics: 'Non-production; model validation required', prescriptiveAnalytics: 'Non-production; governance approval required', massAccounting: 'Verified completed kilograms / unique declared batch kilograms', version: configuration?.methodologyVersion ?? 'Not approved' }, privacy: { role: actor.role, aggregateOnly: actor.scope.aggregateOnly, exportAllowed: actor.scope.canExport, policy: actor.scope.aggregateOnly ? 'Aggregate/de-identified access' : 'Authorized organization or individual scope' }, policyIndicators: [{ label: 'Verified material completion', status: 'Available', caveat: 'Operational indicator only; not a statutory compliance claim.' }, { label: 'EPR reporting support', status: 'Preparation only', caveat: 'Requires regulator-approved definitions and reporting rules.' }, { label: 'Environmental equivalents', status: 'Disabled', caveat: 'No approved factors or methodology.' }] });
+  res.json(buildGovernance(actor, configuration));
 });
 
 registerReportRoutes(app, store);
+registerImportRoutes(app, store);
 
 app.get('/api/barter/conversations', requireAuth, permit('messages.read'), async (req: AuthenticatedRequest, res) => {
   const actor = req.actor!;
@@ -1005,5 +1041,5 @@ async function authorizedConversation(req: AuthenticatedRequest, res: Response):
   if (req.actor!.role !== 'Administrator' && !conversation.participantIds.includes(req.actor!.id)) { res.status(403).json({ message: 'You are not a participant in this conversation.' }); return null; }
   return conversation;
 }
-function matchScore(a: ListingRecord, b: ListingRecord, weights: ConfigurationRecord['matchingWeights']) { let score = 20; if (a.textileType === b.textileType) score += weights.category; if (a.circularPathway === b.circularPathway) score += weights.pathway; if (a.region === b.region) score += weights.region; if (a.quality === b.quality) score += weights.condition; if (Math.min(a.quantityKg, b.quantityKg) / Math.max(a.quantityKg, b.quantityKg) > 0.5) score += weights.quantity; return Math.min(100, score); }
+function matchScore(a: ListingRecord, b: ListingRecord, weights: ConfigurationRecord['matchingWeights']) { let score = 20; if (a.textileType === b.textileType) score += weights.category; if (a.circularPathway === b.circularPathway) score += weights.pathway; if (a.region === b.region) score += weights.region; if (a.quality === b.quality) score += weights.condition; if (a.quantityKg !== null && b.quantityKg !== null && Math.min(a.quantityKg, b.quantityKg) / Math.max(a.quantityKg, b.quantityKg) > 0.5) score += weights.quantity; return Math.min(100, score); }
 function matchReasons(a: ListingRecord, b: ListingRecord) { return [a.textileType === b.textileType ? 'Same material category' : 'Complementary material category', a.circularPathway === b.circularPathway ? 'Same circular pathway' : 'Alternative pathway', a.region === b.region ? 'Same region' : 'Cross-region', a.quality === b.quality ? 'Similar condition' : 'Different condition']; }

@@ -6,7 +6,7 @@ export function uniqueBatches(batches: MaterialBatchRecord[]) {
 
 export function calculateOperationalMass(batches: MaterialBatchRecord[], transfers: TransferRecord[]) {
   const unique = uniqueBatches(batches);
-  const completed = transfers.filter((transfer) => transfer.status === 'Completed');
+  const completed = transfers.filter((transfer) => ['Completed', 'Processed'].includes(transfer.status));
   const sum = (values: Array<number | null>) => values.reduce<number>((total, value) => total + (value ?? 0), 0);
   const declaredKg = sum(unique.map((batch) => batch.declaredWeightKg));
   const verifiedKg = sum(completed.map((transfer) => transfer.verifiedWeightKg));

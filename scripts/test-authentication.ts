@@ -78,6 +78,12 @@ try {
   assert.equal(adminLogin.user.passwordHash, undefined);
   assert.ok(adminLogin.access.permissions.includes('users.manage'));
   if (!live) {
+    const traceability = (await call('/transfers', undefined, adminLogin.accessToken)).data;
+    assert.ok(traceability.transfers.length);
+    for (const transfer of traceability.transfers) {
+      assert.equal(transfer.requesterName, seed.users.find(user => user.id === transfer.recipientId)?.fullName.trim() || null);
+    }
+    checks.push('scoped transfer rows identify requesters using the linked recipient account');
     const dashboard = (await call('/analytics/dashboard', undefined, adminLogin.accessToken)).data;
     const operations = (await call('/analytics/operations', undefined, adminLogin.accessToken)).data;
     const report = (await call('/reports/material-flow/preview', undefined, adminLogin.accessToken)).data;
@@ -88,6 +94,28 @@ try {
     await call('/reports/missing/preview', undefined, adminLogin.accessToken, 404);
     await call('/analytics/dashboard?dateRange=Custom%20range', undefined, adminLogin.accessToken, 400);
     checks.push('shared live reporting periods, report/dashboard/operations reconciliation, invalid period and report rejection');
+    const recycler = seed.users.find(user => user.role === 'Recycler')!;
+    const hubLogin = await signIn(recycler.email, initial);
+    const ownHubDirectory = (await call('/hubs', undefined, hubLogin.accessToken)).data;
+    assert.deepEqual(ownHubDirectory.hubs.map((hub: { id: string }) => hub.id), [recycler.id]);
+    await call('/weighing?dateRange=All%20time', undefined, adminLogin.accessToken);
+    await call(`/hubs/${recycler.id}`, { action: 'approve', reason: 'Isolated Hub approval acceptance.' }, adminLogin.accessToken, 200, 'PATCH');
+    await call('/auth/me', undefined, hubLogin.accessToken, 401);
+    const approvedHub = await signIn(recycler.email, initial);
+    assert.equal(approvedHub.user.organizationVerified, true);
+    await call(`/hubs/${recycler.id}`, { action: 'revoke', reason: 'Isolated Hub revocation acceptance.' }, adminLogin.accessToken, 200, 'PATCH');
+    await call('/auth/me', undefined, approvedHub.accessToken, 401);
+    const edited = await call(`/users/${recycler.id}`, { fullName: recycler.fullName, accountStatus: 'Active', approve: true, reason: 'Profile edit must not restore weighing.' }, adminLogin.accessToken, 200, 'PATCH');
+    assert.equal(edited.data.user.organizationVerified, false);
+    assert.equal(edited.data.user.accountStatus, 'Active');
+    const nativeHub = await call(`/users/${recycler.id}`, { role: 'BalikTela Hub', reason: 'Explicit Hub assignment requires new approval.' }, adminLogin.accessToken, 200, 'PATCH');
+    assert.equal(nativeHub.data.user.organizationVerified, false);
+    await call(`/hubs/${recycler.id}`, { action: 'approve', reason: 'Restore isolated fixture approval.' }, adminLogin.accessToken, 200, 'PATCH');
+    const nativeHubLogin = await signIn(recycler.email, initial);
+    assert.equal(nativeHubLogin.user.role, 'BalikTela Hub');
+    assert.ok(nativeHubLogin.access.permissions.includes('weighing.read'));
+    assert.ok(!nativeHubLogin.access.permissions.includes('users.manage'));
+    checks.push('Hub authority, approval/revocation, stale-session denial, role preservation and scoped native Hub access');
   }
   if (live) {
     const backupEmail = `baliktela.backup-audit.${suffix}@example.test`;

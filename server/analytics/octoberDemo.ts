@@ -1,10 +1,10 @@
 import { engagementRecords, wasteRecords } from '../../src/data/mockData.js';
 import { buildOperationalDemo } from './operationalDemo.js';
 
-export const OCTOBER_DATASET = 'synthetic-operational-october-2026-v1';
+export const OCTOBER_DATASET = 'synthetic-operational-october-2026-v2';
 export const OCTOBER_CUTOFF = '2026-10-16T23:59:59.999+08:00';
 
-export function buildOctoberDemo() {
+export function buildOctoberDemo(options: { lifecycleVersion?: 1 | 2 } = {}) {
   // An explicit illustrative MTD scenario, not an extrapolation of observed October activity.
   const records = wasteRecords.filter(record => record.monthIndex === 9).map((record, index) => {
     const generatedKg = Math.round(record.generatedKg * 1.08);
@@ -22,7 +22,7 @@ export function buildOctoberDemo() {
     sessions: Math.round(record.sessions * 1.03), wasteSubmissions: Math.round(record.wasteSubmissions * 1.08),
     barterActions: Math.round(record.barterActions * 1.08), reportExports: Math.round(record.reportExports * 1.03),
   }));
-  const demo = buildOperationalDemo(records, engagement);
+  const demo = buildOperationalDemo(records, engagement, null, options);
   // Existing, fictional SYN registry records are reused. Never provision or reactivate accounts here.
   const domainTables = demo.domainTables.filter(([name]) => !['users', 'organizations', 'facilities'].includes(name));
   for (const [name, rows] of domainTables) {
@@ -35,7 +35,8 @@ export function buildOctoberDemo() {
   }
   return { records, domainTables, flowEvents: demo.flowEvents, dataset: OCTOBER_DATASET,
     cutoff: OCTOBER_CUTOFF, summary: {
-      batches: records.length,
+      batches: (domainTables.find(([name]) => name === 'materialBatches')?.[1] ?? []).length,
+      sourceCohorts: records.length,
       declaredKg: records.reduce((sum, record) => sum + record.generatedKg, 0),
       collectedKg: records.reduce((sum, record) => sum + record.collectedKg, 0),
       sortedKg: records.reduce((sum, record) => sum + record.sortedKg, 0),

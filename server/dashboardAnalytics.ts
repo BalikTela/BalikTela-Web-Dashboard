@@ -1,8 +1,12 @@
 import { calculateOperationalMass } from './domain.js';
-import { scopeAnalyticalBatches } from './access-control.js';
+import { scopeAnalyticalBatches, scopeFacilities } from './access-control.js';
 import type { DashboardSourceSnapshot, Store } from './store.js';
-import type { MaterialBatchRecord, TransferRecord, UserRecord } from './types.js';
-import { changeDescription, formatMass, percentage as percent, pointsDescription } from '../shared/metrics.js';
+import type { MaterialBatchRecord, RecoveryRecord, TransferRecord, UserRecord } from './types.js';
+import { aggregateMaterialEvidence as aggregate } from './materialEvidence.js';
+export { aggregateMaterialEvidence as aggregate } from './materialEvidence.js';
+import { isCompletedTransfer, isTerminalTransfer, matchesTransferStatus } from '../shared/workflows.js';
+import { isHubCandidate } from '../shared/hubs.js';
+import { changeDescription, formatMass, percentage as percent } from '../shared/metrics.js';
 import { inReportingWindow, manilaDate, resolveReportingPeriod, type ReportingWindow } from '../shared/reporting.js';
 
 const mapCoordinates: Record<string, [number, number]> = { 'Metro Manila': [51, 31], 'Central Visayas': [56, 58], 'Western Visayas': [45, 60], 'Davao Region': [67, 78] };
@@ -20,7 +24,7 @@ export async function loadDashboardAnalyticsSnapshot(store: Store): Promise<Dash
 export type DashboardAnalyticsSnapshot = DashboardSourceSnapshot;
 
 export function selectAnalyticsCohort(snapshot: DashboardAnalyticsSnapshot, actor: UserRecord, query: Record<string, unknown>, now = new Date()) {
-  const scoped = scopeAnalyticalBatches(actor, snapshot.allBatches.filter(item => item.currentStatus !== 'Archived'));
+  const scoped = scopeAnalyticalBatches(actor, snapshot.allBatches.filter(item => item.currentStatus !== 'Archived'), snapshot);
   const first = scoped.filter(item => Date.parse(item.createdAt) <= now.getTime()).map(item => item.createdAt).sort()[0];
   const period = resolveReportingPeriod(query, now, first);
   const allTransfers = snapshot.allTransfers.filter(item => Date.parse(item.updatedAt) <= now.getTime());
@@ -39,17 +43,29 @@ export function selectAnalyticsCohort(snapshot: DashboardAnalyticsSnapshot, acto
 export async function buildDashboardAnalytics(store: Store, actor: UserRecord, query: Record<string, unknown>, suppliedSnapshot?: DashboardAnalyticsSnapshot, now = new Date()) {
   const snapshot = suppliedSnapshot ?? await loadDashboardAnalyticsSnapshot(store);
   const { listings, offers, users, walletEntries, interactions } = snapshot;
-  const facilities=snapshot.facilities.filter(item=>item.status!=='Inactive');
+  const facilities=scopeFacilities(actor, snapshot.facilities).filter(item=>item.status!=='Inactive'
+    && option(query.region,'All regions',item.region) && option(query.facilityId,'All facilities',item.id)
+    && option(query.organizationId,'All organizations',item.organizationId)
+    && (!query.city || item.city.toLowerCase().includes(String(query.city).trim().toLowerCase()))
+    && (!query.textileType || query.textileType==='All textiles' || item.acceptedMaterials.includes(String(query.textileType))));
   const { period, currentBatches, previousBatches, currentBatchIds, matchingTransfers, currentTransfers, currentRecovery, currentMeasurements, recoveryRecords } = selectAnalyticsCohort(snapshot, actor, query, now);
   const months = reportingMonths(period);
-  const current = aggregate(currentBatches, matchingTransfers, recoveryRecords);
-  const previous = aggregate(previousBatches, matchingTransfers, recoveryRecords);
+  const evidenceContext = { measurements: snapshot.measurements.filter(item => Date.parse(item.timestamp) <= now.getTime()), listings };
+  const current = aggregate(currentBatches, matchingTransfers, recoveryRecords, evidenceContext);
+  const previous = aggregate(previousBatches, matchingTransfers, recoveryRecords, evidenceContext);
   const engagementMetrics = engagement(interactions, period, query, actor);
   const comparisonPeriod = period.comparison?.label ?? '';
-  const facilityMetrics = facilityView(currentBatches, currentTransfers, currentRecovery, facilities, period.capacityMonths);
-  const regionalActivity = regions(currentBatches, currentTransfers, currentRecovery, facilities, users);
+  const facilityMetrics = facilityView(currentBatches, currentRecovery, facilities, period.capacityMonths, current.confirmedOutputs);
+  const regionalActivity = regions(currentBatches, currentTransfers, currentRecovery, facilities, users, evidenceContext);
   const mass = calculateOperationalMass(currentBatches, currentTransfers);
-  const completed = currentTransfers.filter((item) => item.status === 'Completed');
+  const completed = currentTransfers.filter((item) => isCompletedTransfer(item.status));
+  const cohortListings = listings.filter(item => currentBatchIds.has(item.batchId));
+  const cohortListingIds = new Set(cohortListings.map(item => item.id));
+  const activeHubBatchIds = new Set(currentMeasurements.filter(item => item.canonicalStage === 'listing'
+    || item.canonicalStage === 'declaration' && /hub.*scale/i.test(item.method)).map(item => item.batchId));
+  const hubParticipants = new Set([...cohortListings.map(item => item.weighingHubId),
+    ...currentMeasurements.map(item => item.recordedBy)].filter((id): id is string => Boolean(id)
+      && users.some(user => user.id === id && isHubCandidate(user))));
   const sum = (values: Array<number | null>) => values.reduce<number>((total, value) => total + (value ?? 0), 0);
 
   return {
@@ -58,31 +74,52 @@ export async function buildDashboardAnalytics(store: Store, actor: UserRecord, q
       reportingCutoff: period.endDate,
       period,
       aggregateOnly: actor.scope.aggregateOnly,
-      denominatorNote: `Diversion rate = verified completed reuse and recycling mass / unique declared batch mass. Asia/Manila batch-registration cohort; latest recorded outcomes through ${period.asOf}, not historical status snapshots. Capacity is prorated by the actual fraction of each calendar month. Comparison: ${period.comparisonBasis}.`,
-      sampleDisclosure: 'All records with SYN- identifiers and all organizations labeled demo are synthetic sample data for development and presentation only.',
+      denominatorNote: `Confirmed recovery share = validated final reuse and recycling output linked to collected batches / validated collection mass for the same batch cohort. Pending stock stays in the denominator; transfers, sorting and recyclable classifications are not final outcomes. Missing or conflicting evidence makes the rate unavailable. ${currentBatches.filter(item => item.declaredWeightKg === null).length} batches have no declared weight; missing weights are not measured zeros. Asia/Manila batch-registration cohort; latest recorded outcomes through ${period.asOf}, not collection-month totals or historical status snapshots. Capacity is prorated by the actual fraction of each calendar month. Comparison: ${period.comparisonBasis}.`,
+      sampleDisclosure: 'Demo-labeled records are synthetic. Other records are shared operational data; completion, reported weighing and independently verified recovery are distinct evidence.',
+      refreshedAt: now.toISOString(),
     },
     kpis: kpis(current, previous, engagementMetrics, regionalActivity, comparisonPeriod),
+    materialEvidence: {
+      collectedBatches: current.collectedBatches, missingCollectionBatches: current.missingCollectionBatches,
+      reuseRecords: current.reuseRecords, recyclingRecords: current.recyclingRecords,
+      completedKg: current.completedKg, completedWithWeight: current.completedWithWeight,
+      completedMissingWeight: current.completedMissingWeight, completedReportedWeight: current.completedReportedWeight,
+      collectionConflicts: current.collectionConflicts, outcomeConflicts: current.outcomeConflicts,
+      matchedDiversionKg: current.matchedDiversionKg, unlinkedOutcomeKg: current.unlinkedOutcomeKg,
+      unresolvedCollectedKg: current.unresolvedCollectedKg,
+    },
+    sharedActivity: {
+      transferCount: currentTransfers.length,
+      listings: cohortListings.length,
+      pendingRequests: offers.filter(item => cohortListingIds.has(item.listingId) && ['Pending', 'Revised'].includes(item.status)).length,
+      hubWeighedBatches: activeHubBatchIds.size,
+      completedTransfers: completed.length,
+      completionAwaitingVerification: completed.filter(item => item.verifiedWeightKg === null).length,
+      operationalBatches: currentBatches.filter(item => !item.isDemo).length,
+      demoBatches: currentBatches.filter(item => item.isDemo).length,
+      missingGeography: currentBatches.filter(item => !item.city || !item.region).length,
+    },
     wasteTrend: months.map((month) => {
-      const value = aggregate(currentBatches.filter((batch) => manilaDate(new Date(batch.createdAt)).startsWith(month.key)), matchingTransfers, recoveryRecords);
-      return { month: month.label, recorded: value.generatedKg, collected: value.collectedKg, recycled: value.recycledKg, reused: value.reusedKg };
+      const value = aggregate(currentBatches.filter((batch) => manilaDate(new Date(batch.createdAt)).startsWith(month.key)), matchingTransfers, recoveryRecords, evidenceContext);
+      return { month: month.label, recorded: value.generatedKg, collected: value.collectedKg, recycled: value.recycledKg, reused: value.reusedKg, hasCollectionEvidence: value.collectedBatches > 0, hasRecyclingEvidence: value.recyclingRecords > 0, hasReuseEvidence: value.reuseRecords > 0 };
     }),
     categoryShares: [...new Set(currentBatches.map((item) => item.materialCategory))].map((category) => {
-      const value = aggregate(currentBatches.filter((item) => item.materialCategory === category), matchingTransfers, recoveryRecords);
-      return { category, kilograms: value.collectedKg, recoveryRate: percent(value.reusedKg + value.recycledKg, value.collectedKg) };
+      const value = aggregate(currentBatches.filter((item) => item.materialCategory === category), matchingTransfers, recoveryRecords, evidenceContext);
+      return { category, kilograms: value.collectedKg, recoveryRate: value.diversionRate ?? 0, recoveryRateAvailable: value.diversionRate !== null };
     }).sort((a, b) => b.kilograms - a.kilograms),
     transactions: actor.scope.aggregateOnly ? [] : transactionsView(currentTransfers, currentBatches, users),
-    stakeholders: actor.scope.aggregateOnly ? [] : stakeholderView(currentBatches, currentTransfers, users, facilities, facilityMetrics),
+    stakeholders: actor.scope.aggregateOnly ? [] : stakeholderView(currentBatches, currentTransfers, users, facilities, facilityMetrics, hubParticipants, current.confirmedOutputs),
     facilities: actor.scope.aggregateOnly ? aggregateFacilities(facilityMetrics) : facilityMetrics,
     regionalActivity,
-    circularFlow: { generatedKg: current.generatedKg, collectedKg: current.collectedKg, sortedKg: current.sortedKg, reusedKg: current.reusedKg, recycledKg: current.recycledKg, residualKg: Math.max(0, current.generatedKg - current.reusedKg - current.recycledKg) },
-    impactMetrics: { landfillAvoidedKg: null, estimatedCo2eKg: null, estimatedWaterLiters: null, diversionRate: percent(current.reusedKg + current.recycledKg, current.generatedKg), sortingYield: percent(current.reusedKg + current.recycledKg, current.sortedKg), methodologyStatus: 'Disabled pending approved methodology' as const },
+    circularFlow: { generatedKg: current.generatedKg, collectedKg: current.collectedKg, sortedKg: current.sortedKg, reusedKg: current.reusedKg, recycledKg: current.recycledKg, residualKg: current.unresolvedCollectedKg, collectedAvailable: current.collectedBatches > 0, sortedAvailable: current.sortedBatches > 0, reusedAvailable: current.reuseRecords > 0, recycledAvailable: current.recyclingRecords > 0 },
+    impactMetrics: { landfillAvoidedKg: null, estimatedCo2eKg: null, estimatedWaterLiters: null, diversionRate: current.diversionRate, sortingYield: current.sortingYield, methodologyStatus: 'Disabled pending approved methodology' as const },
     barterMetrics: barter(currentBatchIds, listings, offers, currentTransfers, walletEntries),
     engagementMetrics,
-    forecastData: forecast(months.map((month) => ({ month: month.label, ...aggregate(currentBatches.filter((batch) => manilaDate(new Date(batch.createdAt)).startsWith(month.key)), matchingTransfers, recoveryRecords) }))),
+    forecastData: forecast(months.map((month) => ({ month: month.label, ...aggregate(currentBatches.filter((batch) => manilaDate(new Date(batch.createdAt)).startsWith(month.key)), matchingTransfers, recoveryRecords, evidenceContext) }))),
     operations: {
       period: { start: period.start, end: period.endExclusive, label: `${period.label} · Asia/Manila` },
       scope: { role: actor.role, aggregateOnly: actor.scope.aggregateOnly, organizationIds: actor.scope.organizationIds },
-      metrics: { batchCount: currentBatches.length, declaredKg: mass.declaredKg, measuredKg: sum(currentMeasurements.filter((item) => item.status === 'Measured').map((item) => item.weightKg)), verifiedKg: mass.verifiedKg, receivedKg: mass.receivedKg, completedTransfers: completed.length, activeTransfers: currentTransfers.filter((item) => !['Completed', 'Cancelled', 'Rejected'].includes(item.status)).length, diversionRate: mass.diversionRate, denominator: 'Verified kilograms in completed transfers / unique declared batch kilograms in scope' },
+      metrics: { batchCount: currentBatches.length, declaredKg: mass.declaredKg, measuredKg: sum(currentMeasurements.filter((item) => item.status === 'Measured').map((item) => item.weightKg)), verifiedKg: mass.verifiedKg, receivedKg: mass.receivedKg, completedTransfers: completed.length, activeTransfers: currentTransfers.filter((item) => !isTerminalTransfer(item.status)).length, diversionRate: mass.diversionRate, denominator: 'Verified transfer mass / declared mass is a transfer-activity ratio, not a diversion rate; repeated custody transfers can overlap' },
       massBalance: { declaredKg: mass.declaredKg, handedOverKg: mass.handedOverKg, receivedKg: mass.receivedKg, verifiedKg: mass.verifiedKg, discrepancyKg: mass.discrepancyKg },
       quality: { estimatedBatches: currentBatches.filter((item) => item.weightStatus === 'Estimated').length, measuredBatches: currentBatches.filter((item) => item.weightStatus === 'Measured').length, verifiedBatches: currentBatches.filter((item) => item.weightStatus === 'Verified').length, discrepancyFlags: currentTransfers.filter((item) => Math.abs(item.discrepancyKg ?? 0) > 0.01).length },
       environmentalImpact: { status: 'Disabled pending approved methodology' as const, co2eKg: null, waterLiters: null, landfillAvoidedKg: null },
@@ -98,7 +135,8 @@ function aggregateFacilities(facilities: ReturnType<typeof facilityView>) {
     return { id: `aggregate-region-${index}`, name: `${region} facility aggregate`, location: region, region,
       acceptedTypes: [...new Set(rows.flatMap(item => item.acceptedTypes))], capacityKg, intakeKg,
       processedKg: sum('processedKg'), utilization: percent(intakeKg, capacityKg),
-      processingTimeDays: 0, status: 'Aggregate only', isDemo: true as const };
+      processedAvailable: rows.some(item => item.processedAvailable),
+      processingTimeDays: 0, status: 'Aggregate only', isDemo: rows.length > 0 && rows.every(item=>item.isDemo) };
   });
 }
 
@@ -129,7 +167,7 @@ export function filterBatches(batches: MaterialBatchRecord[], period: ReportingW
       && option(query.textileType ?? query.materialCategory, 'All textiles', batch.materialCategory)
       && option(query.wasteSource, 'All sources', batch.wasteSource)
       && option(query.circularPathway, 'All pathways', batch.circularPathway)
-      && option(query.weightStatus, 'All weight statuses', batch.weightStatus)
+      && option(query.weightStatus, 'All weight statuses', batch.weightStatus ?? 'Awaiting weighing')
       && option(query.organizationId, 'All organizations', batch.sourceOrganizationId ?? '')
       && (!producer || sourceName.includes(producer))
       && (!recycler || recipientNames.includes(recycler))
@@ -140,36 +178,21 @@ export function filterBatches(batches: MaterialBatchRecord[], period: ReportingW
 }
 function option(value: unknown, all: string, actual: string) { const selected = String(value ?? all); return selected === all || selected === actual; }
 function transferType(transfer: TransferRecord) { return transfer.circularOutcome === 'Recycling' ? 'Recycling' : transfer.circularOutcome === 'Redistribution' ? 'Redistribution' : 'Barter'; }
-function transferStatus(transfer: TransferRecord) { if (transfer.status === 'Completed') return 'Completed'; if (transfer.status === 'Disputed' || transfer.status === 'Rejected') return 'Flagged'; if (transfer.status === 'Handed over') return 'In transit'; if (transfer.status === 'Received') return 'In sorting'; return 'Pending validation'; }
-function transferMatches(transfer: TransferRecord, query: Record<string, unknown>) { return option(query.transactionType, 'All types', transferType(transfer)) && (option(query.transactionStatus, 'All statuses', transfer.status) || option(query.transactionStatus, 'All statuses', transferStatus(transfer))); }
-
-export function aggregate(batches: MaterialBatchRecord[], transfers: TransferRecord[], recoveryRecords: Array<{ batchId: string; stage: string; outputWeightKg: number | null }>) {
-  const ids = new Set(batches.map((item) => item.id));
-  const scopedTransfers = transfers.filter((item) => ids.has(item.batchId) && item.status === 'Completed');
-  const scopedRecovery = recoveryRecords.filter((item) => ids.has(item.batchId));
-  return {
-    generatedKg: round(batches.reduce((sum, item) => sum + item.declaredWeightKg, 0)),
-    collectedKg: round(scopedRecovery.filter((item) => item.stage === 'Collection').reduce((sum, item) => sum + (item.outputWeightKg ?? 0), 0)),
-    sortedKg: round(scopedRecovery.filter((item) => item.stage === 'Sorting').reduce((sum, item) => sum + (item.outputWeightKg ?? 0), 0)),
-    reusedKg: round(scopedTransfers.filter((item) => ['Reuse', 'Repair', 'Redistribution', 'Upcycling'].includes(item.circularOutcome ?? '')).reduce((sum, item) => sum + (item.verifiedWeightKg ?? 0), 0)),
-    recycledKg: round(scopedTransfers.filter((item) => item.circularOutcome === 'Recycling').reduce((sum, item) => sum + (item.verifiedWeightKg ?? 0), 0)),
-    transactionCount: scopedTransfers.length,
-  };
-}
+function transferMatches(transfer: TransferRecord, query: Record<string, unknown>) { return option(query.transactionType, 'All types', transferType(transfer)) && matchesTransferStatus(transfer.status, query.transactionStatus); }
 
 function kpis(current: ReturnType<typeof aggregate>, previous: ReturnType<typeof aggregate>, currentEngagement: ReturnType<typeof engagement>, regional: ReturnType<typeof regions>, comparisonPeriod: string) {
-  const diverted = current.reusedKg + current.recycledKg; const previousDiverted = previous.reusedKg + previous.recycledKg;
+  const diverted = current.reusedKg + current.recycledKg;
   const comparison = (value: number, prior: number) => comparisonPeriod ? changeDescription(value, prior, comparisonPeriod) : 'No prior-period comparison';
   return [
-    { label: 'Textile Waste Collected', value: formatMass(current.collectedKg), delta: comparison(current.collectedKg, previous.collectedKg), tone: 'moss' as const },
-    { label: 'Textile Waste Recycled', value: formatMass(current.recycledKg), delta: comparison(current.recycledKg, previous.recycledKg), tone: 'ocean' as const },
-    { label: 'Reused / Bartered', value: formatMass(current.reusedKg), delta: comparison(current.reusedKg, previous.reusedKg), tone: 'clay' as const },
-    { label: 'Diverted from Landfill', value: formatMass(diverted), delta: `${percent(diverted, current.generatedKg)}% of generated waste`, tone: 'denim' as const },
-    { label: 'Diversion Rate', value: current.generatedKg ? `${percent(diverted, current.generatedKg)}%` : 'Not available', delta: comparisonPeriod ? pointsDescription(diverted, current.generatedKg, previousDiverted, previous.generatedKg, comparisonPeriod) : 'Reused + recycled / generated', tone: 'moss' as const },
+    { label: 'Total Textiles Collected', value: current.collectedBatches ? formatMass(current.collectedKg) : 'Pending evidence', delta: `${current.collectedBatches} batches with validated intake`, description: 'All physically collected textiles, regardless of condition. Uses validated Collection output or an unambiguous verified receipt; excludes declarations and listing-only weighing.', tone: 'moss' as const },
+    { label: 'Confirmed Recycling Output', value: current.recyclingRecords ? formatMass(current.recycledKg) : 'Pending evidence', delta: 'Validated final output, not recyclable stock', description: 'Validated Processing/Recovery output with a Recycling outcome and a linked completed transfer. Collection, sorting and a recycling intention do not establish actual recycling.', tone: 'ocean' as const },
+    { label: 'Completed Textile Transfers', value: current.completedWithWeight ? formatMass(current.completedKg) : 'Pending evidence', delta: `${current.completedWithWeight} weighted · ${current.completedMissingWeight} missing final weight`, description: `${current.completedReportedWeight} completed transfers use reported receipt weight; others use approved validation weight. Transfer activity can include repeated custody movements and is not unique recovered material. Agreed quantities are never substituted.`, tone: 'clay' as const },
+    { label: 'Confirmed Reuse + Recycling', value: current.reuseRecords + current.recyclingRecords ? formatMass(diverted) : 'Pending evidence', delta: 'Documented outcomes; not a landfill claim', description: 'Non-overlapping validated final reuse/repair/redistribution/upcycling and recycling outputs. Ambiguous allocations, invalid mass balances and duplicate final records are withheld.', tone: 'denim' as const },
+    { label: 'Confirmed Recovery Share', value: current.diversionRate === null ? 'Not available' : `${current.diversionRate}%`, delta: current.diversionRate === null ? 'Matching collection + final outcome required' : `${formatMass(current.matchedDiversionKg)} / ${formatMass(current.collectedKg)} collected`, description: 'Uses only final outcomes linked to collected batches, divided by all validated collection in the selected batch cohort. Pending stock remains in the denominator; no denominator or unresolved conflicts means no published rate.', tone: 'moss' as const },
     { label: 'Monthly Active Users', value: currentEngagement.monthlyActiveUsersAvailable ? currentEngagement.monthlyActiveUsers.toLocaleString() : 'Not available', delta: currentEngagement.monthlyActiveUsersAvailable ? 'Reported summaries in final selected month' : 'No active-user summary for final selected month', tone: 'ocean' as const },
     { label: 'Active Producers', value: regional.reduce((sum, item) => sum + item.producers, 0).toString(), delta: 'Participants in selected cohort and scope', tone: 'clay' as const },
     { label: 'Active Recyclers', value: regional.reduce((sum, item) => sum + item.recyclers, 0).toString(), delta: 'Participants in selected cohort and scope', tone: 'denim' as const },
-    { label: 'Total Transactions', value: current.transactionCount.toLocaleString(), delta: comparison(current.transactionCount, previous.transactionCount), tone: 'moss' as const },
+    { label: 'Completed Transactions', value: current.transactionCount.toLocaleString(), delta: comparison(current.transactionCount, previous.transactionCount), tone: 'moss' as const },
   ];
 }
 
@@ -191,51 +214,53 @@ function engagement(records: DashboardSourceSnapshot['interactions'], period: Re
 function transactionsView(transfers: TransferRecord[], batches: MaterialBatchRecord[], users: UserRecord[]) {
   const userMap = new Map(users.map((item) => [item.id, item])); const batchMap = new Map(batches.map((item) => [item.id, item]));
   return [...transfers].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((item) => {
-    const batch = batchMap.get(item.batchId)!; const source = userMap.get(item.providerId); const destination = userMap.get(item.recipientId); const weight = item.verifiedWeightKg ?? item.receiptWeightKg ?? item.agreedWeightKg;
-    return { id: item.id, date: item.updatedAt.slice(0, 10), source: source?.organization || source?.fullName || 'Synthetic source', destination: destination?.organization || destination?.fullName || 'Synthetic destination', type: transferType(item), textileCategory: item.materialCategory, weightKg: weight, location: `${batch.city}, ${batch.region}`, region: batch.region, status: transferStatus(item), impact: item.status === 'Completed' ? `${formatMass(weight)} verified circular outcome` : 'Outcome pending', estimatedImpactKg: undefined, sourceStakeholderId: item.providerId, destinationStakeholderId: item.recipientId, lifecycle: item.events.map((event) => ({ id: event.id, stage: event.type, actor: event.actorName, timestamp: event.timestamp, status: event.status, location: event.location, note: event.note })), isDemo: true as const };
+    const batch = batchMap.get(item.batchId)!; const source = userMap.get(item.providerId); const destination = userMap.get(item.recipientId);
+    const weight = item.verifiedWeightKg ?? item.receiptWeightKg ?? (isCompletedTransfer(item.status) ? null : item.agreedWeightKg);
+    const weightEvidence = item.verifiedWeightKg !== null ? 'Recorded validation' : item.receiptWeightKg !== null ? 'Reported receipt' : isCompletedTransfer(item.status) ? 'Final weight missing' : 'Agreed quantity';
+    return { id: item.id, date: item.updatedAt.slice(0, 10), source: source?.organization || source?.fullName || 'Unknown source', destination: destination?.organization || destination?.fullName || 'Unknown destination', type: transferType(item), textileCategory: item.materialCategory || batch.materialCategory, weightKg: weight, weightEvidence, location: [batch.city, batch.region].filter(Boolean).join(', ') || 'Location not recorded', region: batch.region, status: item.status, impact: isCompletedTransfer(item.status) ? 'Completed transfer; final recovery evidence assessed separately' : 'Outcome pending', estimatedImpactKg: undefined, sourceStakeholderId: item.providerId, destinationStakeholderId: item.recipientId, lifecycle: item.events.map((event) => ({ id: event.id, stage: event.type, actor: event.actorName, timestamp: event.timestamp, status: event.status, location: event.location, note: event.note })), isDemo: item.isDemo };
   });
 }
 
-function stakeholderView(batches: MaterialBatchRecord[], transfers: TransferRecord[], users: UserRecord[], facilities: Array<{ id: string; organizationId: string }>, facilityMetrics: ReturnType<typeof facilityView>) {
-  const ids = new Set([...batches.map((item) => item.sourceUserId), ...transfers.flatMap((item) => [item.providerId, item.recipientId])]);
+function stakeholderView(batches: MaterialBatchRecord[], transfers: TransferRecord[], users: UserRecord[], facilities: Array<{ id: string; organizationId: string }>, facilityMetrics: ReturnType<typeof facilityView>, hubParticipants: Set<string>, outputs: ReturnType<typeof aggregate>['confirmedOutputs']) {
+  const ids = new Set([...batches.map((item) => item.sourceUserId), ...transfers.flatMap((item) => [item.providerId, item.recipientId]), ...hubParticipants]);
   return users.filter((item) => ids.has(item.id)).map((user) => {
-    const produced = batches.filter((item) => item.sourceUserId === user.id).reduce((sum, item) => sum + item.declaredWeightKg, 0);
-    const recovered = transfers.filter((item) => item.recipientId === user.id && item.status === 'Completed').reduce((sum, item) => sum + (item.verifiedWeightKg ?? 0), 0);
+    const produced = batches.filter((item) => item.sourceUserId === user.id).reduce((sum, item) => sum + (item.declaredWeightKg ?? 0), 0);
+    const recipientTransferIds = new Set(transfers.filter(item => item.recipientId === user.id).map(item => item.id));
+    const userOutputs = outputs.filter(item => recipientTransferIds.has(item.transferId));
+    const recovered = userOutputs.reduce((sum, item) => sum + item.kilograms, 0);
     const relatedTransfers = transfers.filter((item) => item.providerId === user.id || item.recipientId === user.id);
     const ownedIds = new Set(facilities.filter(item => user.organizationId && item.organizationId === user.organizationId).map(item => item.id));
     const owned = facilityMetrics.filter(item => ownedIds.has(item.id));
     const capacity = owned.reduce((sum, item) => sum + item.capacityKg, 0), intake = owned.reduce((sum, item) => sum + item.intakeKg, 0);
-    return { id: user.id, name: user.organization || user.fullName, type: user.role, city: user.city, region: user.region, recoveredKg: round(recovered), generatedKg: round(produced), capacityKg: capacity || undefined, utilization: capacity ? percent(intake, capacity) : undefined, participation: percent(relatedTransfers.filter(item => item.status === 'Completed').length, relatedTransfers.length), transactions: relatedTransfers.length, verification: user.verification, reliabilityPlaceholder: user.trustPlaceholder, sustainabilityActivities: user.profile.sustainabilityInterests, joinedAt: user.joinedAt.slice(0, 10), isDemo: true as const };
+    return { id: user.id, name: user.organization || user.fullName, type: user.role, city: user.city, region: user.region, recoveredKg: round(recovered), recoveredAvailable: userOutputs.length > 0, generatedKg: round(produced), capacityKg: capacity || undefined, utilization: capacity ? percent(intake, capacity) : undefined, participation: percent(relatedTransfers.filter(item => isCompletedTransfer(item.status)).length, relatedTransfers.length), transactions: relatedTransfers.length, verification: user.verification, reliabilityPlaceholder: user.trustPlaceholder, sustainabilityActivities: user.profile.sustainabilityInterests, joinedAt: user.joinedAt.slice(0, 10), isDemo: true as const };
   }).sort((a, b) => b.transactions - a.transactions);
 }
 
-function facilityView(batches: MaterialBatchRecord[], transfers: TransferRecord[], recovery: Array<{ facilityId: string; batchId: string; stage: string; inputWeightKg: number; outputWeightKg: number | null; timestamp: string }>, facilities: Array<{ id: string; name: string; city: string; region: string; acceptedMaterials: string[]; monthlyCapacityKg: number; status: string }>, capacityMonths: number) {
+function facilityView(batches: MaterialBatchRecord[], recovery: RecoveryRecord[], facilities: Array<{ id: string; name: string; city: string; region: string; acceptedMaterials: string[]; monthlyCapacityKg: number; status: string }>, capacityMonths: number, outputs: ReturnType<typeof aggregate>['confirmedOutputs']) {
+  recovery = recovery.filter(item => item.status === 'Validated' && item.validatedBy);
   const batchIds = new Set(batches.map((item) => item.id));
-  const latestFacility = new Map<string, string>();
-  for (const record of [...recovery].sort((a,b) => a.timestamp.localeCompare(b.timestamp) || b.facilityId.localeCompare(a.facilityId))) latestFacility.set(record.batchId, record.facilityId);
-  return facilities.filter((facility) => recovery.some((item) => item.facilityId === facility.id && batchIds.has(item.batchId))).map((facility) => {
+  return facilities.map((facility) => {
     const records = recovery.filter((item) => item.facilityId === facility.id && batchIds.has(item.batchId));
     const entries = [...new Set(records.map(item => item.batchId))].map(id => records.filter(item => item.batchId === id).sort((a,b) => a.timestamp.localeCompare(b.timestamp))[0]);
     const intake = entries.reduce((sum, item) => sum + (item.stage === 'Collection' ? item.outputWeightKg ?? 0 : item.inputWeightKg), 0);
-    // Attribute a batch's verified outcome to its latest recorded facility, not every facility it visited.
-    const linked = new Set(records.filter(item => latestFacility.get(item.batchId) === facility.id).map(item => item.batchId));
-    const processed = transfers.filter(item => linked.has(item.batchId) && item.status === 'Completed').reduce((sum, item) => sum + (item.verifiedWeightKg ?? 0), 0);
+    const facilityOutputs = outputs.filter(item => item.facilityId === facility.id);
+    const processed = facilityOutputs.reduce((sum, item) => sum + item.kilograms, 0);
     const capacityKg = round(facility.monthlyCapacityKg * capacityMonths);
-    return { id: facility.id, name: facility.name, location: facility.city, region: facility.region, acceptedTypes: facility.acceptedMaterials, capacityKg, utilization: percent(intake, capacityKg), intakeKg: round(intake), processedKg: round(processed), processingTimeDays: 2.4, status: facility.status, isDemo: true as const };
+    return { id: facility.id, name: facility.name, location: facility.city, region: facility.region, acceptedTypes: facility.acceptedMaterials, capacityKg, utilization: percent(intake, capacityKg), intakeKg: round(intake), processedKg: round(processed), processedAvailable: facilityOutputs.length > 0, processingTimeDays: 0, status: facility.status, isDemo: 'isDemo' in facility && facility.isDemo === true };
   });
 }
 
-function regions(batches: MaterialBatchRecord[], transfers: TransferRecord[], recovery: Array<{ batchId: string; stage: string; outputWeightKg: number | null }>, facilities: Array<{ region: string; type: string }>, users: UserRecord[]) {
+function regions(batches: MaterialBatchRecord[], transfers: TransferRecord[], recovery: RecoveryRecord[], facilities: Array<{ region: string; type: string }>, users: UserRecord[], context: import('./materialEvidence.js').EvidenceContext) {
   return [...new Set(batches.map((item) => item.region))].map((region) => {
-    const regionBatches = batches.filter((item) => item.region === region); const ids = new Set(regionBatches.map((item) => item.id)); const regionTransfers = transfers.filter((item) => ids.has(item.batchId)); const regionRecovery = recovery.filter((item) => ids.has(item.batchId)); const value = aggregate(regionBatches, regionTransfers, regionRecovery); const [x, y] = mapCoordinates[region] ?? [50, 50];
+    const regionBatches = batches.filter((item) => item.region === region); const ids = new Set(regionBatches.map((item) => item.id)); const regionTransfers = transfers.filter((item) => ids.has(item.batchId)); const regionRecovery = recovery.filter((item) => ids.has(item.batchId)); const value = aggregate(regionBatches, regionTransfers, regionRecovery, context); const [x, y] = mapCoordinates[region] ?? [50, 50];
     const role = new Map(users.map(user => [user.id, user.role]));
-    return { region, city: regionBatches[0]?.city ?? '', collectionKg: value.collectedKg, recyclingKg: value.recycledKg, wasteGapKg: Math.max(0, value.generatedKg - value.reusedKg - value.recycledKg), producers: new Set(regionBatches.filter(item => role.get(item.sourceUserId) === 'Producer').map(item => item.sourceUserId)).size, collectionPoints: facilities.filter((item) => item.region === region && item.type === 'Collection point').length, recyclers: new Set(regionTransfers.filter(item => role.get(item.recipientId) === 'Recycler').map(item => item.recipientId)).size, x, y };
+    return { region, city: regionBatches[0]?.city ?? '', collectionKg: value.collectedKg, recyclingKg: value.recycledKg, collectionAvailable: value.collectedBatches > 0, recyclingAvailable: value.recyclingRecords > 0, wasteGapKg: Math.max(0, value.generatedKg - value.reusedKg - value.recycledKg), producers: new Set(regionBatches.filter(item => role.get(item.sourceUserId) === 'Producer').map(item => item.sourceUserId)).size, collectionPoints: facilities.filter((item) => item.region === region && item.type === 'Collection point').length, recyclers: new Set(regionTransfers.filter(item => role.get(item.recipientId) === 'Recycler').map(item => item.recipientId)).size, x, y };
   }).sort((a, b) => b.collectionKg - a.collectionKg);
 }
 
 function barter(batchIds: Set<string>, listings: Array<{ id: string; batchId: string; status: string }>, offers: Array<{ listingId: string; status: string }>, transfers: TransferRecord[], wallet: Array<{ transferId: string | null; credits: number; type: string }>) {
   const scopedListings = listings.filter((item) => batchIds.has(item.batchId)); const listingIds = new Set(scopedListings.map((item) => item.id)); const scopedOffers = offers.filter((item) => listingIds.has(item.listingId)); const transferIds = new Set(transfers.filter((item) => batchIds.has(item.batchId)).map((item) => item.id));
-  return { listings: scopedListings.length, matches: scopedOffers.length, validated: transfers.filter((item) => batchIds.has(item.batchId) && ['Validated', 'Completed'].includes(item.status)).length, completed: transfers.filter((item) => batchIds.has(item.batchId) && item.status === 'Completed').length, rewardCredits: wallet.filter((item) => item.type === 'Earned' && item.transferId && transferIds.has(item.transferId)).reduce((sum, item) => sum + item.credits, 0) };
+  return { listings: scopedListings.length, matches: scopedOffers.length, validated: transfers.filter((item) => batchIds.has(item.batchId) && item.verifiedWeightKg !== null && (item.status === 'Validated' || isCompletedTransfer(item.status))).length, completed: transfers.filter((item) => batchIds.has(item.batchId) && isCompletedTransfer(item.status)).length, rewardCredits: wallet.filter((item) => item.type !== 'Redeemed' && item.transferId && transferIds.has(item.transferId)).reduce((sum, item) => sum + item.credits, 0) };
 }
 
 function forecast(points: Array<{ month: string; generatedKg: number }>) { return points.map((point) => ({ month: point.month, historical: point.generatedKg, forecast: null as number | null })); }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { inReportingWindow, manilaDate, resolveReportingPeriod } from '../shared/reporting.js';
+import { DEFAULT_REPORTING_RANGE, inReportingWindow, manilaDate, resolveReportingPeriod } from '../shared/reporting.js';
 import { buildDashboardAnalytics, loadDashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
 import { buildDataQuality } from './dataQuality.js';
 import { buildReport, REPORT_DEFINITIONS, reportCsv } from './reports.js';
@@ -11,6 +11,24 @@ import ExcelJS from 'exceljs';
 
 const now = new Date('2026-10-17T04:00:00.000Z');
 const custom = { dateRange: 'Custom range', startDate: '2026-07-01', endDate: '2026-09-21' };
+
+test('default calendar window starts August 1 in October, rolls over years and respects Manila midnight', () => {
+  const period = resolveReportingPeriod({}, new Date('2026-10-19T04:00:00Z'));
+  assert.deepEqual(period, resolveReportingPeriod({ dateRange: DEFAULT_REPORTING_RANGE }, new Date('2026-10-19T04:00:00Z')));
+  assert.equal(period.startDate, '2026-08-01');
+  assert.equal(period.start, '2026-07-31T16:00:00.000Z');
+  assert.equal(period.endDate, '2026-10-19');
+  assert.equal(period.endExclusive, '2026-10-19T04:00:00.001Z');
+  assert.equal(period.comparison!.endExclusive, period.start);
+  assert.equal(Date.parse(period.endExclusive) - Date.parse(period.start), Date.parse(period.comparison!.endExclusive) - Date.parse(period.comparison!.start));
+  assert.ok(Math.abs(period.capacityMonths - (2 + (18.5 + 1 / 86400000) / 31)) < 1e-9);
+  assert.equal(resolveReportingPeriod({}, new Date('2027-01-04T02:00:00Z')).startDate, '2026-11-01');
+  assert.equal(resolveReportingPeriod({}, new Date('2026-09-30T15:59:59Z')).startDate, '2026-07-01');
+  assert.equal(resolveReportingPeriod({}, new Date('2026-09-30T16:00:00Z')).startDate, '2026-08-01');
+  const leap = resolveReportingPeriod({}, new Date('2024-02-29T04:00:00Z'));
+  assert.equal(leap.startDate, '2023-12-01');
+  assert.ok(Math.abs(leap.capacityMonths - (2 + (28.5 + 1 / 86400000) / 29)) < 1e-9);
+});
 
 test('rolling windows use Manila calendar days through now and equal-duration comparisons across year boundaries', () => {
   const period = resolveReportingPeriod({ dateRange: 'Last 30 days' }, new Date('2027-01-04T02:00:00Z'));
@@ -74,10 +92,11 @@ test('all report types have distinct content and material exports reconcile exac
     const total = report.rows.at(-1)!;
     assert.equal(Number(total[2]), analytics.operations.metrics.batchCount);
     assert.equal(Number(total[3]), analytics.circularFlow.generatedKg / 1000);
-    assert.equal(Number(total[4]), analytics.circularFlow.collectedKg / 1000);
-    assert.equal(Number(total[5]), analytics.circularFlow.reusedKg / 1000);
-    assert.equal(Number(total[6]), analytics.circularFlow.recycledKg / 1000);
-    assert.equal(total[8], analytics.circularFlow.generatedKg ? String(analytics.impactMetrics.diversionRate) : 'Not available');
+    assert.equal(total[4], analytics.circularFlow.collectedAvailable ? String(analytics.circularFlow.collectedKg / 1000) : 'Pending evidence');
+    assert.equal(total[5], analytics.circularFlow.reusedAvailable ? String(analytics.circularFlow.reusedKg / 1000) : 'Pending evidence');
+    assert.equal(total[6], analytics.circularFlow.recycledAvailable ? String(analytics.circularFlow.recycledKg / 1000) : 'Pending evidence');
+    assert.equal(total[8], analytics.impactMetrics.diversionRate !== null ? String(analytics.impactMetrics.diversionRate) : 'Not available');
+    assert.equal(total[9], analytics.materialEvidence.completedWithWeight ? String(analytics.materialEvidence.completedKg / 1000) : 'Pending evidence');
   }
   const reports = await Promise.all(REPORT_DEFINITIONS.map(def => buildReport(store, seed.users[0], def.id, custom, snapshot, now)));
   assert.equal(new Set(reports.map(report => report.columns.join(','))).size, 4);

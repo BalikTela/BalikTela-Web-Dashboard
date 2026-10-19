@@ -1,4 +1,4 @@
-import { formatMass, percentage } from '../../shared/metrics';
+import { formatMass } from '../../shared/metrics';
 import { BarChart3, CircleGauge, PackageCheck, Recycle, Scale } from 'lucide-react';
 import { CategoryDoughnut, RegionalBarChart, WasteTrendChart } from '../components/Charts';
 import { SectionHeader } from '../components/SectionHeader';
@@ -12,19 +12,19 @@ type Data = Awaited<ReturnType<typeof getDashboardData>>;
 
 export function WasteAnalytics({ data }: { data: Data }) {
   const flow = data.circularFlow;
-  const lowest = [...data.categoryShares].sort((a, b) => a.recoveryRate - b.recoveryRate)[0];
+  const lowest = data.categoryShares.filter(item => item.recoveryRateAvailable !== false).sort((a, b) => a.recoveryRate - b.recoveryRate)[0];
   return (
     <div className="space-y-5">
       <section className="stagger-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Generated waste" value={formatMass(flow.generatedKg)} detail={data.metadata.periodLabel} icon={Scale} />
-        <SummaryCard label="Collected" value={formatMass(flow.collectedKg)} detail={flow.generatedKg > 0 ? `${percentage(flow.collectedKg, flow.generatedKg)}% collection coverage` : 'No generated mass denominator'} icon={PackageCheck} tone="blue" />
-        <SummaryCard label="Recovered" value={formatMass(flow.recycledKg + flow.reusedKg)} detail={flow.generatedKg > 0 ? `${data.impactMetrics.diversionRate}% of generated waste` : 'No generated mass denominator'} icon={Recycle} tone="emerald" />
-        <SummaryCard label="Lowest recovery" value={`${lowest?.recoveryRate ?? 0}%`} detail={lowest?.category ?? 'No matching category'} icon={CircleGauge} tone="amber" />
+        <SummaryCard label="Declared textiles" value={formatMass(flow.generatedKg)} detail={data.metadata.periodLabel} icon={Scale} />
+        <SummaryCard label="Validated collection" value={flow.collectedAvailable === false ? 'Pending evidence' : formatMass(flow.collectedKg)} detail="Physical intake, all textile conditions" icon={PackageCheck} tone="blue" />
+        <SummaryCard label="Confirmed outcomes" value={flow.recycledAvailable === false && flow.reusedAvailable === false ? 'Pending evidence' : formatMass(flow.recycledKg + flow.reusedKg)} detail={data.impactMetrics.diversionRate !== null ? `${data.impactMetrics.diversionRate}% of validated collection (linked outcomes)` : 'Recovery share unavailable'} icon={Recycle} tone="emerald" />
+        <SummaryCard label="Lowest confirmed share" value={lowest ? `${lowest.recoveryRate}%` : 'Not available'} detail={lowest?.category ?? 'No supported category rate'} icon={CircleGauge} tone="amber" />
       </section>
-      <ImpactSummary data={data.impactMetrics} periodLabel={data.metadata.periodLabel} generatedKg={flow.generatedKg} sortedKg={flow.sortedKg} />
+      <ImpactSummary data={data.impactMetrics} periodLabel={data.metadata.periodLabel} />
       <div className="grid gap-5 xl:grid-cols-2">
       <Panel>
-        <SectionHeader title="Waste Stream Performance" eyebrow="Generated / collected / recycled / reused" />
+        <SectionHeader title="Textile Evidence Trend" eyebrow="Batch-registration cohorts · missing evidence is not zero" />
         <div className="h-96"><WasteTrendChart data={data.wasteTrend} /></div>
       </Panel>
       <Panel>
@@ -36,8 +36,8 @@ export function WasteAnalytics({ data }: { data: Data }) {
         <div className="space-y-4">
           {data.categoryShares.map((item) => (
             <div key={item.category}>
-              <div className="mb-1 flex justify-between text-sm font-semibold"><span>{item.category}</span><span>{item.recoveryRate}%</span></div>
-              <Progress value={item.recoveryRate} />
+              <div className="mb-1 flex justify-between gap-3 text-sm font-semibold"><span>{item.category}</span><span>{item.recoveryRateAvailable === false ? 'Not available' : `${item.recoveryRate}%`}</span></div>
+              {item.recoveryRateAvailable !== false ? <Progress value={item.recoveryRate} /> : <p className="text-xs text-slate-500">Validated collection and linked final outcomes required.</p>}
             </div>
           ))}
         </div>

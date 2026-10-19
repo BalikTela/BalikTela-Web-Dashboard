@@ -12,6 +12,7 @@ import { BarterActivity } from '../components/BarterActivity';
 import type { getDashboardData } from '../services/dashboardService';
 import type { Transaction } from '../types';
 import { Panel } from '../components/Panel';
+import { isCompletedTransfer, isTerminalTransfer } from '../../shared/workflows';
 
 type Data = Awaited<ReturnType<typeof getDashboardData>>;
 
@@ -22,22 +23,25 @@ export function Transactions({ data }: { data: Data }) {
     const needle = query.toLowerCase();
     return data.transactions.filter((item) => [item.id, item.source, item.destination, item.location, item.status].join(' ').toLowerCase().includes(needle));
   }, [data.transactions, query]);
-  const completed = data.transactions.filter((item) => item.status === 'Completed').length;
-  const totalWeight = data.transactions.reduce((sum, item) => sum + item.weightKg, 0);
+  const aggregate = data.metadata.aggregateOnly === true;
+  const completed = data.sharedActivity?.completedTransfers ?? data.transactions.filter((item) => isCompletedTransfer(item.status)).length;
+  const count = data.sharedActivity?.transferCount ?? data.transactions.length;
+  const totalWeight = aggregate ? data.materialEvidence?.completedKg ?? 0 : data.transactions.reduce((sum, item) => sum + (item.weightKg ?? 0), 0);
+  const open = aggregate ? data.operations.metrics.activeTransfers : data.transactions.filter(item => !isTerminalTransfer(item.status)).length;
 
   return (
     <>
       <section className="stagger-grid mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Sample audit records" value={data.transactions.length.toLocaleString()} detail={data.metadata.periodLabel} icon={Waypoints} />
-        <SummaryCard label="Sample material traced" value={`${formatMass(totalWeight)}`} detail="Subset of aggregate platform activity" icon={Scale} tone="blue" />
-        <SummaryCard label="Audit records completed" value={data.transactions.length ? `${percentage(completed, data.transactions.length)}%` : 'Not available'} detail={`${completed} of ${data.transactions.length} matching sample records`} icon={CheckCircle2} tone="emerald" />
-        <SummaryCard label="Open sample workflows" value={`${data.transactions.length - completed}`} detail="Sorting, transit, or validation" icon={Clock3} tone="amber" />
+        <SummaryCard label="Transfer records" value={count.toLocaleString()} detail={data.metadata.periodLabel} icon={Waypoints} />
+        <SummaryCard label={aggregate ? 'Completed transfer mass' : 'Recorded transfer quantities'} value={formatMass(totalWeight)} detail="Activity quantities may overlap; not unique recovery" icon={Scale} tone="blue" />
+        <SummaryCard label="Transfers completed" value={count ? `${percentage(completed, count)}%` : 'Not available'} detail={`${completed} of ${count} scoped transfers`} icon={CheckCircle2} tone="emerald" />
+        <SummaryCard label="Active workflows" value={String(open)} detail="Excludes completed and other closed states" icon={Clock3} tone="amber" />
       </section>
       <div className="mb-5"><BarterActivity data={data.barterMetrics} periodLabel={data.metadata.periodLabel} /></div>
       <Panel>
         <SectionHeader
           title="Transactions and Traceability"
-          eyebrow="Searchable demo audit subset; aggregate transaction KPIs are derived separately"
+          eyebrow="Recorded custody activity; final recovery evidence is assessed separately"
           actions={
             <label className="relative block">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-textile-ink/40" />
@@ -64,7 +68,7 @@ export function Transactions({ data }: { data: Data }) {
                     <td className="pr-3">{item.destination}</td>
                     <td className="pr-3">{item.type}</td>
                     <td className="pr-3">{item.textileCategory}</td>
-                    <td className="pr-3">{formatMass(item.weightKg)}</td>
+                    <td className="pr-3">{formatMass(item.weightKg)}<p className="text-xs text-slate-500">{item.weightEvidence}</p></td>
                     <td className="pr-3">{item.location}</td>
                     <td className="pr-3"><StatusBadge status={item.status} /></td>
                     <td className="text-textile-ink/65">{item.status === 'Completed' ? 'Lifecycle recorded' : 'Outcome pending'}</td>
@@ -73,9 +77,9 @@ export function Transactions({ data }: { data: Data }) {
               </tbody>
             </table>
           </div>}</PaginatedRecords>
-        ) : <EmptyBlock />}
+        ) : aggregate ? <p className="py-6 text-sm text-slate-500">Aggregate transfer statistics only. Participant identities and lifecycle details are restricted.</p> : <EmptyBlock />}
       </Panel>
-      <TransactionDrawer transaction={selected} onClose={() => setSelected(null)} />
+      <TransactionDrawer transaction={selected ? data.transactions.find(item=>item.id===selected.id) ?? null : null} onClose={() => setSelected(null)} />
     </>
   );
 }

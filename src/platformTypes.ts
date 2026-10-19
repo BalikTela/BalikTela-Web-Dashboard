@@ -1,13 +1,14 @@
 import type { BarterMetrics, CategoryShare, CircularFlowMetrics, EngagementMetrics, Facility, ImpactMetrics, Kpi, RegionActivity, Stakeholder, StakeholderType, Transaction, WastePoint } from './types.js';
 
 export type WeightStatus = 'Estimated' | 'Measured' | 'Verified';
-export type CircularPathway = 'Reuse' | 'Repair' | 'Redistribution' | 'Upcycling' | 'Recycling' | 'For assessment';
+export type CircularPathway = typeof import('../shared/workflows.js').CIRCULAR_PATHWAYS[number];
 export type Permission =
   | 'profile.read' | 'profile.update' | 'users.read' | 'users.manage' | 'organizations.read' | 'organizations.manage'
   | 'listings.read' | 'listings.create' | 'listings.match' | 'listings.manage' | 'offers.read' | 'offers.create' | 'offers.manage' | 'batches.read' | 'batches.manage'
   | 'facilities.read' | 'facilities.manage' | 'transfers.read' | 'transfers.manage' | 'recovery.read' | 'recovery.create' | 'recovery.manage'
   | 'analytics.read' | 'analytics.predictive.read' | 'dataQuality.read' | 'audit.read' | 'configuration.read' | 'configuration.manage'
-  | 'governance.read' | 'reports.read' | 'reports.export' | 'messages.read' | 'messages.create' | 'wallet.read';
+  | 'governance.read' | 'reports.read' | 'reports.export' | 'messages.read' | 'messages.create' | 'wallet.read'
+  | 'hubs.read' | 'hubs.manage' | 'weighing.read';
 
 export interface AccessSummary {
   role: StakeholderType;
@@ -38,6 +39,10 @@ export interface PlatformUser {
   emailVerifiedAt: string | null;
   passwordChangedAt: string | null;
   verification: 'Demo verified' | 'Pending demo review';
+  canonicalVerification?: string;
+  organizationVerified?: boolean;
+  stakeholder?: string;
+  location?: string;
   accountStatus: 'Active' | 'Pending verification' | 'Suspended' | 'Deactivated';
   scope: { organizationIds: string[]; facilityIds: string[]; regions: string[]; canExport: boolean; aggregateOnly: boolean };
   trustPlaceholder: number;
@@ -63,14 +68,23 @@ export interface BarterListing {
   wasteSource: 'Pre-consumer' | 'Post-consumer' | 'Obsolete inventory' | 'Household' | 'Institutional' | 'Unknown';
   wasteForm: 'Garments' | 'Offcuts' | 'Fabric rolls' | 'Fiber' | 'Mixed textiles' | 'Other';
   circularPathway: CircularPathway;
-  quantityKg: number;
-  weightStatus: WeightStatus;
-  quality: 'Reusable' | 'Recyclable' | 'For assessment';
+  quantityKg: number | null;
+  weightStatus: WeightStatus | null;
+  availableWeightKg?: number | null;
+  reservedKg?: number;
+  weighingHubId?: string | null;
+  deliveryRoute?: 'direct' | 'via_hub' | null;
+  canonicalStatus?: string;
+  disposedAt?: string | null;
+  remainderPending?: boolean;
+  disposedWeightKg?: number;
+  remainderOfId?: string | null;
+  quality: typeof import('../shared/workflows.js').MATERIAL_CONDITIONS[number];
   exchangeFor: string;
   rewardCredits: number;
   city: string;
   region: string;
-  status: 'Open' | 'Matched' | 'Reserved' | 'Completed' | 'Closed';
+  status: import('../shared/workflows.js').ListingStatus;
   createdAt: string;
   isDemo: boolean;
 }
@@ -85,7 +99,10 @@ export interface BarterOffer {
   quantityKg: number;
   terms: string;
   offeredCredits: number;
-  status: 'Pending' | 'Accepted' | 'Declined' | 'Withdrawn';
+  status: import('../shared/workflows.js').OfferStatus;
+  canonicalStatus?: string;
+  version?: number;
+  previousTerms?: unknown[];
   createdAt: string;
   updatedAt: string;
 }
@@ -119,8 +136,11 @@ export interface WalletEntry {
 }
 
 export interface LifecycleEvent {
+  canonicalStage?: string;
+  weightKg?: number | null;
+  weightStatus?: WeightStatus | null;
   id: string;
-  type: 'Offer accepted' | 'Handover' | 'Receipt' | 'Validation' | 'Completion' | 'Cancellation' | 'Rejection' | 'Dispute';
+  type: 'Offer accepted' | 'Handover' | 'Receipt' | 'Validation' | 'Completion' | 'Cancellation' | 'Rejection' | 'Dispute' | 'Collection' | 'Processing' | 'Activity';
   actorId: string;
   actorName: string;
   timestamp: string;
@@ -137,12 +157,14 @@ export interface Transfer {
   offerId: string;
   providerId: string;
   recipientId: string;
+  requesterName?: string | null;
   materialCategory: string;
   agreedWeightKg: number;
   handoverWeightKg: number | null;
   receiptWeightKg: number | null;
   verifiedWeightKg: number | null;
-  status: 'Reserved' | 'Handed over' | 'Received' | 'Validated' | 'Completed' | 'Cancelled' | 'Rejected' | 'Disputed';
+  status: import('../shared/workflows.js').TransferStatus;
+  canonicalStatus?: string;
   discrepancyKg: number | null;
   discrepancyReason: string;
   circularOutcome: CircularPathway | null;
@@ -165,7 +187,14 @@ export interface OperationsAnalytics {
 }
 
 export interface DashboardAnalytics {
-  metadata: { periodLabel: string; reportingCutoff: string; denominatorNote: string; sampleDisclosure: string; period: import('../shared/reporting.js').ReportingPeriod; aggregateOnly?: boolean };
+  materialEvidence?: {
+    collectedBatches: number; missingCollectionBatches: number; reuseRecords: number; recyclingRecords: number;
+    completedKg: number; completedWithWeight: number; completedMissingWeight: number; completedReportedWeight: number;
+    collectionConflicts: number; outcomeConflicts: number; matchedDiversionKg: number;
+    unlinkedOutcomeKg: number; unresolvedCollectedKg: number;
+  };
+  metadata: { periodLabel: string; reportingCutoff: string; denominatorNote: string; sampleDisclosure: string; period: import('../shared/reporting.js').ReportingPeriod; aggregateOnly?: boolean; refreshedAt?: string };
+  sharedActivity?: { transferCount?: number; listings: number; pendingRequests: number; hubWeighedBatches: number; completedTransfers: number; completionAwaitingVerification: number; operationalBatches: number; demoBatches: number; missingGeography: number };
   kpis: Kpi[];
   wasteTrend: WastePoint[];
   categoryShares: CategoryShare[];
@@ -183,13 +212,14 @@ export interface DashboardAnalytics {
 
 export interface Measurement {
   id: string; batchId: string; transferId: string | null; stage: 'Declaration' | 'Handover' | 'Receipt' | 'Validation' | 'Recovery'; weightKg: number; status: WeightStatus; method: string; recordedBy: string; verifiedBy: string | null; timestamp: string; note: string;
+  canonicalStage?: import('../shared/hubs.js').CanonicalMeasurementStage; facilityId?: string | null; supersedesMeasurementId?: string | null;
 }
 
 export interface MaterialBatch {
   id: string; sourceUserId: string; sourceOrganizationId: string | null; materialCategory: string;
   wasteSource: BarterListing['wasteSource']; wasteForm: BarterListing['wasteForm']; condition: BarterListing['quality']; circularPathway: CircularPathway;
-  declaredWeightKg: number; currentWeightKg: number; weightStatus: WeightStatus; secondaryQuantity: number | null; secondaryUnit: string | null;
-  city: string; region: string; currentStatus: 'Recorded' | 'Listed' | 'Reserved' | 'In transit' | 'Received' | 'Validated' | 'Recovered' | 'Closed' | 'Archived'; archivedAt?: string | null; currentCustodianId: string; createdAt: string; updatedAt: string; isDemo: boolean; measurements: Measurement[];
+  declaredWeightKg: number | null; currentWeightKg: number | null; weightStatus: WeightStatus | null; secondaryQuantity: number | null; secondaryUnit: string | null;
+  city: string; region: string; currentStatus: import('../shared/workflows.js').BatchStatus; canonicalStatus?: string; archivedAt?: string | null; currentCustodianId: string; createdAt: string; updatedAt: string; isDemo: boolean; measurements: Measurement[];
 }
 
 export interface Organization {
@@ -204,11 +234,12 @@ export interface PlatformFacility {
 
 export interface RecoveryRecord {
   id: string; transferId: string; batchId: string; facilityId: string; organizationId: string; stage: 'Collection' | 'Sorting' | 'Processing' | 'Recovery' | 'Rejection';
-  inputWeightKg: number; outputWeightKg: number | null; residualWeightKg: number | null; outcome: CircularPathway | 'Rejected' | null; status: 'Recorded' | 'Validated' | 'Flagged' | 'Reversed';
+  inputWeightKg: number; outputWeightKg: number | null; residualWeightKg: number | null; lossWeightKg?: number; outcome: CircularPathway | 'Rejected' | null; status: 'Recorded' | 'Validated' | 'Flagged' | 'Reversed';
   recordedBy: string; validatedBy: string | null; timestamp: string; note: string; isDemo: boolean;
 }
 
 export interface DataQualityResult {
+  checkedBatches?: number; checks?: Array<{ label: string; source: string; meaning: string }>;
   thresholdPercent: number; summary: { totalIssues: number; critical: number; warnings: number; validationCoveragePercent: number };
   issues: Array<{ id: string; severity: 'Critical' | 'Warning'; category: string; entityType: string; entityId: string; description: string; status: 'Open' | 'Documented' }>;
 }
@@ -221,7 +252,7 @@ export interface PlatformConfiguration {
 }
 
 export interface GovernanceData {
-  methodology: { environmentalImpact: string; predictiveAnalytics: string; prescriptiveAnalytics: string; massAccounting: string; version: string };
+  methodology: { environmentalImpact: string; predictiveAnalytics: string; massAccounting: string; version: string };
   privacy: { role: StakeholderType; aggregateOnly: boolean; exportAllowed: boolean; policy: string };
   policyIndicators: Array<{ label: string; status: string; caveat: string }>;
 }

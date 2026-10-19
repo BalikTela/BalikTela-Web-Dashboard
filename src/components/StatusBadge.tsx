@@ -1,7 +1,7 @@
 import type { Facility, TransactionStatus } from '../types';
 import { Badge } from './ui/badge';
 
-const toneByStatus: Record<TransactionStatus | Facility['status'], string> = {
+const toneByStatus: Partial<Record<TransactionStatus | Facility['status'], string>> = {
   Completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   'In sorting': 'border-lime-200 bg-lime-50 text-lime-800',
   'In transit': 'border-cyan-200 bg-cyan-50 text-cyan-700',
@@ -15,6 +15,6 @@ const toneByStatus: Record<TransactionStatus | Facility['status'], string> = {
 
 export function StatusBadge({ status }: { status: TransactionStatus | Facility['status'] }) {
   return (
-    <Badge variant="outline" className={`whitespace-nowrap font-medium ${toneByStatus[status]}`}>{status}</Badge>
+    <Badge variant="outline" className={`whitespace-nowrap font-medium ${toneByStatus[status] ?? 'border-slate-200 bg-white text-slate-700'}`}>{status}</Badge>
   );
 }

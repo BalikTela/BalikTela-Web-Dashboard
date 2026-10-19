@@ -41,7 +41,7 @@ const pageMeta: Record<PageKey, { title: string; description: string }> = {
   waste: { title: 'Waste Analytics', description: 'Monitor waste streams, recovery rates, and category mix' },
   transactions: { title: 'Transactions', description: 'Trace textile movement through the circular network' },
   stakeholders: { title: 'Stakeholders', description: 'Participation and performance across the ecosystem' },
-  facilities: { title: 'Recycling Facilities', description: 'Capacity, utilization, and processing operations' },
+  facilities: { title: 'Facilities & Hubs', description: 'Facility performance, Hub approvals, and weighing coverage' },
   geographic: { title: 'Geographic Insights', description: 'Regional activity and collection coverage' },
   advanced: { title: 'Advanced Analytics', description: 'Diagnostic and predictive views' },
   quality: { title: 'Data Quality', description: 'Validation coverage, discrepancies, and integrity findings' },
@@ -96,7 +96,7 @@ export function Layout({ activePage, onPageChange, children, dataContextLabel = 
         </header>
         <main className="mx-auto w-full min-w-0 max-w-[2304px] px-3 py-4 sm:px-6 sm:py-7 xl:px-8 2xl:px-10">
           {children}
-          <footer className="mt-8 border-t border-slate-200 py-5 text-center text-xs text-slate-500">Prototype dashboard — sample data for demonstration purposes. Organization names and activities are demo/sample records. Weights are metric tons (t); 1 t = 1,000 kg.</footer>
+          <footer className="mt-8 border-t border-slate-200 py-5 text-center text-xs text-slate-500">Shared platform records. Only records explicitly labeled demo or sample are synthetic. Weights are metric tons (t); 1 t = 1,000 kg.</footer>
         </main>
       </div>
     </div>

@@ -20,7 +20,7 @@ const integer = { bsonType: ['int', 'long'], minimum: 0 };
 const boolean = { bsonType: 'bool' };
 const stringArray = { bsonType: 'array', items: { bsonType: 'string' }, uniqueItems: true };
 
-const roles = ['Administrator', 'Government', 'Researcher', 'Producer', 'Recycler', 'Consumer', 'NGO', 'LGU/Collection Point', 'Upcycler'];
+const roles = ['Administrator', 'Government', 'Researcher', 'Producer', 'Recycler', 'Consumer', 'NGO', 'LGU/Collection Point', 'Upcycler', 'BalikTela Hub'];
 const weightStatuses = ['Estimated', 'Measured', 'Verified'];
 const pathways = ['Collection', 'Reuse', 'Repair', 'Redistribution', 'Upcycling', 'Recycling', 'Recovery', 'Diversion', 'For assessment'];
 
@@ -267,9 +267,9 @@ export const DATABASE_COLLECTIONS: CollectionSchemaDefinition[] = [
       condition: { enum: ['Reusable', 'Repairable', 'Recyclable', 'For assessment', 'Rejected'] },
       intended_pathway: { enum: pathways },
       final_pathway: { bsonType: ['string', 'null'], enum: [null, ...pathways] },
-      declared_weight_kg: positive,
-      current_weight_kg: positive,
-      weight_status: { enum: weightStatuses },
+      declared_weight_kg: { ...positive, bsonType: [...positive.bsonType, 'null'] },
+      current_weight_kg: { ...positive, bsonType: [...positive.bsonType, 'null'] },
+      weight_status: { enum: [null, ...weightStatuses] },
       secondary_quantity: { bsonType: ['double', 'int', 'long', 'decimal', 'null'], minimum: 0 },
       secondary_unit: { bsonType: ['string', 'null'], enum: [null, 'pieces', 'meters', 'bags', 'bales', 'other'] },
       location: {

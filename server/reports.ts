@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isCompletedTransfer } from '../shared/workflows.js';
 import type { Express, Response } from 'express';
 import { authorize, hasPermission } from './access-control.js';
 import { requireAuth, type AuthenticatedRequest } from './auth.js';
@@ -35,7 +36,7 @@ export async function buildReport(store: Store, actor: UserRecord, id: string, q
   const { currentBatches: batches, currentTransfers: transfers, currentRecovery: recovery, period } = context;
   const data = await buildDashboardAnalytics(store, actor, query, source, now);
   const configuration = await store.findOne('configurations', item => item.id === 'platform');
-  const quality = buildDataQuality(actor, batches, transfers, configuration?.discrepancyThresholdPercent ?? 5, now);
+  const quality = buildDataQuality(actor, batches, transfers, configuration?.discrepancyThresholdPercent ?? 5, now, source);
   const report: ReportDocument = {
     id, title: definition.name, generatedAt: period.asOf, period, scope: reportScope(actor),
     filters: Object.entries(query).filter(([, value]) => value !== '' && value !== undefined).map(([key, value]) => ({ label: filterNames[key], value: actor.scope.aggregateOnly && ['producer', 'recycler', 'organizationId', 'facilityId'].includes(key) && !String(value).startsWith('All ') ? 'Applied (identifier withheld)' : String(value) })),
@@ -46,20 +47,21 @@ export async function buildReport(store: Store, actor: UserRecord, id: string, q
       'The separate synthetic predictive dataset and its fixed cutoff are not used in these operational reports.'],
   };
   if (id === 'material-flow') {
-    report.columns = ['Region', 'Material', 'Unique batches', 'Declared (t)', 'Collected (t)', 'Reused (t)', 'Recycled (t)', 'Not verified diverted (t)', 'Diversion rate (%)'];
+    report.columns = ['Region', 'Material', 'Unique batches', 'Declared (t)', 'Validated collection (t)', 'Confirmed reuse (t)', 'Confirmed recycling (t)', 'Collected outcome unconfirmed (t)', 'Confirmed recovery share (%)', 'Completed transfer mass (t)', 'Completed transfers missing weight'];
     const keys = [...new Set(batches.map(item => JSON.stringify([item.region, item.materialCategory])))].sort();
     const makeRow = (region: string, category: string, selected: typeof batches) => {
-      const flow = aggregate(selected, transfers, recovery);
-      const diverted = flow.reusedKg + flow.recycledKg;
-      return [region, category, String(selected.length), tons(flow.generatedKg), tons(flow.collectedKg), tons(flow.reusedKg), tons(flow.recycledKg), tons(Math.max(0, flow.generatedKg - diverted)), flow.generatedKg ? String(percentage(diverted, flow.generatedKg)) : 'Not available'];
+      const flow = aggregate(selected, transfers, recovery, { measurements: context.currentMeasurements, listings: source.listings });
+      return [region, category, String(selected.length), tons(flow.generatedKg), flow.collectedBatches ? tons(flow.collectedKg) : 'Pending evidence', flow.reuseRecords ? tons(flow.reusedKg) : 'Pending evidence', flow.recyclingRecords ? tons(flow.recycledKg) : 'Pending evidence', flow.collectedBatches ? tons(flow.unresolvedCollectedKg) : 'Pending evidence', flow.diversionRate === null ? 'Not available' : String(flow.diversionRate), flow.completedWithWeight ? tons(flow.completedKg) : 'Pending evidence', String(flow.completedMissingWeight)];
     };
     report.rows = keys.map(key => { const [region, category] = JSON.parse(key) as string[]; return makeRow(region, category, batches.filter(item => item.region === region && item.materialCategory === category)); });
     report.rows.push(makeRow('TOTAL', 'All selected materials', batches));
-    report.summary = [{ label: 'Unique batches', value: count(batches.length) }, { label: 'Declared mass', value: `${tons(data.circularFlow.generatedKg)} t` }, { label: 'Collected mass', value: `${tons(data.circularFlow.collectedKg)} t` }, { label: 'Verified reused + recycled', value: `${tons(data.circularFlow.reusedKg + data.circularFlow.recycledKg)} t` }, { label: 'Diversion rate', value: batches.length && data.circularFlow.generatedKg ? `${data.impactMetrics.diversionRate}%` : 'Not available' }];
+    report.summary = [{ label: 'Unique batches', value: count(batches.length) }, { label: 'Declared mass', value: `${tons(data.circularFlow.generatedKg)} t` }, { label: 'Validated collection', value: data.circularFlow.collectedAvailable ? `${tons(data.circularFlow.collectedKg)} t` : 'Pending evidence' }, { label: 'Confirmed reuse + recycling', value: data.circularFlow.reusedAvailable || data.circularFlow.recycledAvailable ? `${tons(data.circularFlow.reusedKg + data.circularFlow.recycledKg)} t` : 'Pending evidence' }, { label: 'Confirmed recovery share', value: data.impactMetrics.diversionRate !== null ? `${data.impactMetrics.diversionRate}%` : 'Not available' }];
+    report.notes.push('Completed transfer mass is activity, not unique recovered material. Approved validation weight is preferred; reported receipt weight is used when validation is absent. Agreed quantities are excluded. Unconfirmed collected mass is not measured landfill disposal. Collection/output conflicts and unallocated multi-transfer outcomes are withheld.');
   } else if (id === 'data-quality') {
     report.columns = ['Metric / finding category', 'Count / value', 'Unit', 'Denominator / rule'];
     report.rows = [
       ['Unique batches', String(batches.length), 'batches', 'Selected registration cohort'],
+      ['Awaiting weighing batches', String(batches.filter(item => item.declaredWeightKg === null).length), 'batches', 'Missing weights are excluded from mass totals, not treated as measured zero'],
       ...['Estimated', 'Measured', 'Verified'].map(status => [`${status} batches`, String(batches.filter(item => item.weightStatus === status).length), 'batches', 'Unique selected batches']),
       ['Validation coverage', batches.length ? String(quality.summary.validationCoveragePercent) : 'Not available', '%', 'Verified batches / unique selected batches'],
       ['Discrepancy threshold', String(quality.thresholdPercent), '%', 'Absolute discrepancy / handover mass; agreed mass if handover is absent'],
@@ -75,7 +77,7 @@ export async function buildReport(store: Store, actor: UserRecord, id: string, q
       const organization = organizations.get(organizationId);
       const sourceBatches = batches.filter(item => item.sourceOrganizationId === organizationId);
       const linked = transfers.filter(item => users.get(item.providerId)?.organizationId === organizationId || users.get(item.recipientId)?.organizationId === organizationId);
-      return { id: organizationId, name: organization?.name ?? 'Unregistered organization', type: organization?.type ?? 'Unknown', region: organization?.region ?? sourceBatches[0]?.region ?? 'Unknown', batches: sourceBatches.length, declared: sourceBatches.reduce((sum, item) => sum + item.declaredWeightKg, 0), received: linked.filter(item => item.status === 'Completed' && users.get(item.recipientId)?.organizationId === organizationId).reduce((sum, item) => sum + (item.verifiedWeightKg ?? 0), 0), transfers: linked.length };
+      return { id: organizationId, name: organization?.name ?? 'Unregistered organization', type: organization?.type ?? 'Unknown', region: organization?.region ?? sourceBatches[0]?.region ?? 'Unknown', batches: sourceBatches.length, declared: sourceBatches.reduce((sum, item) => sum + (item.declaredWeightKg ?? 0), 0), received: linked.filter(item => isCompletedTransfer(item.status) && users.get(item.recipientId)?.organizationId === organizationId).reduce((sum, item) => sum + (item.verifiedWeightKg ?? 0), 0), transfers: linked.length };
     });
     report.columns = [actor.scope.aggregateOnly ? 'Region / stakeholder group' : 'Organization', 'Region', 'Stakeholder type', 'Organizations', 'Source batches', 'Declared as source (t)', 'Verified received (t)', 'Transfer involvements'];
     if (actor.scope.aggregateOnly) {
@@ -96,7 +98,7 @@ export async function buildReport(store: Store, actor: UserRecord, id: string, q
       ['Water saved', 'Not calculated', 'liters', 'Requires approved factors and calculation boundaries'],
       ['Landfill-equivalent impact', 'Not calculated', 't', 'Not inferred from transfer completion alone'],
       ['Declared platform mass', tons(data.circularFlow.generatedKg), 't', 'Unique selected batch declarations'],
-      ['Verified reused + recycled', tons(data.circularFlow.reusedKg + data.circularFlow.recycledKg), 't', 'Operational input only; not an environmental-equivalence claim'],
+      ['Confirmed reuse + recycling', data.circularFlow.reusedAvailable || data.circularFlow.recycledAvailable ? tons(data.circularFlow.reusedKg + data.circularFlow.recycledKg) : 'Pending evidence', 't', 'Validated final output only; not an environmental-equivalence claim'],
     ];
     report.summary = [{ label: 'Environmental equivalents', value: 'Not calculated' }, { label: 'Methodology', value: configuration?.methodologyVersion ?? 'Not approved' }];
   }

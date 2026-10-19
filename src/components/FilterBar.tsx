@@ -5,10 +5,11 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select as SelectControl } from './ui/select';
-import { manilaDate } from '../../shared/reporting';
+import { DEFAULT_REPORTING_RANGE, manilaDate } from '../../shared/reporting';
+import { CIRCULAR_PATHWAYS, MATERIAL_CATEGORIES, TRANSFER_STATUSES } from '../../shared/workflows';
 
 const initialFilters: Filters = {
-  dateRange: 'Last 90 days', startDate: '', endDate: '', region: 'All regions', city: '', textileType: 'All textiles',
+  dateRange: DEFAULT_REPORTING_RANGE, startDate: '', endDate: '', region: 'All regions', city: '', textileType: 'All textiles',
   transactionType: 'All types', stakeholderType: 'All stakeholders', producer: '', recycler: '',
   wasteSource: 'All sources', circularPathway: 'All pathways', weightStatus: 'All weight statuses', facilityId: 'All facilities', organizationId: 'All organizations', transactionStatus: 'All statuses',
 };
@@ -29,9 +30,9 @@ export function FilterBar({ filters, onChange }: { filters: Filters; onChange: (
       <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
         <div className="hidden h-9 items-center gap-2 self-end pr-2 text-xs font-medium text-[#53615c] xl:flex"><Filter size={14} />Global view</div>
         <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Select label="Date range" value={filters.dateRange} onChange={value => onChange({ ...filters, dateRange: value, startDate: value === 'Custom range' ? filters.startDate || manilaDate(new Date(Date.now() - 29 * 86400000)) : '', endDate: value === 'Custom range' ? filters.endDate || manilaDate() : '' })} options={['Last 30 days', 'Last 90 days', 'Year to date', 'All time', 'Custom range']} />
+          <Select label="Date range" value={filters.dateRange} onChange={value => onChange({ ...filters, dateRange: value, startDate: value === 'Custom range' ? filters.startDate || manilaDate(new Date(Date.now() - 29 * 86400000)) : '', endDate: value === 'Custom range' ? filters.endDate || manilaDate() : '' })} options={[DEFAULT_REPORTING_RANGE, 'Last 30 days', 'Last 90 days', 'Year to date', 'All time', 'Custom range']} />
           <Select label="Region" value={filters.region} onChange={(value) => update('region', value as Filters['region'])} options={['All regions', 'Metro Manila', 'Central Visayas', 'Western Visayas', 'Davao Region']} />
-          <Select label="Textile type" value={filters.textileType} onChange={(value) => update('textileType', value as Filters['textileType'])} options={['All textiles', 'Cotton', 'Polyester', 'Denim', 'Mixed fabric', 'Uniforms', 'Household linen']} />
+          <Select label="Textile type" value={filters.textileType} onChange={(value) => update('textileType', value as Filters['textileType'])} options={['All textiles', ...MATERIAL_CATEGORIES]} />
         </div>
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" aria-expanded={expanded} aria-controls="additional-dashboard-filters" onClick={() => setExpanded((value) => !value)} className="flex-1 border-[#cfd8d4] xl:flex-none"><SlidersHorizontal size={16} />More filters{activeCount > 0 ? <Badge className="ml-1 h-5 min-w-5 justify-center px-1.5">{activeCount}</Badge> : null}</Button>
@@ -43,13 +44,13 @@ export function FilterBar({ filters, onChange }: { filters: Filters; onChange: (
         <div id="additional-dashboard-filters" className="expand-enter mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
           <Text label="City" value={filters.city} placeholder="Any city" onChange={(value) => update('city', value)} />
           <Select label="Transaction" value={filters.transactionType} onChange={(value) => update('transactionType', value as Filters['transactionType'])} options={['All types', 'Barter', 'Return', 'Donation', 'Collection', 'Recycling', 'Redistribution']} />
-          <Select label="Stakeholder" value={filters.stakeholderType} onChange={(value) => update('stakeholderType', value as Filters['stakeholderType'])} options={['All stakeholders', 'Administrator', 'Government', 'Researcher', 'Producer', 'Recycler', 'Consumer', 'NGO', 'LGU/Collection Point', 'Upcycler']} />
+          <Select label="Stakeholder" value={filters.stakeholderType} onChange={(value) => update('stakeholderType', value as Filters['stakeholderType'])} options={['All stakeholders', 'Administrator', 'Government', 'Researcher', 'Producer', 'Recycler', 'BalikTela Hub', 'Consumer', 'NGO', 'LGU/Collection Point', 'Upcycler']} />
           <Select label="Waste source" value={filters.wasteSource} onChange={(value) => update('wasteSource', value as Filters['wasteSource'])} options={['All sources', 'Pre-consumer', 'Post-consumer', 'Obsolete inventory', 'Household', 'Institutional', 'Unknown']} />
-          <Select label="Circular pathway" value={filters.circularPathway} onChange={(value) => update('circularPathway', value as Filters['circularPathway'])} options={['All pathways', 'Reuse', 'Repair', 'Redistribution', 'Upcycling', 'Recycling', 'For assessment']} />
-          <Select label="Weight status" value={filters.weightStatus} onChange={(value) => update('weightStatus', value as Filters['weightStatus'])} options={['All weight statuses', 'Estimated', 'Measured', 'Verified']} />
+          <Select label="Circular pathway" value={filters.circularPathway} onChange={(value) => update('circularPathway', value as Filters['circularPathway'])} options={['All pathways', ...CIRCULAR_PATHWAYS]} />
+          <Select label="Weight status" value={filters.weightStatus} onChange={(value) => update('weightStatus', value as Filters['weightStatus'])} options={['All weight statuses', 'Awaiting weighing', 'Estimated', 'Measured', 'Verified']} />
           <Text label="Facility" value={filters.facilityId === 'All facilities' ? '' : filters.facilityId} placeholder="Facility ID" onChange={(value) => update('facilityId', value || 'All facilities')} />
           <Text label="Organization" value={filters.organizationId === 'All organizations' ? '' : filters.organizationId} placeholder="Organization ID" onChange={(value) => update('organizationId', value || 'All organizations')} />
-          <Select label="Workflow status" value={filters.transactionStatus} onChange={(value) => update('transactionStatus', value)} options={['All statuses', 'Reserved', 'Handed over', 'Received', 'Validated', 'Completed', 'Cancelled', 'Rejected', 'Disputed', 'Recorded', 'Flagged']} />
+          <Select label="Workflow status" value={filters.transactionStatus} onChange={(value) => update('transactionStatus', value)} options={['All statuses', ...Object.values(TRANSFER_STATUSES), 'Recorded', 'Flagged']} />
           <Text label="Producer" value={filters.producer} placeholder="Search producer" onChange={(value) => update('producer', value)} />
           <Text label="Recycler" value={filters.recycler} placeholder="Search recycler" onChange={(value) => update('recycler', value)} />
         </div>

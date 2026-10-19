@@ -68,6 +68,7 @@ export default function HomePage({ notFound = false }: { notFound?: boolean }) {
     </header>
 
     {notFound ? <main id="main-content" className="home-container home-not-found"><p className="home-eyebrow">404 / PAGE NOT FOUND</p><h1>This thread leads elsewhere.</h1><p>The page you are looking for could not be found.</p><a className="home-button" href="/">Back to BalikTelaPH<ArrowRight size={17} /></a></main> : <main id="main-content">
+      <div className="home-intro">
       <section className="home-hero" aria-labelledby="home-title">
         <img className="home-hero-image" src={hero} alt="Denim, cotton offcuts, and a carefully repaired patchwork textile on a light work surface. Illustrative textile study." width={1672} height={941} fetchPriority="high" />
         <div className="home-container home-hero-inner">
@@ -85,6 +86,7 @@ export default function HomePage({ notFound = false }: { notFound?: boolean }) {
         </div><span className="home-institutions-label">Project institutions</span></div>
       </section>
 
+      </div>
       <section id="about" className="home-container home-section home-about">
         <div className="home-section-intro" data-reveal><div><p className="home-eyebrow">01 / A SHARED PURPOSE</p><h2>Textiles have<br /><span className="home-serif">more to give.</span></h2></div><div className="home-about-copy"><p>A piece of fabric can outlive its first purpose. What it needs is a connection to its next one.</p><p>BalikTelaPH is a National University research initiative bringing textile producers, recyclers, and beneficiaries together. A mobile application makes participation accessible, while a web dashboard turns recorded activity into information for monitoring, research, and better decisions.</p><a className="home-text-link" href="#platforms">One network. Two ways to connect.<ArrowRight size={17} aria-hidden="true" /></a></div></div>
         <div className="home-principles" data-reveal>{[['Keep materials in use', 'Make room for reuse, redistribution, upcycling, and responsible recovery.'], ['Connect the right people', 'Bring households, businesses, recovery partners, and institutions into the same conversation.'], ['Make outcomes visible', 'Document material journeys so participation can become evidence, not just a promise.']].map(([title, description], index) => <article key={title}><span className="home-number">0{index + 1}</span><h3>{title}</h3><p>{description}</p></article>)}</div>

@@ -4,6 +4,7 @@ import express from 'express';
 import { installSecurity, securityErrorHandler } from './security.js';
 import { ManagementError } from './management.js';
 import { ReportingInputError } from '../shared/reporting.js';
+import { DatabaseOperationError } from './database/errors.js';
 
 async function fixture(run: (base: string) => Promise<void>, limits?: { api: number; auth: number }) {
   const app = express();
@@ -18,6 +19,7 @@ async function fixture(run: (base: string) => Promise<void>, limits?: { api: num
   app.get('/api/report-error', () => { throw new ReportingInputError('Choose a supported date range.'); });
   app.get('/api/provider-error', () => { const error = new Error('postgres://private-password@secret-host'); error.name = 'SupabaseAuthError'; throw error; });
   app.get('/api/unavailable', () => { throw Object.assign(new Error('private SQL connection detail'), { status: 503 }); });
+  app.post('/api/database-error/:id', () => { throw new DatabaseOperationError('read recovery_records', { code: '42703', message: 'private-password at postgres://secret-host', details: 'private SQL values' }); });
   app.use(securityErrorHandler);
   const server = app.listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
@@ -101,3 +103,20 @@ test('provider and parser errors do not disclose secrets; validated domain error
   assert.match(await fetch(`${base}/api/domain-error`).then(response => response.text()), /material category/);
   assert.match(await fetch(`${base}/api/report-error`).then(response => response.text()), /supported date range/);
 }));
+
+test('failure logs identify the route template and database operation without logging private inputs', async t => {
+  const messages: unknown[][] = [];
+  t.mock.method(console, 'error', (...args: unknown[]) => { messages.push(args); });
+  await fixture(async base => {
+    const response = await fetch(`${base}/api/database-error/private-record-id?token=private-query-token`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer private-bearer-token' },
+      body: JSON.stringify({ password: 'private-body-password' }),
+    });
+    assert.equal(response.status, 500);
+    const body = await response.json() as { requestId: string; message: string };
+    assert.equal(body.message, 'The BalikTela service could not complete this request.');
+    assert.deepEqual(messages[0], ['Request failed.', { requestId: body.requestId, method: 'POST', route: '/api/database-error/:id',
+      status: 500, type: 'database', code: '42703', operation: 'read recovery_records' }]);
+    assert.doesNotMatch(JSON.stringify(messages) + JSON.stringify(body), /private-|secret-host|postgres:|SQL values/);
+  });
+});

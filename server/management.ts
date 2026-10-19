@@ -5,6 +5,7 @@ import { requireAuth, type AuthenticatedRequest } from './auth.js';
 import type { Store } from './store.js';
 import type { RecordMutation } from './database/mutations.js';
 import type { FacilityRecord, MaterialBatchRecord, OrganizationRecord, RecoveryRecord, UserRecord } from './types.js';
+import { canModerateListing, CIRCULAR_PATHWAYS, MATERIAL_CONDITIONS } from '../shared/workflows.js';
 
 export class ManagementError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -31,10 +32,10 @@ export function list(value: unknown, label: string) {
 }
 const orgTypes = ['Research','Government','Producer','Recycler','NGO','LGU/Collection Point','Upcycler','Research institution','Government agency','Producer/Retailer','NGO/Community','LGU/MRF','Collection point','Other'] as const;
 const facilityTypes = ['Collection point','Sorting facility','Recycler','Upcycling hub','Repair hub'] as const;
-const pathways = ['Reuse','Repair','Redistribution','Upcycling','Recycling','For assessment'] as const;
+const pathways = CIRCULAR_PATHWAYS;
 const wasteSources = ['Pre-consumer','Post-consumer','Obsolete inventory','Household','Institutional','Unknown'] as const;
 const wasteForms = ['Garments','Offcuts','Fabric rolls','Fiber','Mixed textiles','Other'] as const;
-const conditions = ['Reusable','Recyclable','For assessment'] as const;
+const conditions = MATERIAL_CONDITIONS;
 const weights = ['Estimated','Measured','Verified'] as const;
 const newId = (prefix: string) => `${prefix}-${randomUUID()}`;
 
@@ -86,7 +87,7 @@ export function registerManagementRoutes(app: Express, store: Store) {
       secondaryQuantity: null, secondaryUnit: null, city: text(req.body.city ?? source.city, 'City'), region: text(req.body.region ?? source.region, 'Region'),
       currentStatus: 'Recorded', currentCustodianId: source.id, archivedAt: null, createdAt: at, updatedAt: at, isDemo: req.body.isDemo === true };
     await saveManagement(store, req.actor!, [{ name:'materialBatches', record:batch }, { name:'measurements', record:{ id:newId('MSR'), batchId:batch.id, transferId:null, stage:'Declaration',
-      weightKg:batch.declaredWeightKg, status:batch.weightStatus, method:text(req.body.method, 'Measurement method'), recordedBy:req.actor!.id,
+      weightKg:number(batch.declaredWeightKg,'Declared weight',0.001), status:choice(batch.weightStatus,weights,'Weight status'), method:text(req.body.method, 'Measurement method'), recordedBy:req.actor!.id,
       verifiedBy:batch.weightStatus === 'Verified' ? req.actor!.id : null, timestamp:at, note:text(req.body.reason,'Reason') } }], 'batch.registered', batch.id, req.body.reason);
     res.status(201).json({ batch });
   });
@@ -120,7 +121,7 @@ export function registerManagementRoutes(app: Express, store: Store) {
         city:text(input.city,'City'), region:text(input.region,'Region'), declaredWeightKg:number(input.declaredWeightKg,'Declared weight',0.001),
         currentWeightKg:number(input.declaredWeightKg,'Declared weight',0.001), weightStatus:choice(input.weightStatus,weights,'Weight status'), updatedAt:at };
       if (next.declaredWeightKg !== batch.declaredWeightKg || next.weightStatus !== batch.weightStatus) {
-        writes.push({name:'measurements',record:{id:newId('MSR'),batchId:batch.id,transferId:null,stage:'Declaration',weightKg:next.declaredWeightKg,status:next.weightStatus,
+        writes.push({name:'measurements',record:{id:newId('MSR'),batchId:batch.id,transferId:null,stage:'Declaration',weightKg:number(next.declaredWeightKg,'Declared weight',0.001),status:choice(next.weightStatus,weights,'Weight status'),
           method:text(req.body.method,'Measurement method'),recordedBy:req.actor!.id,verifiedBy:next.weightStatus === 'Verified' ? req.actor!.id : null,timestamp:at,note:`Correction: ${reason}`}});
       }
       for (const listing of listings) writes.push({name:'listings',previous:listing,record:{...listing,textileType:next.materialCategory,wasteSource:next.wasteSource,wasteForm:next.wasteForm,
@@ -137,13 +138,15 @@ export function registerManagementRoutes(app: Express, store: Store) {
     const transfers = (await store.all('transfers')).filter(item=>item.listingId===listing.id);
     const batch = await store.findById('materialBatches',listing.batchId);
     if (!batch) throw new ManagementError('Linked batch is missing.',409);
-    const status = choice(req.body.status ?? listing.status,['Open','Matched','Closed'],'Listing status');
+    if (!canModerateListing(listing)) throw new ManagementError('Disposed, reserved or pending-remainder stock cannot be reopened or moderated. Review the originating mobile lifecycle.',409);
+    const status = choice(req.body.status ?? listing.status,['Open','Matched','Closed','Draft','Archived'],'Listing status');
     if (status==='Matched' && listing.status!=='Matched') throw new ManagementError('Matching status is assigned by the offer workflow.');
+    if (status==='Draft' && listing.status!=='Draft' || status==='Archived' && listing.status!=='Archived') throw new ManagementError('Draft and archive states must originate from the mobile lifecycle.');
     if (['Reserved','Completed'].includes(listing.status) || transfers.length) throw new ManagementError('Use transfer administration for listings with transfer history.',409);
     if (batch.currentStatus === 'Archived' && status === 'Open') throw new ManagementError('Restore the linked batch before reopening.',409);
     const next = {...listing,title:text(req.body.title ?? listing.title,'Title'),description:text(req.body.description ?? listing.description,'Description',false),status};
     const writes: RecordMutation[] = [{name:'listings',previous:listing,record:next}];
-    if (status !== listing.status && batch.currentStatus !== 'Archived') writes.push({name:'materialBatches',previous:batch,record:{...batch,currentStatus:status==='Open'?'Listed':'Closed',updatedAt:new Date().toISOString()}});
+    if (status !== listing.status && batch.currentStatus !== 'Archived') writes.push({name:'materialBatches',previous:batch,record:{...batch,currentStatus:status==='Open'?'Listed':status==='Matched'?'Reserved':'Closed',updatedAt:new Date().toISOString()}});
     if (status==='Closed') {
       for (const offer of (await store.all('offers')).filter(item=>item.listingId===listing.id && item.status==='Pending')) writes.push({name:'offers',previous:offer,record:{...offer,status:'Declined',updatedAt:new Date().toISOString()}});
     }
@@ -166,13 +169,14 @@ export function registerManagementRoutes(app: Express, store: Store) {
       const input={...current,...req.body};
       next.inputWeightKg=number(input.inputWeightKg,'Input weight',0.001);
       next.outputWeightKg=number(input.outputWeightKg,'Output weight');
-      next.residualWeightKg=number(input.residualWeightKg ?? next.inputWeightKg-next.outputWeightKg,'Residual weight');
-      if (Math.abs(next.inputWeightKg-next.outputWeightKg-next.residualWeightKg)>0.01) throw new ManagementError('Input must equal output plus residual kilograms.');
+      next.lossWeightKg=number(input.lossWeightKg ?? current.lossWeightKg ?? 0,'Processing loss');
+      next.residualWeightKg=number(input.residualWeightKg ?? next.inputWeightKg-next.outputWeightKg-next.lossWeightKg,'Reject weight');
+      if (Math.abs(next.inputWeightKg-next.outputWeightKg-next.residualWeightKg-next.lossWeightKg)>0.01) throw new ManagementError('Input must equal output plus rejects and processing loss.');
       next.stage=choice(input.stage,['Collection','Sorting','Processing','Recovery','Rejection'],'Stage');
       next.outcome=next.stage==='Rejection'?'Rejected':choice(input.outcome,pathways.filter(item=>item!=='For assessment'),'Outcome');
       next.status='Recorded'; next.validatedBy=null;
     }
-    if (action==='validate' && (next.outputWeightKg===null || next.residualWeightKg===null || Math.abs(next.inputWeightKg-next.outputWeightKg-next.residualWeightKg)>0.01)) throw new ManagementError('Validation requires a complete balanced measurement.');
+    if (action==='validate' && (next.outputWeightKg===null || next.residualWeightKg===null || Math.abs(next.inputWeightKg-next.outputWeightKg-next.residualWeightKg-(next.lossWeightKg??0))>0.01)) throw new ManagementError('Validation requires balanced output, rejects and processing loss.');
     next.note=`${current.note}\n${action}: ${reason}`.trim();
     const writes: RecordMutation[] = [];
     if (action==='correct') {

@@ -4,6 +4,7 @@ export type UserRole =
   | 'Researcher'
   | 'Producer'
   | 'Recycler'
+  | 'BalikTela Hub'
   | 'Consumer'
   | 'NGO'
   | 'LGU/Collection Point'
@@ -11,10 +12,9 @@ export type UserRole =
 
 export type VerificationStatus = 'Demo verified' | 'Pending demo review';
 export type WeightStatus = 'Estimated' | 'Measured' | 'Verified';
-export type CircularPathway = 'Reuse' | 'Repair' | 'Redistribution' | 'Upcycling' | 'Recycling' | 'For assessment';
-export type ListingStatus = 'Open' | 'Matched' | 'Reserved' | 'Completed' | 'Closed';
-export type OfferStatus = 'Pending' | 'Accepted' | 'Declined' | 'Withdrawn';
-export type TransferStatus = 'Reserved' | 'Handed over' | 'Received' | 'Validated' | 'Completed' | 'Cancelled' | 'Rejected' | 'Disputed';
+export type CircularPathway = typeof import('../shared/workflows.js').CIRCULAR_PATHWAYS[number];
+export type { ListingStatus, OfferStatus, TransferStatus } from '../shared/workflows.js';
+import type { ListingStatus, OfferStatus, TransferStatus } from '../shared/workflows.js';
 
 export interface AccessScope {
   organizationIds: string[];
@@ -40,6 +40,10 @@ export interface UserRecord {
   emailVerifiedAt: string | null;
   passwordChangedAt: string | null;
   verification: VerificationStatus;
+  canonicalVerification?: string;
+  organizationVerified?: boolean;
+  stakeholder?: string;
+  location?: string;
   accountStatus: 'Active' | 'Pending verification' | 'Suspended' | 'Deactivated';
   scope: AccessScope;
   trustPlaceholder: number;
@@ -90,16 +94,17 @@ export interface MaterialBatchRecord {
   materialCategory: string;
   wasteSource: 'Pre-consumer' | 'Post-consumer' | 'Obsolete inventory' | 'Household' | 'Institutional' | 'Unknown';
   wasteForm: 'Garments' | 'Offcuts' | 'Fabric rolls' | 'Fiber' | 'Mixed textiles' | 'Other';
-  condition: 'Reusable' | 'Recyclable' | 'For assessment';
+  condition: typeof import('../shared/workflows.js').MATERIAL_CONDITIONS[number];
   circularPathway: CircularPathway;
-  declaredWeightKg: number;
-  currentWeightKg: number;
-  weightStatus: WeightStatus;
+  declaredWeightKg: number | null;
+  currentWeightKg: number | null;
+  weightStatus: WeightStatus | null;
   secondaryQuantity: number | null;
   secondaryUnit: string | null;
   city: string;
   region: string;
-  currentStatus: 'Recorded' | 'Listed' | 'Reserved' | 'In transit' | 'Received' | 'Validated' | 'Recovered' | 'Closed' | 'Archived';
+  currentStatus: import('../shared/workflows.js').BatchStatus;
+  canonicalStatus?: string;
   archivedAt?: string | null;
   currentCustodianId: string;
   createdAt: string;
@@ -119,6 +124,9 @@ export interface MeasurementRecord {
   verifiedBy: string | null;
   timestamp: string;
   note: string;
+  canonicalStage?: import('../shared/hubs.js').CanonicalMeasurementStage;
+  facilityId?: string | null;
+  supersedesMeasurementId?: string | null;
 }
 
 export interface ListingRecord {
@@ -133,8 +141,17 @@ export interface ListingRecord {
   wasteSource: MaterialBatchRecord['wasteSource'];
   wasteForm: MaterialBatchRecord['wasteForm'];
   circularPathway: CircularPathway;
-  quantityKg: number;
-  weightStatus: WeightStatus;
+  quantityKg: number | null;
+  weightStatus: WeightStatus | null;
+  availableWeightKg?: number | null;
+  reservedKg?: number;
+  weighingHubId?: string | null;
+  deliveryRoute?: 'direct' | 'via_hub' | null;
+  canonicalStatus?: string;
+  disposedAt?: string | null;
+  remainderPending?: boolean;
+  disposedWeightKg?: number;
+  remainderOfId?: string | null;
   quality: MaterialBatchRecord['condition'];
   exchangeFor: string;
   rewardCredits: number;
@@ -156,13 +173,19 @@ export interface OfferRecord {
   terms: string;
   offeredCredits: number;
   status: OfferStatus;
+  canonicalStatus?: string;
+  version?: number;
+  previousTerms?: unknown[];
   createdAt: string;
   updatedAt: string;
 }
 
 export interface LifecycleEventRecord {
   id: string;
-  type: 'Offer accepted' | 'Handover' | 'Receipt' | 'Validation' | 'Completion' | 'Cancellation' | 'Rejection' | 'Dispute';
+  type: 'Offer accepted' | 'Handover' | 'Receipt' | 'Validation' | 'Completion' | 'Cancellation' | 'Rejection' | 'Dispute' | 'Collection' | 'Processing' | 'Activity';
+  canonicalStage?: string;
+  weightKg?: number | null;
+  weightStatus?: WeightStatus | null;
   actorId: string;
   actorName: string;
   timestamp: string;
@@ -185,6 +208,7 @@ export interface TransferRecord {
   receiptWeightKg: number | null;
   verifiedWeightKg: number | null;
   status: TransferStatus;
+  canonicalStatus?: string;
   discrepancyKg: number | null;
   discrepancyReason: string;
   circularOutcome: CircularPathway | null;
@@ -257,6 +281,7 @@ export interface RecoveryRecord {
   inputWeightKg: number;
   outputWeightKg: number | null;
   residualWeightKg: number | null;
+  lossWeightKg?: number;
   outcome: CircularPathway | 'Rejected' | null;
   status: 'Recorded' | 'Validated' | 'Flagged' | 'Reversed';
   recordedBy: string;

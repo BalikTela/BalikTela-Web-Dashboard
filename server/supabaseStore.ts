@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { decodeRecord, encodeFlowEvent, encodeRecord } from './database/codecs.js';
 import { WEB_PERSISTENCE_COLLECTION_MAP } from './database/schema.js';
+import { DatabaseOperationError } from './database/errors.js';
 import { canonicalMutations, mergeJson, rememberCanonicalRow, ManagementMigrationRequired, MutationConflict, type RecordMutation } from './database/mutations.js';
 import type { DashboardSourceSnapshot, Store } from './store.js';
 import type { AuthChallengeRecord, AuthRateLimitRecord, AuthSessionRecord, DatabaseShape } from './types.js';
@@ -12,14 +13,32 @@ type Row = Record<string, unknown> & { id: string };
 export class SupabaseStore implements Store {
   mode = 'supabase' as const;
   private client: SupabaseClient;
+  private snapshotRpcRetryAt = 0;
 
-  constructor(url: string, secretKey: string) {
+  constructor(url: string, secretKey: string, fetcher?: typeof fetch) {
     this.client = createClient(url, secretKey, {
       auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+      ...(fetcher ? { global: { fetch: fetcher } } : {}),
     });
   }
 
   private table<K extends CollectionName>(name: K) { return WEB_PERSISTENCE_COLLECTION_MAP[name]; }
+
+  async loadHubDisposals() {
+    const records: import('../shared/hubs.js').HubDisposalRecord[] = [];
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await this.client.from('hub_disposals')
+        .select('id,listing_id,operator_id,listing_title,category,weight_kg,reason,disposed_at')
+        .order('id').range(offset, offset + 999);
+      if (error && ['42P01', 'PGRST205'].includes(error.code)) return { available: false, records: [] };
+      if (error) throw databaseError('read hub_disposals', error);
+      records.push(...(data ?? []).map(row => ({ id: row.id, listingId: row.listing_id, operatorId: row.operator_id,
+        listingTitle: row.listing_title, category: row.category, weightKg: row.weight_kg === null ? NaN : Number(row.weight_kg),
+        reason: row.reason ?? '', disposedAt: row.disposed_at })));
+      if ((data?.length ?? 0) < 1000) break;
+    }
+    return { available: true, records };
+  }
 
   async all<K extends CollectionName>(name: K) {
     const rows: Row[] = [];
@@ -189,10 +208,14 @@ export class SupabaseStore implements Store {
   }
 
   async loadDashboardSnapshot(): Promise<DashboardSourceSnapshot | null> {
+    if (Date.now() < this.snapshotRpcRetryAt) return this.loadPagedDashboardSnapshot();
     const { data, error } = await this.client.rpc('get_dashboard_source_snapshot');
     if (error) {
-      // Keep deployments usable while the additive optimization migration is pending.
-      if (error.code === 'PGRST202' || error.code === '42883') return null;
+      // Avoid repeatedly running a timed-out aggregate while independent table reads can succeed.
+      if (['57014', 'PGRST202', '42883'].includes(error.code)) {
+        this.snapshotRpcRetryAt = Date.now() + 5 * 60_000;
+        return this.loadPagedDashboardSnapshot();
+      }
       throw databaseError('load dashboard source snapshot', error);
     }
     if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
@@ -210,6 +233,69 @@ export class SupabaseStore implements Store {
       walletEntries: this.decodeSnapshotRows('walletEntries', snapshot.walletEntries),
       interactions: this.decodeSnapshotRows('systemInteractions', snapshot.systemInteractions),
     };
+  }
+
+  private async loadPagedDashboardSnapshot(): Promise<DashboardSourceSnapshot> {
+    const names = ['materialBatches', 'transfers', 'measurements', 'recoveryRecords', 'listings', 'offers',
+      'users', 'organizations', 'facilities', 'walletEntries', 'systemInteractions'] as const;
+    const tables = [...names.map(name => this.table(name)), 'flow_events', 'auth_account_security'];
+    const raw = new Map<string, Row[]>();
+    // Two workers bound database pressure; no correlated joins or repeated enrichment scans.
+    let next = 0;
+    await Promise.all(Array.from({ length: 2 }, async () => {
+      while (next < tables.length) {
+        const table = tables[next++];
+        const rows: Row[] = [];
+        let cursor: string | undefined;
+        for (;;) {
+          let query = this.client.from(table).select('*').order('id').limit(500);
+          if (cursor !== undefined) query = query.gt('id', cursor);
+          const { data, error } = await query;
+          if (error) throw databaseError(`read ${table}`, error);
+          const page = (data ?? []) as Row[];
+          rows.push(...page);
+          if (!page.length) break;
+          const last = page[page.length - 1].id;
+          if (last === cursor) throw databaseError(`read ${table}`, { message: 'Pagination did not advance.' });
+          cursor = last;
+        }
+        raw.set(table, rows);
+      }
+    }));
+    const rows = (name: typeof names[number]) => raw.get(this.table(name))!;
+    const byId = (values: Row[], key = 'id') => new Map(values.map(row => [row[key], row]));
+    const batches = byId(rows('materialBatches'));
+    const listings = byId(rows('listings'));
+    const users = byId(rows('users'));
+    const security = byId(raw.get('auth_account_security')!, 'user_id');
+    const groupByTransfer = (values: Row[]) => {
+      const grouped = new Map<unknown, Row[]>();
+      for (const row of values) {
+        const group = grouped.get(row.transfer_id) ?? [];
+        group.push(row); grouped.set(row.transfer_id, group);
+      }
+      return grouped;
+    };
+    const measurements = groupByTransfer(rows('measurements'));
+    const events = groupByTransfer(raw.get('flow_events')!);
+    for (const group of events.values()) group.sort((a, b) => Number(a.sequence) - Number(b.sequence));
+    const decode = <K extends typeof names[number]>(name: K): RecordFor<K>[] => rows(name).map(row => {
+      const document: Record<string, unknown> = toDocument(row);
+      if (name === 'listings') document._batch = batches.get(row.batch_id);
+      if (name === 'offers') {
+        document._listing = listings.get(row.listing_id);
+        document._requester = users.get(row.requester_id);
+      }
+      if (name === 'users') document._security = security.get(row.id);
+      if (name === 'transfers') {
+        document._flow_events = events.get(row.id) ?? [];
+        document._measurements = measurements.get(row.id) ?? [];
+      }
+      return rememberCanonicalRow(decodeRecord(name, document), document) as RecordFor<K>;
+    });
+    return { allBatches: decode('materialBatches'), allTransfers: decode('transfers'), measurements: decode('measurements'),
+      recoveryRecords: decode('recoveryRecords'), listings: decode('listings'), offers: decode('offers'), users: decode('users'),
+      organizations: decode('organizations'), facilities: decode('facilities'), walletEntries: decode('walletEntries'), interactions: decode('systemInteractions') };
   }
 
   private decodeSnapshotRows<K extends CollectionName>(name: K, value: unknown): RecordFor<K>[] {
@@ -322,5 +408,5 @@ function decodeRateLimit(row: Record<string, unknown>): AuthRateLimitRecord {
 }
 
 function databaseError(operation: string, error: { message: string; code?: string; details?: string }) {
-  return new Error(`Supabase could not ${operation}: ${error.message}${error.code ? ` (${error.code})` : ''}${error.details ? ` - ${error.details}` : ''}`);
+  return new DatabaseOperationError(operation, error);
 }

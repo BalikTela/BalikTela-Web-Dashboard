@@ -9,7 +9,7 @@ import { Progress } from './ui/progress';
 export function StakeholderDrawer({ stakeholder, transactions, onClose }: { stakeholder: Stakeholder | null; transactions: Transaction[]; onClose: () => void }) {
   if (!stakeholder) return null;
   const history = transactions.filter((item) => item.sourceStakeholderId === stakeholder.id || item.destinationStakeholderId === stakeholder.id);
-  const tracedMaterialKg = history.reduce((sum, item) => sum + item.weightKg, 0);
+  const tracedMaterialKg = history.reduce((sum, item) => sum + (item.weightKg ?? 0), 0);
   return (
     <div className="overlay-enter fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-[2px]" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="drawer-enter absolute right-0 top-0 h-full w-full max-w-2xl overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-2xl sm:p-6" onClick={(event) => event.stopPropagation()}>
@@ -20,7 +20,7 @@ export function StakeholderDrawer({ stakeholder, transactions, onClose }: { stak
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <Metric label="Completion rate" value={stakeholder.transactions ? `${stakeholder.participation}%` : 'Not available'} detail="Completed linked transfers / all linked transfers" />
-          <Metric label="Recovered activity" value={`${formatMass(stakeholder.recoveredKg)}`} detail="Within the selected filters" />
+          <Metric label="Confirmed outcome output" value={stakeholder.recoveredAvailable === false ? 'Pending evidence' : formatMass(stakeholder.recoveredKg)} detail="Validated final output linked to received transfers" />
           <Metric label="Transactions" value={stakeholder.transactions.toLocaleString()} detail="Derived demo activity count" />
           <Metric label="Traceable material" value={`${formatMass(tracedMaterialKg)}`} detail="Material mass in matching sample audit records" />
         </div>

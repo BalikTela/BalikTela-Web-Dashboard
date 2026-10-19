@@ -45,6 +45,7 @@ export interface Store {
   recordRateLimitFailure(id: string, scope: AuthRateLimitRecord['scope'], subjectHash: string, now: string, windowSeconds: number, maxAttempts: number, lockSeconds: number): Promise<AuthRateLimitRecord>;
   clearRateLimit(id: string): Promise<void>;
   loadDashboardSnapshot?(): Promise<DashboardSourceSnapshot | null>;
+  loadHubDisposals?(): Promise<{ available: boolean; records: import('../shared/hubs.js').HubDisposalRecord[] }>;
   close(): Promise<void>;
 }
 

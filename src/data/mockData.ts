@@ -155,7 +155,7 @@ export const barterActivityRecords = wasteRecords
     return { monthIndex: record.monthIndex, region: record.region, city: record.city, textileType: record.textileType, producer: record.producer, recycler: record.recycler, listings, matches, validated, completed, rewardCredits: completed * 22 };
   });
 
-const lifecycleStatusIndex: Record<TransactionStatus, number> = {
+const lifecycleStatusIndex: Partial<Record<TransactionStatus, number>> = {
   Completed: 99,
   'In sorting': 3,
   'In transit': 2,
@@ -164,7 +164,7 @@ const lifecycleStatusIndex: Record<TransactionStatus, number> = {
 };
 
 function lifecycle(date: string, status: TransactionStatus, location: string, stages: Array<[string, string, string]>): LifecycleEvent[] {
-  const currentIndex = lifecycleStatusIndex[status];
+  const currentIndex = lifecycleStatusIndex[status] ?? -1;
   return stages.map(([stage, actor, note], index) => {
     const isException = status === 'Flagged' && index === currentIndex;
     const eventStatus = isException ? 'Exception' : index < currentIndex || status === 'Completed' ? 'Completed' : index === currentIndex ? 'Current' : 'Pending';

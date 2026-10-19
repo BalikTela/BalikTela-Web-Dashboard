@@ -38,7 +38,7 @@ test('October material mass, measurements, lifecycle timestamps and rewards reco
     assert.ok(record.generatedKg >= record.collectedKg && record.collectedKg >= record.sortedKg);
     assert.ok(record.sortedKg >= record.reusedKg + record.recycledKg);
   }
-  for (const record of recovery) assert.equal(record.inputWeightKg, record.outputWeightKg! + record.residualWeightKg!);
+  for (const record of recovery) assert.ok(Math.abs(record.inputWeightKg - record.outputWeightKg! - record.residualWeightKg!) < 0.000001);
   for (const transfer of transfers) {
     assert.equal(transfer.events.at(-1)!.timestamp, transfer.updatedAt);
     assert.equal(transfer.pendingRewardCredits, transfer.verifiedWeightKg! * 2);
@@ -69,8 +69,11 @@ test('October fixture feeds the operational chart, regional totals and reports m
   const october = await buildDashboardAnalytics(store, actor, { dateRange: 'Custom range', startDate: '2026-10-01', endDate: '2026-10-16' }, undefined, now);
   assert.equal(october.circularFlow.generatedKg, demo.summary.declaredKg + existing.declaredWeightKg);
   assert.equal(october.circularFlow.collectedKg, demo.summary.collectedKg);
-  assert.equal(october.circularFlow.reusedKg, demo.summary.reusedKg);
-  assert.equal(october.circularFlow.recycledKg, demo.summary.recycledKg);
+  assert.equal(october.circularFlow.reusedKg, demo.summary.reusedKg, 'Final reuse records are explicitly present on distinct demo portions.');
+  assert.equal(october.circularFlow.recycledKg, demo.summary.recycledKg, 'Final recycling records are explicitly present on distinct demo portions.');
+  assert.equal(october.circularFlow.recycledAvailable, true);
+  assert.equal(october.impactMetrics.diversionRate, Number(((demo.summary.reusedKg + demo.summary.recycledKg) / demo.summary.collectedKg * 100).toFixed(1)));
+  assert.equal(october.materialEvidence.completedKg, demo.summary.reusedKg + demo.summary.recycledKg);
   assert.equal(october.operations.metrics.completedTransfers, 48);
   assert.equal(october.regionalActivity.reduce((sum, row) => sum + row.collectionKg, 0), demo.summary.collectedKg);
   assert.equal(october.wasteTrend[0].month, 'Oct 2026');
@@ -80,4 +83,33 @@ test('October fixture feeds the operational chart, regional totals and reports m
   const report = await buildReport(store, actor, 'material-flow', { dateRange: 'Custom range', startDate: '2026-10-01', endDate: '2026-10-16' }, undefined, now);
   assert.equal(report.rows.at(-1)![3], '53.290999');
   assert.ok(Math.abs(Number(report.rows.at(-1)![3]) * 1000 - october.circularFlow.generatedKg) < 0.000001);
+});
+
+test('default August-October demo window reconciles growing trends, totals and exports without rewriting history', async () => {
+  const seed = await createSeedData();
+  for (const demo of [buildOperationalDemo(), buildOctoberDemo()]) {
+    for (const [name, rows] of demo.domainTables) (seed[name] as DatabaseShape[keyof DatabaseShape]).push(...rows as never[]);
+  }
+  const before = structuredClone(seed);
+  const store = new MemoryStore(seed), actor = seed.users[0], now = new Date('2026-10-19T04:00:00Z');
+  const data = await buildDashboardAnalytics(store, actor, {}, undefined, now);
+  assert.equal(data.metadata.period.startDate, '2026-08-01');
+  assert.deepEqual(data.wasteTrend.map(row => row.month), ['Aug 2026', 'Sept 2026', 'Oct 2026']);
+  const flowKeys = { recorded: 'generatedKg', collected: 'collectedKg', recycled: 'recycledKg', reused: 'reusedKg' } as const;
+  for (const key of ['recorded', 'collected', 'recycled', 'reused'] as const) {
+    assert.ok(data.wasteTrend.every((row, index, rows) => index === 0 || row[key] > rows[index - 1][key]), `${key} demo trend should rise from August through October.`);
+    const total = data.wasteTrend.reduce((sum, row) => sum + row[key], 0);
+    const expected = data.circularFlow[flowKeys[key]];
+    assert.ok(Math.abs(total - expected) < 0.000001);
+  }
+  const rate = data.materialEvidence.matchedDiversionKg / data.circularFlow.collectedKg * 100;
+  assert.equal(data.impactMetrics.diversionRate, Number(rate.toFixed(1)));
+  assert.ok(Math.abs(data.materialEvidence.matchedDiversionKg + data.materialEvidence.unlinkedOutcomeKg - data.circularFlow.reusedKg - data.circularFlow.recycledKg) < 0.000001);
+  const report = await buildReport(store, actor, 'material-flow', {}, undefined, now);
+  assert.equal(report.period.startDate, data.metadata.period.startDate);
+  assert.ok(Math.abs(Number(report.rows.at(-1)![4]) * 1000 - data.circularFlow.collectedKg) < 0.000001);
+  const allTime = await buildDashboardAnalytics(store, actor, { dateRange: 'All time' }, undefined, now);
+  assert.equal(allTime.wasteTrend[0].month, 'Jan 2026');
+  assert.ok(allTime.circularFlow.collectedKg > data.circularFlow.collectedKg);
+  for (const [name, rows] of Object.entries(before)) assert.deepEqual(await store.all(name as keyof DatabaseShape), rows, `${name} must remain unchanged.`);
 });

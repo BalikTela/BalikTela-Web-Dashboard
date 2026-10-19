@@ -35,6 +35,19 @@ export function useDashboardData(filters: Filters, scopeKey: string, enabled = t
   const dataRef = useRef<DashboardData | null>(null);
   const key = useMemo(() => cacheKey(filters, `${scopeKey}:${reportingDay}`), [filters, scopeKey, reportingDay]);
   useEffect(() => {
+    if (!enabled) return;
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine || document.querySelector('[role="dialog"] form')) return;
+      const cached = clientCache.get(key);
+      if (!cached || Date.now() - cached.cachedAt >= freshForMs) setRevision(value => value + 1);
+    };
+    const timer = window.setInterval(refresh, freshForMs);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [enabled, key]);
+  useEffect(() => {
     const nextMidnight = Date.parse(`${reportingDay}T00:00:00+08:00`) + 86400000;
     const timer = window.setTimeout(() => setReportingDay(manilaDate()), Math.max(1, nextMidnight - Date.now()));
     const checkDay = () => setReportingDay(manilaDate());

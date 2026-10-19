@@ -1,11 +1,12 @@
 import { encodeFlowEvent } from '../database/codecs.js';
+import { completeDemoLifecycle } from './completeDemoLifecycle.js';
 import type {
   DatabaseShape, FacilityRecord, LifecycleEventRecord, ListingRecord, MaterialBatchRecord, MeasurementRecord,
   OfferRecord, OrganizationRecord, RecoveryRecord, SystemInteractionRecord, TransferRecord, UserRecord, WalletEntryRecord,
 } from '../types.js';
 import { engagementRecords as demoEngagement, regionProfiles, wasteRecords as demoWaste } from '../../src/data/mockData.js';
 
-export function buildOperationalDemo(wasteRecords = demoWaste, engagementRecords = demoEngagement, passwordHash: string | null = null) {
+export function buildOperationalDemo(wasteRecords = demoWaste, engagementRecords = demoEngagement, passwordHash: string | null = null, options: { lifecycleVersion?: 1 | 2 } = {}) {
   const materials = ['Cotton', 'Polyester', 'Denim', 'Mixed fabric', 'Uniforms', 'Household linen'];
   const slugs = new Map(regionProfiles.map((item) => [item.region, item.region.replaceAll(' ', '-').toUpperCase()]));
 
@@ -114,7 +115,7 @@ export function buildOperationalDemo(wasteRecords = demoWaste, engagementRecords
     ['listings', listings], ['offers', offers], ['transfers', transfers], ['recoveryRecords', recoveryRecords], ['walletEntries', walletEntries], ['systemInteractions', systemInteractions],
   ];
 
-  return { domainTables, flowEvents };
+  return options.lifecycleVersion === 1 ? { domainTables, flowEvents } : completeDemoLifecycle({ domainTables, flowEvents });
 }
 
 export function normalizeDemoRow(value: unknown): any {

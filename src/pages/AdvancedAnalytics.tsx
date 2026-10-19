@@ -1,6 +1,7 @@
-import { percentage } from '../../shared/metrics';
+import { formatMass, percentage } from '../../shared/metrics';
 import { useState } from 'react';
-import { FacilityUtilizationChart, RegionalBarChart, WasteTrendChart } from '../components/Charts';
+import { isCompletedTransfer } from '../../shared/workflows';
+import { PaginatedRecords } from '../components/PaginatedRecords';
 import { SectionHeader } from '../components/SectionHeader';
 import type { getDashboardData } from '../services/dashboardService';
 import { Panel } from '../components/Panel';
@@ -32,30 +33,26 @@ export function AdvancedAnalytics({ data, onModeChange }: { data: Data; onModeCh
 }
 
 function Diagnostic({ data }: { data: Data }) {
-  const completed = data.transactions.filter((item) => item.status === 'Completed').length;
-  const lowRecovery = [...data.categoryShares].sort((a, b) => a.recoveryRate - b.recoveryRate)[0];
+  const completed = data.sharedActivity?.completedTransfers ?? data.transactions.filter((item) => isCompletedTransfer(item.status)).length;
+  const transferCount = data.sharedActivity?.transferCount ?? data.transactions.length;
+  const lowRecovery = data.categoryShares.filter(item => item.recoveryRateAvailable !== false).sort((a, b) => a.recoveryRate - b.recoveryRate)[0];
   const highUtilization = [...data.facilities].sort((a, b) => b.utilization - a.utilization)[0];
   return (
     <div className="section-enter space-y-6">
       <div className="stagger-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <DiagnosticMetric label="Waste recovered" value={`${data.impactMetrics.diversionRate}%`} detail="Reused + recycled / generated in selected period" />
-        <DiagnosticMetric label="Transactions completed" value={data.transactions.length ? `${percentage(completed, data.transactions.length)}%` : 'Not available'} detail={`${completed} of ${data.transactions.length} sample records`} />
-        <DiagnosticMetric label="Highest utilization" value={`${highUtilization?.utilization ?? 0}%`} detail={highUtilization?.name ?? 'No matching facility'} warning />
-        <DiagnosticMetric label="Lowest recovery" value={`${lowRecovery?.recoveryRate ?? 0}%`} detail={lowRecovery?.category ?? 'No matching category'} warning />
+        <DiagnosticMetric label="Intake evidence pending" value={String(data.materialEvidence?.missingCollectionBatches ?? 0)} detail="Batches without validated collection evidence" warning />
+        <DiagnosticMetric label="Transactions completed" value={transferCount ? `${percentage(completed, transferCount)}%` : 'Not available'} detail={`${completed} of ${transferCount} scoped transfers, including closed states`} />
+        <DiagnosticMetric label="Highest utilization" value={highUtilization?.capacityKg ? `${highUtilization.utilization}%` : 'Not available'} detail={highUtilization?.name ?? 'No matching facility'} warning />
+        <DiagnosticMetric label="Lowest confirmed share" value={lowRecovery ? `${lowRecovery.recoveryRate}%` : 'Not available'} detail={lowRecovery?.category ?? 'No supported category rate'} warning />
       </div>
-      <div className="grid gap-6 xl:grid-cols-2">
-        <ChartSection title="Waste and recovery trend"><div className="h-72"><WasteTrendChart data={data.wasteTrend} /></div></ChartSection>
-        <ChartSection title="Recycling by region"><div className="h-72"><RegionalBarChart data={data.regionalActivity} /></div></ChartSection>
-        <ChartSection title="Recycler utilization" className="xl:col-span-2"><div className="h-72"><FacilityUtilizationChart data={data.facilities} /></div></ChartSection>
-      </div>
+      <section className="border-t border-slate-200 pt-4"><h3 className="mb-3 text-sm font-semibold">Recovery evidence by material</h3>
+        <PaginatedRecords rows={data.categoryShares} resetKey={data.metadata.periodLabel}>{rows => <div className="overflow-x-auto"><table className="w-full min-w-[500px] text-left text-sm"><thead><tr><th>Material</th><th>Validated intake</th><th>Confirmed recovery share</th><th>Evidence</th></tr></thead><tbody className="divide-y divide-slate-200">{rows.map(item => <tr key={item.category}><td className="py-3 font-medium">{item.category}</td><td>{formatMass(item.kilograms)}</td><td>{item.recoveryRateAvailable === false ? 'Not available' : `${item.recoveryRate}%`}</td><td>{item.recoveryRateAvailable === false ? 'Matching intake and final outcome required' : 'Matched final output / validated intake'}</td></tr>)}</tbody></table></div>}</PaginatedRecords>
+      </section>
+      <section className="grid gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2"><DiagnosticMetric label="Collected stock without confirmed recovery" value={formatMass(data.materialEvidence?.unresolvedCollectedKg ?? data.circularFlow.residualKg)} detail="May include stock, rejects, losses or missing outcome evidence; not measured landfill disposal" /><DiagnosticMetric label="Confirmed recovery share" value={data.impactMetrics.diversionRate === null ? 'Not available' : `${data.impactMetrics.diversionRate}%`} detail="Matched final outputs / validated collection; unlinked outputs are excluded" /></section>
     </div>
   );
 }
 
 function DiagnosticMetric({ label, value, detail, warning = false }: { label: string; value: string; detail: string; warning?: boolean }) {
-  return <div className="rounded-lg bg-slate-50 p-4"><p className="text-xs font-medium text-slate-500">{label}</p><p className={cn('mt-1 text-2xl font-semibold', warning ? 'text-amber-700' : 'text-slate-950')}>{value}</p><p className="mt-1 truncate text-xs text-slate-500">{detail}</p></div>;
-}
-
-function ChartSection({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
-  return <section className={cn('min-w-0 border-t border-slate-200 pt-4', className)}><h3 className="mb-3 text-sm font-medium text-slate-700">{title}</h3>{children}</section>;
+  return <div className="min-w-0 rounded-md bg-slate-50 p-4"><p className="text-xs font-medium text-slate-500">{label}</p><p className={cn('mt-1 break-words text-2xl font-semibold', warning ? 'text-amber-700' : 'text-slate-950')}>{value}</p><p className="mt-1 break-words text-xs leading-5 text-slate-500">{detail}</p></div>;
 }

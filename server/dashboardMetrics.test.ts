@@ -66,15 +66,20 @@ test('listing filters compose with trimmed search, evidence state, pathway, and 
   assert.equal(filterListings(listings, '', { ...emptyListingFilters, recordType: 'Operational' }).length, 0);
 });
 
-test('untransferred batches remain in diversion denominators; outputs and percentages reconcile', async () => {
+test('collected stock stays in recovery denominators; declarations and transfers are not outcomes', async () => {
   const seed = await createSeedData();
+  seed.recoveryRecords.push(
+    { ...seed.recoveryRecords[0], id: 'COLLECTED', stage: 'Collection', inputWeightKg: 89, outputWeightKg: 89, residualWeightKg: 0 },
+    { ...seed.recoveryRecords[0], id: 'STOCK', batchId: seed.materialBatches[0].id, stage: 'Collection', inputWeightKg: 100, outputWeightKg: 100, residualWeightKg: 0 },
+  );
   const store = new MemoryStore(seed);
   const data = await buildDashboardAnalytics(store, seed.users[0], historicalQuery, undefined, asOf);
   assert.equal(data.circularFlow.generatedKg, 575);
   assert.equal(data.operations.metrics.declaredKg, 575);
-  assert.equal(data.circularFlow.reusedKg, 89);
-  assert.equal(data.impactMetrics.diversionRate, percentage(89, 575));
-  assert.equal(data.circularFlow.residualKg + data.circularFlow.reusedKg + data.circularFlow.recycledKg, 575);
+  assert.equal(data.circularFlow.reusedKg, 86);
+  assert.equal(data.circularFlow.collectedKg, 189);
+  assert.equal(data.impactMetrics.diversionRate, percentage(86, 189));
+  assert.equal(data.circularFlow.residualKg + data.materialEvidence.matchedDiversionKg, 189);
   assert.equal(data.wasteTrend.reduce((sum, point) => sum + point.recorded, 0), 575);
   assert.match(data.kpis[0].value, / t$/);
   assert.equal(data.facilities[0].capacityKg, 6480, 'Monthly capacity must be prorated over July 1-Sep 21 (2.7 months).');
@@ -82,7 +87,7 @@ test('untransferred batches remain in diversion denominators; outputs and percen
   const filtered = await buildDashboardAnalytics(store, seed.users[0], { ...historicalQuery, textileType: 'Cotton' }, undefined, asOf);
   assert.equal(filtered.circularFlow.generatedKg, 320);
   assert.equal(filtered.circularFlow.reusedKg, 0);
-  assert.equal(filtered.impactMetrics.diversionRate, 0);
+  assert.equal(filtered.impactMetrics.diversionRate, null);
 });
 
 test('analytics excludes other years and future batches, keeps all transactions, and does not duplicate facility outcomes', async () => {
@@ -94,7 +99,7 @@ test('analytics excludes other years and future batches, keeps all transactions,
   const data = await buildDashboardAnalytics(new MemoryStore(seed), seed.users[0], {}, undefined, asOf);
   assert.equal(data.circularFlow.generatedKg, 575);
   assert.equal(data.transactions.length, 120);
-  assert.equal(data.facilities.reduce((sum, facility) => sum + facility.processedKg, 0), 60);
+  assert.equal(data.facilities.reduce((sum, facility) => sum + facility.processedKg, 0), 0, 'Unlinked transfers do not establish processed output.');
   const empty = await buildDashboardAnalytics(new MemoryStore(seed), seed.users[0], { textileType: 'Nonexistent' }, undefined, asOf);
-  assert.equal(empty.kpis.find(item => item.label === 'Diversion Rate')?.value, 'Not available');
+  assert.equal(empty.kpis.find(item => item.label === 'Confirmed Recovery Share')?.value, 'Not available');
 });

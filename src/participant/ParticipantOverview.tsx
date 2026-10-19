@@ -46,7 +46,7 @@ export function ParticipantOverview({ onNavigate }: { onNavigate: (page: Partici
         <div className="border-b border-[#dce4e0] p-5 lg:border-b-0 lg:border-r">
           <p className="text-xs font-medium text-[#66736e]">{isProducer ? 'Material recorded in my listings' : 'Available material in the marketplace'}</p>
           <div className="mt-3 flex items-end justify-between gap-4">
-            <p className="text-4xl font-semibold tracking-normal">{(isProducer ? model.ownListings : model.available).reduce((sum, item) => sum + item.quantityKg, 0).toLocaleString()} <span className="text-sm font-normal text-[#718079]">kg</span></p>
+            <p className="text-4xl font-semibold tracking-normal">{(isProducer ? model.ownListings : model.available).reduce((sum, item) => sum + (item.quantityKg ?? 0), 0).toLocaleString()} <span className="text-sm font-normal text-[#718079]">kg</span></p>
             <Waypoints size={22} className="text-emerald-700" />
           </div>
           <p className="mt-3 text-xs leading-5 text-[#718079]">Current sample records associated with this workspace. Not verified recovered weight.</p>
@@ -63,7 +63,7 @@ export function ParticipantOverview({ onNavigate }: { onNavigate: (page: Partici
             <Button variant="outline" size="sm" onClick={() => onNavigate('marketplace')}>Browse all<ArrowRight size={14} /></Button>
           </header>
           <div className="divide-y divide-[#e7ece9]">
-            {model.available.slice(0, 4).map((listing) => <button type="button" key={listing.id} onClick={() => onNavigate('marketplace')} className="data-row grid w-full gap-3 p-4 text-left hover:bg-[#f8faf9] sm:grid-cols-[1fr_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-medium">{listing.title}</p><Badge variant="outline">{listing.textileType}</Badge></div><p className="mt-1 truncate text-xs text-[#718079]">{listing.ownerName} · {listing.city}, {listing.region}</p></div><div className="text-left sm:text-right"><p className="text-sm font-semibold">{listing.quantityKg.toLocaleString()} kg</p><p className="mt-1 text-xs text-[#718079]">{listing.quality}</p></div></button>)}
+            {model.available.slice(0, 4).map((listing) => <button type="button" key={listing.id} onClick={() => onNavigate('marketplace')} className="data-row grid w-full gap-3 p-4 text-left hover:bg-[#f8faf9] sm:grid-cols-[1fr_auto] sm:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-medium">{listing.title}</p><Badge variant="outline">{listing.textileType}</Badge></div><p className="mt-1 truncate text-xs text-[#718079]">{listing.ownerName} · {listing.city}, {listing.region}</p></div><div className="text-left sm:text-right"><p className="text-sm font-semibold">{listing.quantityKg === null ? 'Awaiting weighing' : `${listing.quantityKg.toLocaleString()} kg`}</p><p className="mt-1 text-xs text-[#718079]">{listing.quality}</p></div></button>)}
             {!model.available.length ? <p className="p-8 text-center text-sm text-[#718079]">No available materials are recorded.</p> : null}
           </div>
         </div>

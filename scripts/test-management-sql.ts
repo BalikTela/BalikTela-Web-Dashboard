@@ -3,6 +3,9 @@ import { readFile } from 'node:fs/promises';
 import { canonicalMutations, type RecordMutation } from '../server/database/mutations.js';
 import { createSeedData } from '../server/seed.js';
 import type { DatabaseShape } from '../server/types.js';
+import { planImport } from '../server/imports.js';
+import { MemoryStore } from '../server/store.js';
+import { IMPORT_COLUMNS } from '../shared/imports.js';
 
 interface SqlEngine {
   exec(sql:string):Promise<unknown>;
@@ -39,8 +42,17 @@ try {
   const recovery=seed.recoveryRecords[0];
   await commit([{name:'recoveryRecords',previous:recovery,record:{...recovery,status:'Reversed'}}]);
   assert.equal((await db.query<{status:string}>('select status from public.recovery_records where id=$1',[recovery.id])).rows[0].status,'reversed');
+  const csv=[IMPORT_COLUMNS.join(','),'isolated-sql-import,2026-08-05T01:00:00Z,USR-PROD-01,USR-REC-01,FAC-001,Cotton,100,90,80,Recycling,70'].join('\n');
+  const plan=await planImport(new MemoryStore(seed),seed.users[0],csv,new Date('2026-10-19T04:00:00Z'));
+  assert.equal(plan.preview.valid,true);
+  await commit(plan.groups[0]);
+  const batchId=plan.preview.rows[0].batchId;
+  const stored=(await db.query<{is_demo:boolean;current_weight_kg:number}>('select is_demo,current_weight_kg from public.material_batches where id=$1',[batchId])).rows[0];
+  assert.equal(stored.is_demo,true);assert.equal(Number(stored.current_weight_kg),20);
+  assert.equal(Number((await db.query<{output_kg:number}>("select output_kg from public.recovery_records where batch_id=$1 and stage='Recovery'",[batchId])).rows[0].output_kg),70);
+  await assert.rejects(commit(plan.groups[0]));
   await db.exec('set role anon;');
   await assert.rejects(db.query('select public.apply_management_mutations($1::jsonb)',['[]']));
   await db.exec('reset role;');
-  console.log(JSON.stringify({result:'passed',engine:'isolated PostgreSQL',checks:['migration syntax against canonical schema','canonical seed insertion','updates and stale-write conflicts','multi-table rollback','mobile-field preservation','last-administrator protection','recovery reversal','anonymous RPC denial']},null,2));
+  console.log(JSON.stringify({result:'passed',engine:'isolated PostgreSQL',checks:['migration syntax against canonical schema','canonical seed insertion','updates and stale-write conflicts','multi-table rollback','mobile-field preservation','last-administrator protection','recovery reversal','bulk demo lifecycle insertion with processing events','duplicate import rejection','anonymous RPC denial']},null,2));
 } finally {await db.close();}

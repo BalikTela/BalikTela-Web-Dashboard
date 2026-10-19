@@ -33,7 +33,7 @@ try {
     assert.equal(blocked.executed, false, 'Injected inline JavaScript must not execute.');
     assert.ok(blocked.violations.some(item => item.startsWith('script-src')), 'The browser must enforce CSP, not just receive a header.');
   } finally { await browser.close(); }
-  for (const file of ['test-home-ui.mjs', 'test-dashboard-ui.ts', 'test-reports-ui.ts', 'test-predictive-ui.ts', 'test-motion-ui.ts', 'test-session-invalidation-ui.ts']) {
+  for (const file of ['test-home-ui.mjs', 'test-dashboard-ui.ts', 'test-hubs-ui.ts', 'test-reports-ui.ts', 'test-predictive-ui.ts', 'test-motion-ui.ts', 'test-session-invalidation-ui.ts']) {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(process.execPath, ['--import', 'tsx', `scripts/${file}`], {
         stdio: 'inherit', env: { ...process.env, HOME_UI_URL: base, DASHBOARD_UI_URL: base, PREDICTIVE_UI_URL: base },

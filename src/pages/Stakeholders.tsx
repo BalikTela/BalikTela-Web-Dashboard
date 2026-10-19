@@ -14,9 +14,9 @@ import { StakeholderDrawer } from '../components/StakeholderDrawer';
 import type { Stakeholder } from '../types';
 
 type Data = Awaited<ReturnType<typeof getDashboardData>>;
-type Group = 'Producer' | 'Recycler' | 'Consumer' | 'NGO';
+type Group = 'Producer' | 'Recycler' | 'Consumer' | 'NGO' | 'BalikTela Hub';
 
-const groups: Group[] = ['Producer', 'Recycler', 'Consumer', 'NGO'];
+const groups: Group[] = ['Producer', 'Recycler', 'Consumer', 'NGO', 'BalikTela Hub'];
 
 export function Stakeholders({ data }: { data: Data }) {
   const [activeGroup, setActiveGroup] = useState<Group>('Producer');
@@ -31,7 +31,7 @@ export function Stakeholders({ data }: { data: Data }) {
       {data.metadata.aggregateOnly && <p className="text-sm text-slate-600">Your assigned access is aggregate-only. Individual stakeholder profiles and transaction histories are restricted.</p>}
       <section className="stagger-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label="Active stakeholders" value={data.metadata.aggregateOnly ? 'Restricted' : data.stakeholders.length.toString()} detail="Matching current filters" icon={UsersRound} />
-        <SummaryCard label="System recovered volume" value={`${formatMass(recovered)}`} detail="Unique filtered material flow" icon={Recycle} tone="emerald" />
+        <SummaryCard label="Confirmed outcome output" value={data.circularFlow.reusedAvailable === false && data.circularFlow.recycledAvailable === false ? 'Pending evidence' : formatMass(recovered)} detail="Validated final reuse and recycling output" icon={Recycle} tone="emerald" />
         <SummaryCard label="Transfer completion" value={data.transactions.length ? `${participation}%` : 'Not available'} detail="Completed / all scoped transfers" icon={Activity} tone="blue" />
         <SummaryCard label="Profile activity" value={data.metadata.aggregateOnly ? 'Restricted' : transactions.toLocaleString()} detail="Role involvements; not unique transactions" icon={Waypoints} tone="amber" />
       </section>
@@ -59,7 +59,7 @@ export function Stakeholders({ data }: { data: Data }) {
                   <Badge variant="outline" className="shrink-0 bg-white text-slate-600">{item.transactions} txns</Badge>
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-5 text-sm">
-                  <Metric label="Recovered" value={`${formatMass(item.recoveredKg)}`} />
+                  <Metric label="Confirmed output" value={item.recoveredAvailable === false ? 'Pending evidence' : formatMass(item.recoveredKg)} />
                   <Metric label="Generated" value={item.generatedKg ? `${formatMass(item.generatedKg)}` : 'Not reported'} />
                   <Metric label="Completion rate" value={item.transactions ? `${item.participation}%` : 'Not available'} />
                   <Metric label="Utilization" value={item.utilization != null ? `${item.utilization}%` : 'Not applicable'} />

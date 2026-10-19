@@ -4,6 +4,7 @@ import { decodeRecord, encodeFlowEvent, encodeRecord } from './database/codecs.j
 import { mongoClientOptionsFromEnv } from './database/mongoClientOptions.js';
 import { DATABASE_COLLECTIONS, WEB_PERSISTENCE_COLLECTION_MAP } from './database/schema.js';
 import { SupabaseStore } from './supabaseStore.js';
+import type { ImportExistingRecord, ImportRecordLookup } from '../shared/imports.js';
 import type { AuthChallengeRecord, AuthRateLimitRecord, AuthSessionRecord, DatabaseShape } from './types.js';
 
 type CollectionName = keyof DatabaseShape;
@@ -45,6 +46,7 @@ export interface Store {
   recordRateLimitFailure(id: string, scope: AuthRateLimitRecord['scope'], subjectHash: string, now: string, windowSeconds: number, maxAttempts: number, lockSeconds: number): Promise<AuthRateLimitRecord>;
   clearRateLimit(id: string): Promise<void>;
   loadDashboardSnapshot?(): Promise<DashboardSourceSnapshot | null>;
+  lookupImportRecords?(lookups: ImportRecordLookup[]): Promise<ImportExistingRecord[]>;
   loadHubDisposals?(): Promise<{ available: boolean; records: import('../shared/hubs.js').HubDisposalRecord[] }>;
   close(): Promise<void>;
 }

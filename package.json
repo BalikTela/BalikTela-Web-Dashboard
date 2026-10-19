@@ -27,6 +27,8 @@
     "test:dashboard:ui": "node --import tsx scripts/test-dashboard-ui.ts",
     "test:analytics:ui": "node --import tsx scripts/test-material-evidence-ui.ts",
     "test:web-corrections:ui": "node --import tsx scripts/test-web-corrections-ui.ts",
+    "test:imports:ui": "node --import tsx scripts/test-bulk-import-ui.ts",
+    "test:stakeholders:ui": "node --import tsx scripts/test-stakeholders-ui.ts",
     "test:hubs:ui": "node --import tsx scripts/test-hubs-ui.ts",
     "test:hubs:integration": "node --import tsx scripts/test-hub-integration.ts --rollback-only",
     "audit:mobile-web": "node --import tsx scripts/audit-mobile-web.ts",

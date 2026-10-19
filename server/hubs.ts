@@ -7,7 +7,7 @@ import { ManagementError, saveManagement, text } from './management.js';
 import type { Store } from './store.js';
 import type { ListingRecord, MeasurementRecord, UserRecord } from './types.js';
 import { isCompletedTransfer, isTerminalTransfer } from '../shared/workflows.js';
-import { HUB_ROLE, isApprovedHub, isHubCandidate, type HubDirectory, type WeighingMonitoring, type HubDisposalMonitoring } from '../shared/hubs.js';
+import { HUB_ROLE, isApprovedHub, isHubCandidate, isHubWeighingMeasurement, type HubDirectory, type WeighingMonitoring, type HubDisposalMonitoring } from '../shared/hubs.js';
 
 const aggregateOnly = (actor: UserRecord) => actor.scope.aggregateOnly || actor.role === 'Government';
 const inRegionScope = (actor: UserRecord, region: string) => actor.role === 'Administrator' || !actor.scope.regions.length || actor.scope.regions.includes(region);
@@ -156,6 +156,5 @@ export async function buildHubDisposalMonitoring(store: Store, actor: UserRecord
 }
 
 function isHubMeasurement(item: MeasurementRecord) {
-  return item.canonicalStage === 'listing' || item.canonicalStage === 'declaration'
-    && item.transferId === null && /hub.*scale/i.test(item.method) && ['Measured', 'Verified'].includes(item.status);
+  return isHubWeighingMeasurement(item);
 }

@@ -50,7 +50,7 @@ try {
       if(path==='/governance')return route.fulfill({json:buildGovernance(actor,seed.configurations[0])});
       if(path==='/imports/options')return route.fulfill({json:{producers:seed.users.filter(user=>user.role==='Producer').map(user=>({id:user.id,name:user.fullName,region:user.region})),recipients:seed.users.filter(user=>user.role==='Recycler').map(user=>({id:user.id,name:user.fullName,organizationId:user.organizationId})),facilities:seed.facilities.map(item=>({id:item.id,name:item.name,organizationId:item.organizationId}))}});
       if(path==='/imports/preview')return route.fulfill({json:(await planImport(store,actor,importCsv(body),now)).preview});
-      if(path==='/imports/commit'){committed++;return route.fulfill({json:await commitImport(store,actor,importCsv(body),body.previewHash,body.reason,now)});}
+      if(path==='/imports/commit'){committed++;return route.fulfill({json:await commitImport(store,actor,importCsv(body),body.previewHash,body.reason,now,body.startRow??0)});}
       return route.fulfill({status:404,json:{message:`Missing isolated fixture ${path}`}});
     });
     const navigate=async(name:string)=>{const menu=page.getByRole('button',{name:'Open navigation',exact:true});if(await menu.isVisible())await menu.click();await page.getByRole('button',{name,exact:true}).click();};
@@ -58,6 +58,7 @@ try {
     const fits=async()=>assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,`Page overflow at ${width}`);
     await page.goto(`http://127.0.0.1:${address.port}/dashboard`);await page.getByText('Program Analytics',{exact:true}).waitFor();
     await navigate('Listing Oversight');
+    assert.equal(await active().getByRole('combobox',{name:'Listing record type'}).count(),0);
     for(const status of ['Disposed','Partially disposed','Remainder pending']){
       await active().getByRole('combobox',{name:'Listing status'}).selectOption(status);
       await active().locator('tbody').getByText(status,{exact:true}).waitFor();
@@ -65,10 +66,12 @@ try {
     }
     await active().getByRole('button',{name:'Reset filters',exact:true}).click();await fits();
     await navigate('Material Registry');await active().getByRole('button',{name:'View MB-2609-001',exact:true}).click();
+    assert.equal(await active().getByText('Demo record',{exact:true}).count(),0);
+    assert.equal(await active().getByText('Operational record',{exact:true}).count(),0);
     await page.getByRole('dialog').getByText('Source user ID',{exact:true}).waitFor();
     await page.getByRole('button',{name:'Close batch detail'}).click();
-    await active().getByRole('button',{name:'Import demo CSV'}).click();
-    const dialog=page.getByRole('dialog',{name:'Import demo lifecycle data'});await dialog.waitFor();
+    await active().getByRole('button',{name:'Import CSV'}).click();
+    const dialog=page.getByRole('dialog',{name:'Import lifecycle data'});await dialog.waitFor();
     const controls=await dialog.locator('input[type="file"],button').evaluateAll(items=>items.filter(item=>item.getClientRects().length).map(item=>item.getBoundingClientRect().toJSON()));
     for(let a=0;a<controls.length;a++)for(let b=a+1;b<controls.length;b++)assert.ok(controls[a].right<=controls[b].left+1||controls[b].right<=controls[a].left+1||controls[a].bottom<=controls[b].top+1||controls[b].bottom<=controls[a].top+1,'Import controls must not overlap.');
     const csv=(bad=false)=>[IMPORT_COLUMNS.join(','),...Array.from({length:12},(_,i)=>`ui-${width}-${i},2026-08-05T01:00:00Z,USR-PROD-01,USR-REC-01,FAC-001,Cotton,100,90,80,Recycling,${bad?101:70}`)].join('\n');
@@ -79,11 +82,11 @@ try {
     await dialog.getByRole('button',{name:'Preview file',exact:true}).click();await dialog.getByText(/12 new.*0 invalid/).waitFor();
     assert.equal(committed,0);assert.equal((await store.all('materialBatches')).length,seed.materialBatches.length);
     await dialog.getByLabel('Import reason',{exact:true}).fill('Isolated browser acceptance');
-    await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Import 12 demo rows'}).click();
+    await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Import 12 rows'}).click();
     await dialog.getByRole('status').getByText(/12 imported/).waitFor();assert.equal(committed,1);
     await dialog.getByRole('button',{name:'Preview file',exact:true}).click();
     await dialog.getByText(/0 new.*12 already imported/).waitFor();
-    assert.equal(await dialog.getByRole('button',{name:'Import 0 demo rows'}).isDisabled(),true);
+    assert.equal(await dialog.getByRole('button',{name:'Import 0 rows'}).isDisabled(),true);
     assert.equal(committed,1);
     assert.equal(await dialog.evaluate(element=>element.scrollWidth>element.clientWidth+1),false,'Import modal must fit the viewport.');
     await page.screenshot({path:`${output}/import-${width}.png`});
@@ -102,6 +105,8 @@ try {
     await navigate('Advanced Analytics');await active().getByText('Recovery evidence by material',{exact:true}).waitFor();assert.equal(await active().getByText('Waste and recovery trend',{exact:true}).count(),0);await fits();
     await navigate('Data Quality');await active().getByText('Checks and Source Records',{exact:true}).waitFor();await fits();
     await navigate('Governance & Policy');await active().getByText('Hub disposal oversight',{exact:true}).waitFor();assert.ok(!(await active().innerText()).includes('Verified completed kilograms / unique declared'));await fits();
+    await active().getByText('PoC reporting scope',{exact:true}).waitFor();
+    assert.match(await active().innerText(),/Original source classifications remain/);
     await page.screenshot({path:`${output}/governance-${width}.png`,fullPage:true});
     assert.deepEqual(errors,[]);results.push({width,imports:committed,addedCollectionKg:1080,errors:0});await context.close();
   }

@@ -49,12 +49,12 @@ try {
     await page.getByRole('button', { name: 'Predictive', exact: true }).click();
     const panel = page.locator('.predictive');
     assert.equal(await panel.getByText('Synthetic proof of concept', { exact: true }).count(), 0);
-    await panel.getByText('Simulated platform activity. Separate from live operational records.', { exact: true }).waitFor();
+    await panel.getByText('Four-week projections from a fixed training snapshot.', { exact: true }).waitFor();
     if (fail) { await panel.getByRole('button', { name: 'Retry forecast' }).waitFor(); fail = false; await panel.getByRole('button', { name: 'Retry forecast' }).click(); }
     await panel.getByRole('table', { name: 'Collection weekly projections' }).waitFor();
     assert.equal(await panel.getByRole('table').locator('tbody tr').count(), 4);
     assert.equal(await page.getByText('Global view', { exact: true }).isVisible(), false);
-    if (viewport.width >= 1536) assert.equal(await page.getByText('Synthetic PoC · Fixed snapshot', { exact: true }).isVisible(), true);
+    if (viewport.width >= 1536) assert.equal(await page.getByText('Forecast model · Fixed snapshot', { exact: true }).isVisible(), true);
     assert.ok((await panel.locator('.predictive-primary').innerText()).includes('69.801 t'));
     const pixels = await panel.locator('canvas').evaluate(element => {
       const canvas = element as HTMLCanvasElement;

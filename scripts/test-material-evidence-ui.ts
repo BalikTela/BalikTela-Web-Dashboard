@@ -68,7 +68,9 @@ try {
     assert.match(await metric('Total Textiles Collected').innerText(), /0\.189 t/);
     assert.match(await metric('Confirmed Reuse + Recycling').innerText(), /0\.086 t/);
     assert.match(await metric('Confirmed Recovery Share').innerText(), /45\.5%/);
-    assert.match(await metric('Confirmed Recycling Output').innerText(), /Pending evidence/);
+    assert.match(await metric('Recyclable Textiles Collected').innerText(), /0\.1 t/);
+    assert.match(await metric('Recyclable Textiles Collected').innerText(), /1 collected batch classified as recyclable/);
+    assert.equal(await page.getByText('Confirmed Recycling Output', { exact: true }).count(), 0);
     assert.equal(await page.getByText('Definition', { exact: true }).count(), 0, 'KPI tiles must not render definition expanders.');
     assert.equal(await metric('Total Textiles Collected').locator('polyline').getAttribute('points').then(value => value?.trim().split(' ').length), 1, 'Missing collection months must not become zero points in the sparkline.');
     assert.equal(await metric('Total Textiles Collected').locator('details').count(), 0);
@@ -116,6 +118,7 @@ try {
     await page.waitForFunction(() => [...document.querySelectorAll('main article')].some(item => item.textContent?.includes('Total Textiles Collected') && item.textContent.includes('0.189 t')));
     mode = 'missing'; await open();
     assert.match(await metric('Total Textiles Collected').innerText(), /Pending evidence/);
+    assert.match(await metric('Recyclable Textiles Collected').innerText(), /Pending evidence/);
     assert.match(await metric('Confirmed Recovery Share').innerText(), /Not available/);
     await checkWidth();
     await page.screenshot({ path: `${output}/pending-${viewport.width}.png`, fullPage: true });
@@ -131,7 +134,9 @@ try {
       assert.match(await metric(expected.label).innerText(), new RegExp(expected.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
       assert.ok(!['Pending evidence', 'Not available'].includes(expected.value));
     }
-    await page.getByText(/synthetic demo batches and .* operational batches/).waitFor();
+    await page.getByText(`${syntheticAnalytics.sharedActivity.demoBatches + syntheticAnalytics.sharedActivity.operationalBatches} material batches in the selected cohort`, { exact: true }).waitFor();
+    assert.equal(await page.getByText(/synthetic demo batches and .* operational batches/).count(), 0);
+    await page.getByText('Reported Active Users', { exact: true }).waitFor();
     await dateRange.selectOption('Last 90 days');
     await page.getByText('22 Jul 2026 - 19 Oct 2026', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Reset filters', exact: true }).click();

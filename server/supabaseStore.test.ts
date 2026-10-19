@@ -5,6 +5,7 @@ import { DatabaseOperationError } from './database/errors.js';
 import { encodeFlowEvent, encodeRecord } from './database/codecs.js';
 import { WEB_PERSISTENCE_COLLECTION_MAP } from './database/schema.js';
 import { createSeedData } from './seed.js';
+import { IMPORT_RECORD_NAMES } from '../shared/imports.js';
 
 type Row = Record<string, unknown> & { id: string };
 const names = ['materialBatches','transfers','measurements','recoveryRecords','listings','offers','users',
@@ -99,4 +100,26 @@ test('healthy optimized snapshot stays on the single-RPC path', async () => {
   });
   assert.equal((await store.loadDashboardSnapshot())?.allTransfers.length, 0);
   assert.equal(requests, 1);
+});
+
+test('import lookups read only requested IDs and conflict fields, without joining full histories', async()=>{
+  let active=0,maxActive=0,requests=0;
+  const store=new SupabaseStore('https://example.supabase.co','test-secret',async(input,options)=>{
+    const url=new URL(String(input));requests++;active++;maxActive=Math.max(maxActive,active);
+    try {
+      await new Promise(resolve=>setTimeout(resolve,1));
+      assert.equal(options?.method??'GET','GET');assert.ok(!url.pathname.includes('/rpc/'));
+      const table=url.pathname.split('/').at(-1)!;
+      assert.ok(['material_batches','listings','match_requests','transfers','measurements','recovery_records'].includes(table));
+      const selection=url.searchParams.get('select')!;assert.notEqual(selection,'*');assert.ok(!selection.includes('email'));
+      const filters=url.searchParams.getAll('id');assert.ok(filters.some(value=>value.startsWith('in.')));
+      assert.equal(url.searchParams.get('order'),'id.asc');
+      if(filters.some(value=>value.startsWith('gt.')))return Response.json([]);
+      return Response.json([{id:'target',is_demo:true,description:'Synthetic import fingerprint'}]);
+    }finally{active--;}
+  });
+  const rows=await store.lookupImportRecords(IMPORT_RECORD_NAMES.map(name=>({name,ids:['target','missing']})));
+  assert.equal(rows.length,6);assert.equal(requests,12);assert.ok(maxActive<=2);
+  assert.equal(rows.find(item=>item.name==='listings')?.description,'Synthetic import fingerprint');
+  assert.equal(rows.find(item=>item.name==='materialBatches')?.isDemo,true);
 });

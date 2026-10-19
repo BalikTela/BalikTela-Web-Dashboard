@@ -5,6 +5,11 @@ export function isHubCandidate(user: { role: string }) {
   return user.role === HUB_ROLE || user.role === COMPATIBLE_HUB_ROLE;
 }
 
+export function isHubWeighingMeasurement(item: { canonicalStage?: string; transferId: string | null; method: string; status: string; weightKg: number }) {
+  return Number.isFinite(item.weightKg) && item.weightKg > 0 && ['Measured', 'Verified'].includes(item.status)
+    && (item.canonicalStage === 'listing' || item.canonicalStage === 'declaration' && item.transferId === null && /hub.*scale/i.test(item.method));
+}
+
 export function isApprovedHub(user: { role: string; accountStatus: string; organizationVerified?: boolean; canonicalVerification?: string }) {
   return isHubCandidate(user) && user.accountStatus === 'Active'
     && user.organizationVerified === true && !['rejected', 'suspended'].includes(user.canonicalVerification ?? '');

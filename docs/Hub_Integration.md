@@ -243,7 +243,19 @@ The existing persistence RPC permits 200 canonical mutations per transaction.
 Imports therefore commit five-row atomic chunks with an audit record. If a later
 chunk fails, the UI explicitly reports partial completion; previewing/retrying
 the same file skips committed rows. There is no whole-file rollback after a
-successful chunk. Analytics caches invalidate on committed imports; date, region,
+successful chunk. HTTP saves are limited to 25 CSV rows per request; the browser
+continues with a server-returned row cursor and displays checked/imported/skipped
+progress. Each request revalidates the full CSV and current administrator access.
+Supabase duplicate checks retrieve only deterministic IDs and conflict fields,
+without loading or joining unrelated measurement and transfer histories.
+
+If a response is lost, it does not prove that the save failed. The modal discards
+the stale preview and asks for a new preview of the exact same file. Already
+committed rows are skipped, including when the last response was lost after the
+entire file completed. Do not rename external IDs to retry. Concurrent or changed
+records are not overwritten. No in-process job state or database migration is
+required for continuation. Analytics refresh after completion or interruption,
+not after every intermediate window; date, region,
 textile and role filters still apply to the newly added records.
 
 Verification commands:
@@ -253,6 +265,8 @@ npm test
 npm run typecheck:api
 npm run build:render
 npm run test:web-corrections:ui
+npm run test:imports:ui
+npm run test:stakeholders:ui
 node --import tsx scripts/test-management-sql.ts
 ```
 
@@ -268,6 +282,42 @@ DOTENV_CONFIG_PATH=.env.supabase node --import tsx scripts/apply-hub-compatibili
 
 Do not reapply the ZIP's older migrations 013-016 over the installed functions.
 They predate current routing, disposal and remainder protections.
+
+## Unified PoC Presentation
+
+Stakeholders has three presentation groups: Producers, Consumers & Recyclers,
+and BalikTela Hubs. NGO profiles are omitted from this directory, not deleted
+from accounts or transaction history. Grouping does not merge accounts or grant
+Consumer accounts Recycler permissions. Explicit Hub roles are recognized;
+legacy Recycler profiles appear as Hubs only with explicit Hub metadata,
+listing assignments or recorded Hub weighing evidence. Names and approval alone
+do not establish a Hub identity. Each profile appears once, with its original
+account role retained in the response.
+
+Hub cards use the shared database for approval, assigned listings, waiting work,
+weighing records, latest non-superseded batch readings, assigned facilities and
+associated transfers. Date/material filters select batch activity; registered
+idle Hubs can appear with no evidence under unrestricted material filters and
+authorized profile-region scope. Missing locations, weighings or facilities are
+reported as missing, never inferred. Listing-scale readings are not final
+recovery or landfill-diversion evidence. Aggregate-only access withholds profiles.
+
+Routine dashboard views combine synthetic scenario and shared operational records
+under identical lifecycle, mass-balance, date, scope and percentage rules. Overview
+shows one material-batch cohort rather than separate demo/operational counts;
+listing, material, transfer and disposal views do not repeat origin badges.
+The CSV action is labeled **Import CSV**; its administrator-only import dialog
+still requires acknowledgement of synthetic inputs and retains duplicate guards.
+
+This is a presentation policy, not a data conversion. Original `is_demo` flags,
+IDs, source names, lifecycle notes, audit records and mobile records are preserved.
+Governance and exported report caveats disclose the combined PoC boundary. The
+footer identifies the PoC workspace. Reported engagement summaries are labeled
+**Reported Active Users**, not measured distinct authenticated accounts. The
+undefined stakeholder reliability score is omitted from the profile drawer.
+Forecasts retain their fixed synthetic training snapshot and methodology details;
+importing lifecycle records does not retrain them. No missing links, weights,
+physical outcomes or environmental evidence are manufactured by this policy.
 
 ## Verification
 

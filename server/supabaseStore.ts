@@ -5,6 +5,7 @@ import { DatabaseOperationError } from './database/errors.js';
 import { canonicalMutations, mergeJson, rememberCanonicalRow, ManagementMigrationRequired, MutationConflict, type RecordMutation } from './database/mutations.js';
 import type { DashboardSourceSnapshot, Store } from './store.js';
 import type { AuthChallengeRecord, AuthRateLimitRecord, AuthSessionRecord, DatabaseShape } from './types.js';
+import { IMPORT_RECORD_NAMES, type ImportExistingRecord, type ImportRecordLookup } from '../shared/imports.js';
 
 type CollectionName = keyof DatabaseShape;
 type RecordFor<K extends CollectionName> = DatabaseShape[K][number];
@@ -23,6 +24,38 @@ export class SupabaseStore implements Store {
   }
 
   private table<K extends CollectionName>(name: K) { return WEB_PERSISTENCE_COLLECTION_MAP[name]; }
+
+  async lookupImportRecords(lookups: ImportRecordLookup[]): Promise<ImportExistingRecord[]> {
+    const records: ImportExistingRecord[] = [];
+    let next = 0;
+    await Promise.all(Array.from({ length: 2 }, async () => {
+      while (next < lookups.length) {
+        const { name, ids } = lookups[next++];
+        if (!IMPORT_RECORD_NAMES.includes(name)) throw new Error('Unsupported import collection.');
+        const uniqueIds = [...new Set(ids)];
+        const columns = name === 'listings' ? 'id,is_demo,description' : name === 'materialBatches' ? 'id,is_demo' : 'id';
+        for (let offset = 0; offset < uniqueIds.length; offset += 100) {
+          const selected = uniqueIds.slice(offset, offset + 100);
+          let cursor: string | undefined;
+          for (;;) {
+            let query = this.client.from(this.table(name)).select(columns).in('id', selected).order('id').limit(100);
+            if (cursor !== undefined) query = query.gt('id', cursor);
+            const { data, error } = await query;
+            if (error) throw databaseError(`read import ${this.table(name)}`, error);
+            const rows = (data ?? []) as unknown as Row[];
+            if (!rows.length) break;
+            records.push(...rows.map(row => ({ name, id: row.id, isDemo: row.is_demo === true,
+              ...(name === 'listings' ? { description: String(row.description ?? '') } : {}) })));
+            const last = rows[rows.length - 1].id;
+            if (last === cursor) throw new Error('Import lookup pagination did not advance.');
+            cursor = last;
+            if (rows.length === selected.length) break;
+          }
+        }
+      }
+    }));
+    return records;
+  }
 
   async loadHubDisposals() {
     const records: import('../shared/hubs.js').HubDisposalRecord[] = [];

@@ -44,7 +44,7 @@ export function PredictiveAnalytics() {
       reportCache.set(key, { report: result, expiresAt: Date.now() + 300_000 });
       while (reportCache.size > 24) reportCache.delete(reportCache.keys().next().value!);
       setState({ key, report: result });
-    }).catch(error => { if (!controller.signal.aborted) setState({ key, error: error.message ?? 'Unable to load the synthetic model run.' }); });
+    }).catch(error => { if (!controller.signal.aborted) setState({ key, error: error.message ?? 'Unable to load the model run.' }); });
     return () => controller.abort();
   }, [key, region, materialCategory, historyWeeks, attempt, permitted]);
 
@@ -58,11 +58,11 @@ export function PredictiveAnalytics() {
     finally { setExporting(false); }
   };
 
-  if (!permitted) return <div className="predictive-notice">Synthetic predictive analytics is available to authorized administrators, researchers, and government users only.</div>;
+  if (!permitted) return <div className="predictive-notice">Predictive analytics is available to authorized administrators, researchers, and government users only.</div>;
 
   return <div className="predictive section-enter">
     <header className="predictive-heading">
-      <div><h3>Forward view</h3><p>Simulated platform activity. Separate from live operational records.</p></div>
+      <div><h3>Forward view</h3><p>Four-week projections from a fixed training snapshot.</p></div>
       {access?.permissions.includes('reports.export') ? <Button variant="outline" onClick={download} disabled={exporting || !report} className="gap-2">{exporting ? <LoaderCircle className="animate-spin" size={15} /> : <Download size={15} />}Dataset CSV</Button> : null}
     </header>
     <div className="predictive-filters">
@@ -73,7 +73,7 @@ export function PredictiveAnalytics() {
     </div>
     {exportError ? <p className="predictive-error" role="alert">{exportError}</p> : null}
     {current?.error ? <div className="predictive-status" role="alert"><AlertCircle size={20} /><p>{current.error}</p><Button variant="outline" onClick={() => setAttempt(value => value + 1)}>Retry forecast</Button></div>
-      : !report ? <div className="predictive-status" role="status"><LoaderCircle className="animate-spin" size={20} />Evaluating synthetic history...</div>
+      : !report ? <div className="predictive-status" role="status"><LoaderCircle className="animate-spin" size={20} />Evaluating historical records...</div>
         : <>
           <div className="predictive-provenance"><span><strong>{number(report.scope.records)}</strong> scoped records / {report.scope.activeWeeks} active weeks</span><span>Observed through <strong>{endDate(report.manifest.cutoffExclusive)}</strong></span><span>Snapshot <code>{report.manifest.sha256.slice(0, 10)}</code></span></div>
           {report.status !== 'ready' ? <div className="predictive-status"><AlertCircle size={22} /><h4>More supporting history is required</h4><p>{report.message}</p><Button variant="outline" onClick={clear}>Use broader scope</Button></div> : <>
@@ -102,7 +102,7 @@ function VolumeForecast({ report, target }: { report: PredictiveReport; target: 
       <div><p>Test WAPE</p><strong>{model.test.wapePercent === null ? 'Not available' : `${model.test.wapePercent}%`}</strong><span>Absolute error / observed mass</span></div>
       <div><p>Test range coverage</p><strong>{model.test.intervalCoveragePercent}%</strong><span>Nominal 80% empirical range</span></div>
     </div>
-    <div className="predictive-chart-heading"><div><h4>{collected ? 'Weekly textile collection' : 'Weekly declared textile waste'}</h4><p>{FORECAST_METHOD_LABELS[model.method]} / Selected on validation, refit through 11 Oct 2026</p></div><div className="predictive-legend"><span><i />Synthetic observed</span><span><i className="forecast" />Forecast</span><span><i className="range" />80% range</span></div></div>
+    <div className="predictive-chart-heading"><div><h4>{collected ? 'Weekly textile collection' : 'Weekly declared textile waste'}</h4><p>{FORECAST_METHOD_LABELS[model.method]} / Selected on validation, refit through 11 Oct 2026</p></div><div className="predictive-legend"><span><i />Historical</span><span><i className="forecast" />Forecast</span><span><i className="range" />80% range</span></div></div>
     <div className="predictive-chart"><ForecastPlot report={report} target={target} /></div>
     <div className="predictive-table-wrap"><table className="predictive-table" aria-label={`${collected ? 'Collection' : 'Declared waste'} weekly projections`}><thead><tr><th>Week starting</th><th>Forecast</th><th>Range lower</th><th>Range upper</th></tr></thead><tbody>{rows.map(row => <tr key={row.week}><th scope="row">{date(row.week)}</th><td>{formatMass(row.value)}</td><td>{formatMass(row.lower)}</td><td>{formatMass(row.upper)}</td></tr>)}</tbody></table></div>
     <p className="predictive-footnote">{collected ? 'Collection is a portion of declared mass, not proof of completed recycling or landfill diversion.' : 'Projected material declared to the simulated platform, not total Philippine waste generation.'} Validation MAE: {formatMass(model.validation.maeKg)}. Held-out test: {model.test.predictions} overlapping predictions. Displayed mass is rounded to 0.001 t; totals are calculated before display rounding.</p>

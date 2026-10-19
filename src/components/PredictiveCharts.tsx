@@ -38,10 +38,10 @@ export function ForecastPlot({ report, target }: { report: PredictiveReport; tar
       y: { beginAtZero: true, title: { display: true, text: 'Metric tons / week', color: '#69766f', font: { size: 11 } }, grid: { color: '#edf1ef' }, ticks: { maxTicksLimit: 6, color: '#69766f', font: { size: 11 } }, border: { display: false } },
     },
   };
-  return <Line ref={motion.ref} aria-label={`${target === 'collected' ? 'Collection' : 'Declared waste'}: synthetic observed history and four-week forecast in metric tons`} role="img" options={options} data={{ labels, datasets: [
+  return <Line ref={motion.ref} aria-label={`${target === 'collected' ? 'Collection' : 'Declared waste'}: historical records and four-week forecast in metric tons`} role="img" options={options} data={{ labels, datasets: [
     { label: 'Range ceiling', data: [...blanks, ...report.forecast.map(point => toTons(point[upper]))], borderWidth: 0, pointRadius: 0, backgroundColor: 'transparent' },
     { label: '80% empirical range lower', data: [...blanks, ...report.forecast.map(point => toTons(point[lower]))], borderWidth: 0, pointRadius: 0, fill: '-1', backgroundColor: 'rgba(180, 117, 31, 0.13)' },
-    { label: 'Synthetic observed', data: [...report.history.map(point => toTons(point[key])), ...report.forecast.map(() => null)], borderColor: '#22634e', borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.15 },
+    { label: 'Historical', data: [...report.history.map(point => toTons(point[key])), ...report.forecast.map(() => null)], borderColor: '#22634e', borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.15 },
     { label: 'Forecast', data: [...blanks.slice(1), toTons(last[key]), ...report.forecast.map(point => toTons(point[key]))], borderColor: '#a36a19', borderWidth: 2, borderDash: [5, 4], pointRadius: context => context.dataIndex >= report.history.length ? 3 : 0, pointBackgroundColor: '#a36a19', tension: 0 },
   ] }} />;
 }

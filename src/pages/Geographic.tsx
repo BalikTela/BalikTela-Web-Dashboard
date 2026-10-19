@@ -28,7 +28,7 @@ export function Geographic({ data }: { data: Data }) {
     <section aria-label="Geographic activity map" className="min-w-0">
       <header className="geo-section-header">
         <div><h2>Regional material flows</h2><p>Collection, recycling, and recovery coverage</p></div>
-        <div className="geo-period"><span className="geo-sample-label">Sample data</span><span>{data.metadata.periodLabel}</span></div>
+        <div className="geo-period"><span>{data.metadata.periodLabel}</span></div>
       </header>
       <GeographicMap regions={regions} metric={metric} onMetricChange={setMetric} selectedRegion={selected} onSelectRegion={setSelection} />
     </section>

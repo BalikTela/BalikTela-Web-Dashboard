@@ -104,7 +104,8 @@ async function request<T>(path: string, init: RequestInit = {}, allowRefresh = t
   }
   const payload = responseType === 'text' ? await response.text() : await response.json().catch(() => ({}));
   if (epoch !== authenticationEpoch) throw new Error('The authentication state changed during this request.');
-  if (init.method && init.method !== 'GET' && !path.startsWith('/auth/') && path !== '/imports/preview') window.dispatchEvent(new CustomEvent('baliktela:records-changed', {detail:path}));
+  const pendingImport = path === '/imports/commit' && responseType === 'json' && !(payload as ImportResult).complete;
+  if (init.method && init.method !== 'GET' && !path.startsWith('/auth/') && path !== '/imports/preview' && !pendingImport) window.dispatchEvent(new CustomEvent('baliktela:records-changed', {detail:path}));
   return payload as T;
 }
 
@@ -161,7 +162,7 @@ export const platformApi = {
   hubDisposals: (filters?: Record<string, unknown>) => request<HubDisposalMonitoring>(`/hub-disposals${queryString(filters)}`),
   importOptions: () => request<ImportOptions>('/imports/options'),
   previewImport: (csvChunks: string[]) => request<ImportPreview>('/imports/preview', { method:'POST',body:JSON.stringify({csvChunks}) }),
-  commitImport: (csvChunks: string[], previewHash: string, reason: string) => request<ImportResult>('/imports/commit', {method:'POST',body:JSON.stringify({csvChunks,previewHash,reason})}),
+  commitImport: (csvChunks: string[], previewHash: string, reason: string, startRow = 0) => request<ImportResult>('/imports/commit', {method:'POST',body:JSON.stringify({csvChunks,previewHash,reason,startRow})}),
   createFacility: (body: Record<string, unknown>) => request<{ facility: PlatformFacility }>('/facilities', { method: 'POST', body: JSON.stringify(body) }),
   updateFacility: (id: string, body: Record<string, unknown>) => request<{ facility: PlatformFacility }>(`/facilities/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   recoveryRecords: (filters?: Record<string, unknown>) => request<{ records: RecoveryRecord[] }>(`/recovery-records${queryString(filters)}`),

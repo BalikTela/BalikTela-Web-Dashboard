@@ -54,7 +54,7 @@ const pageMeta: Record<PageKey, { title: string; description: string }> = {
   settings: { title: 'Settings', description: 'Governance, privacy, and data source controls' },
 };
 
-export function Layout({ activePage, onPageChange, children, dataContextLabel = 'Operational data · Asia/Manila' }: { activePage: PageKey; onPageChange: (page: PageKey) => void; children: ReactNode; dataContextLabel?: string }) {
+export function Layout({ activePage, onPageChange, children, dataContextLabel = 'Platform data · Asia/Manila' }: { activePage: PageKey; onPageChange: (page: PageKey) => void; children: ReactNode; dataContextLabel?: string }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, access, logout, storageMode } = useAuth();
   const meta = pageMeta[activePage];
@@ -96,7 +96,7 @@ export function Layout({ activePage, onPageChange, children, dataContextLabel = 
         </header>
         <main className="mx-auto w-full min-w-0 max-w-[2304px] px-3 py-4 sm:px-6 sm:py-7 xl:px-8 2xl:px-10">
           {children}
-          <footer className="mt-8 border-t border-slate-200 py-5 text-center text-xs text-slate-500">Shared platform records. Only records explicitly labeled demo or sample are synthetic. Weights are metric tons (t); 1 t = 1,000 kg.</footer>
+          <footer className="mt-8 border-t border-slate-200 py-5 text-center text-xs text-slate-500">PoC workspace · Weights are metric tons (t); 1 t = 1,000 kg.</footer>
         </main>
       </div>
     </div>

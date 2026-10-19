@@ -12,6 +12,7 @@ export function buildGovernance(actor: UserRecord, configuration: ConfigurationR
     },
     privacy: { role: actor.role, aggregateOnly, exportAllowed: hasPermission(actor, 'reports.export'), policy: aggregateOnly ? 'Aggregate/de-identified access' : actor.role === 'Administrator' ? 'Authorized system administration' : 'Authorized regional, organization or individual scope' },
     policyIndicators: [
+      { label: 'PoC reporting scope', status: 'Combined', caveat: 'Synthetic scenario records and shared operational records appear together under the same calculations. Original source classifications remain in the database and audit history. Combined totals illustrate the PoC and are not independently measured real-world outcomes. Engagement uses reported summaries; the fixed predictive dataset is separate from imported lifecycle records.' },
       { label: 'Collection and recovery evidence', status: 'Available', caveat: 'Validated intake and final output are separate. Missing evidence is not an observed zero; the reporting window selects batch registration.' },
       { label: 'Hub disposal oversight', status: 'Monitoring', caveat: 'Approved Hub operators perform disposal through mobile. Web monitors operator, listing, weight, reason and time. A disposal record alone does not prove landfill avoidance.' },
       { label: 'Data quality', status: 'Available', caveat: 'Rule-based findings use scoped batch, listing, transfer, measurement and recovery records; they are not an independent accuracy certification.' },

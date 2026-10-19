@@ -34,7 +34,6 @@ export function Overview({ data }: { data: Data }) {
         </div>
         {data.materialEvidence ? <div className="mt-4 border-l-2 border-slate-300 pl-4 text-xs leading-5 text-slate-600">
           <p className="font-semibold text-slate-800">Evidence coverage</p>
-          {data.sharedActivity?.demoBatches ? <p>Includes {data.sharedActivity.demoBatches} synthetic demo batches and {data.sharedActivity.operationalBatches} operational batches. Demo figures are illustrative, not measured national totals.</p> : null}
           <p>{data.materialEvidence.missingCollectionBatches} batches await validated intake evidence. {data.materialEvidence.completedReportedWeight} completed transfers use reported receipt weights; {data.materialEvidence.completedMissingWeight} have no final weight and are excluded from transfer mass.</p>
           <p>Hub intake establishes collection, not diversion. Only validated final outcomes establish reuse or recycling; landfill avoidance remains uncalculated.</p>
           {data.materialEvidence.collectionConflicts + data.materialEvidence.outcomeConflicts > 0 ? <p className="mt-1 text-amber-800">{data.materialEvidence.collectionConflicts} collection and {data.materialEvidence.outcomeConflicts} outcome batch allocations need review. Ambiguous mass is withheld, not capped.</p> : null}
@@ -46,7 +45,7 @@ export function Overview({ data }: { data: Data }) {
       <OperationalSnapshot data={data} supporting />
 
       {data.sharedActivity ? <section className="border-y border-slate-200 py-5" aria-label="Shared platform activity">
-        <SectionHeader title="Shared Platform Activity" eyebrow={`${data.sharedActivity.operationalBatches} operational batches · ${data.sharedActivity.demoBatches} demo batches in the selected cohort`} />
+        <SectionHeader title="Shared Platform Activity" eyebrow={`${data.sharedActivity.operationalBatches + data.sharedActivity.demoBatches} material batches in the selected cohort`} />
         <dl className="grid grid-cols-2 gap-5 lg:grid-cols-4">{[
           ['Material listings', data.sharedActivity.listings], ['Pending / revised requests', data.sharedActivity.pendingRequests],
           ['Hub-weighed batches', data.sharedActivity.hubWeighedBatches], ['Completed transfers', data.sharedActivity.completedTransfers],
@@ -137,7 +136,7 @@ function OperationalSnapshot({ data, supporting = false }: { data: Data; support
   const operations = data.operations;
   const role = operations.scope.role;
   const copy: Record<string, [string, string]> = {
-    Administrator: ['System oversight', 'National demo operations, data integrity, institutional access, and governance.'],
+    Administrator: ['System oversight', 'Platform operations, data integrity, institutional access, and governance.'],
     Government: ['Policy monitoring', 'Aggregate, de-identified indicators for program monitoring and policy preparation.'],
     Researcher: ['Research and M&E', 'Aggregate evidence, validation coverage, and documented methodology constraints.'],
     Producer: ['Producer workspace', 'Organization-scoped material declarations, outgoing transfers, and verified outcomes.'],

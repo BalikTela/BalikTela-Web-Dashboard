@@ -1,6 +1,6 @@
 import { AlertCircle, Loader2 } from 'lucide-react';
 
-export function LoadingBlock({ label = 'Loading sample dashboard data' }: { label?: string }) {
+export function LoadingBlock({ label = 'Loading dashboard data' }: { label?: string }) {
   return (
     <div className="section-enter grid min-h-80 place-items-center rounded-md border border-slate-200 bg-white">
       <div className="flex items-center gap-3 text-sm font-medium text-textile-ink/70">
@@ -22,7 +22,7 @@ export function ErrorBlock({ message }: { message: string }) {
   );
 }
 
-export function EmptyBlock({ label = 'No matching sample records.' }: { label?: string }) {
+export function EmptyBlock({ label = 'No matching records.' }: { label?: string }) {
   return (
     <div className="section-enter rounded-lg border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center text-sm text-slate-500">
       {label}

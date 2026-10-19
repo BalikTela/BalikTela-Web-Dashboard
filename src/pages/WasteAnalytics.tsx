@@ -43,7 +43,7 @@ export function WasteAnalytics({ data }: { data: Data }) {
         </div>
       </Panel>
       <Panel>
-        <SectionHeader title="Textile Category Mix" eyebrow="Current sample composition" actions={<BarChart3 size={20} className="text-textile-ocean" />} />
+        <SectionHeader title="Textile Category Mix" eyebrow="Collected material composition" actions={<BarChart3 size={20} className="text-textile-ocean" />} />
         <div className="h-80"><CategoryDoughnut data={data.categoryShares} /></div>
       </Panel>
       </div>

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import express from 'express';
-import { IMPORT_COLUMNS } from '../shared/imports.js';
+import { IMPORT_COLUMNS, IMPORT_COMMIT_ROWS, type ImportRecordLookup } from '../shared/imports.js';
 import { issueToken } from './auth.js';
 import { createSeedData } from './seed.js';
 import { MemoryStore } from './store.js';
@@ -98,6 +98,76 @@ test('import endpoints require current administrator access and respect existing
     const response=await send('Administrator','preview',{csvChunks:[csv()]});assert.equal(response.status,200);assert.match(response.headers.get('cache-control')!,/no-store/);
     const preview=await response.json();assert.equal(preview.valid,true);
     const committed=await send('Administrator','commit',{csvChunks:[csv()],previewHash:preview.previewHash,reason:'API fixture'});assert.equal(committed.status,200);assert.equal((await committed.json()).complete,true);
+    const largeFile=csv(Array.from({length:30},(_,i)=>row(`api-window-${i}`)));
+    const largePreview=await (await send('Administrator','preview',{csvChunks:[largeFile]})).json();
+    const windowResponse=await send('Administrator','commit',{csvChunks:[largeFile],previewHash:largePreview.previewHash,reason:'Bounded API fixture',maxRows:500});
+    const windowResult=await windowResponse.json();assert.equal(windowResponse.status,200);
+    assert.equal(windowResult.complete,false);assert.equal(windowResult.importedRows,IMPORT_COMMIT_ROWS);assert.equal(windowResult.nextRow,IMPORT_COMMIT_ROWS);
+    assert.equal((await send('Administrator','commit',{csvChunks:[largeFile],previewHash:largePreview.previewHash,reason:'Bad cursor',startRow:-1})).status,400);
     await store.update('users',seed.users[0].id,{accountStatus:'Suspended'});assert.ok([401,403].includes((await send('Administrator','preview',{csvChunks:[csv()]})).status));
   }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));}
+});
+
+test('500-row imports use bounded resumable windows and skip a committed window after a lost response',async()=>{
+  const seed=await createSeedData();let commits=0;const lookups:ImportRecordLookup[][]=[];
+  class ScopedStore extends MemoryStore {
+    async commit(writes:RecordMutation[]){commits++;assert.ok(canonicalMutations(writes).length<=200);await super.commit(writes);}
+    async lookupImportRecords(request:ImportRecordLookup[]){
+      lookups.push(request);
+      return (await Promise.all(request.map(async({name,ids})=>(await super.all(name)).filter(item=>ids.includes(item.id)).map(item=>({name,...item}))))).flat();
+    }
+    async all<K extends keyof typeof seed>(name:K){
+      assert.ok(!['materialBatches','listings','offers','transfers','measurements','recoveryRecords'].includes(name),'Import must not scan unrelated business records.');
+      return super.all(name);
+    }
+  }
+  const store=new ScopedStore(seed),admin=seed.users[0],file=csv(Array.from({length:500},(_,i)=>row(`window-${i}`)));
+  const preview=(await planImport(store,admin,file,now)).preview;
+  assert.ok(preview.valid&&preview.newRows===500);
+  const first=await commitImport(store,admin,file,preview.previewHash,'First window',now,0);
+  assert.equal(first.complete,false);assert.equal(first.nextRow,IMPORT_COMMIT_ROWS);assert.equal(first.importedRows,IMPORT_COMMIT_ROWS);
+  assert.equal(commits,IMPORT_COMMIT_ROWS/5);
+  assert.ok(lookups.at(-1)!.every(item=>item.ids.length<=IMPORT_COMMIT_ROWS*4));
+  // The first response was lost. Repeating the exact window must not manufacture rows.
+  const repeated=await commitImport(store,admin,file,preview.previewHash,'Retry after lost response',now,0);
+  assert.equal(repeated.importedRows,0);assert.equal(repeated.skippedRows,IMPORT_COMMIT_ROWS);
+  let cursor=repeated.nextRow!,count=first.importedRows;
+  while(cursor<500){
+    const progress=await commitImport(store,admin,file,preview.previewHash,'Continue',now,cursor);
+    assert.ok(progress.importedRows<=IMPORT_COMMIT_ROWS);count+=progress.importedRows;
+    assert.equal(progress.complete,progress.nextRow===500);assert.ok(progress.nextRow!>cursor);cursor=progress.nextRow!;
+  }
+  assert.equal(count,500);assert.equal(commits,100);
+  const retried=(await planImport(store,admin,file,now)).preview;
+  assert.ok(retried.valid&&retried.skippedRows===500&&retried.newRows===0);
+});
+
+test('bounded imports validate later CSV rows, reject invalid cursors and report access-check interruptions safely',async()=>{
+  const seed=await createSeedData(),store=new MemoryStore(seed),admin=seed.users[0];
+  const file=csv(Array.from({length:30},(_,i)=>row(`bounded-${i}`)));
+  const preview=(await planImport(store,admin,file,now)).preview;
+  for(const cursor of [-1,0.5,NaN,500,30,'0' as unknown as number])await assert.rejects(commitImport(store,admin,file,preview.previewHash,'Invalid cursor',now,cursor));
+  const invalid=csv(Array.from({length:30},(_,i)=>row(`invalid-late-${i}`,i===29?{collected_kg:110}:{})));
+  const invalidPreview=(await planImport(store,admin,invalid,now)).preview;
+  await assert.rejects(commitImport(store,admin,invalid,invalidPreview.previewHash,'Bad later row',now,0));
+  assert.equal((await store.all('materialBatches')).length,seed.materialBatches.length);
+  let accessChecks=0;
+  class InterruptedStore extends MemoryStore {async findById<K extends keyof typeof seed>(name:K,id:string){if(name==='users'&&++accessChecks===2)throw new Error('Private provider details');return super.findById(name,id);}}
+  const interrupted=new InterruptedStore(structuredClone(seed));
+  const result=await commitImport(interrupted,admin,file,preview.previewHash,'Access interrupted',now,0);
+  assert.equal(result.complete,false);assert.equal(result.importedRows,5);assert.equal(result.nextRow,undefined);
+  assert.match(result.message,/Preview the same file/);assert.ok(!result.message.includes('Private provider'));
+});
+
+test('a database response lost after commit is reported as uncertain and a fresh preview finds saved rows',async()=>{
+  const seed=await createSeedData();let lost=true;
+  class LostResponseStore extends MemoryStore {async commit(writes:RecordMutation[]){await super.commit(writes);if(lost){lost=false;throw new Error('Connection dropped after transaction committed');}}}
+  const store=new LostResponseStore(seed),admin=seed.users[0],file=csv(Array.from({length:6},(_,i)=>row(`lost-db-${i}`)));
+  const preview=(await planImport(store,admin,file,now)).preview;
+  const result=await commitImport(store,admin,file,preview.previewHash,'Unknown response',now,0);
+  assert.equal(result.complete,false);assert.equal(result.importedRows,0);assert.match(result.message,/could not be confirmed/);
+  const fresh=(await planImport(store,admin,file,now)).preview;
+  assert.equal(fresh.skippedRows,5);assert.equal(fresh.newRows,1);
+  const resumed=await commitImport(store,admin,file,fresh.previewHash,'Resume saved transaction',now,0);
+  assert.equal(resumed.complete,true);assert.equal(resumed.importedRows,1);assert.equal(resumed.skippedRows,5);
 });

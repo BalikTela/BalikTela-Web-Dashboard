@@ -35,6 +35,36 @@ test('intended recycling, sorting and completed status do not establish a final 
   assert.equal(value.unresolvedCollectedKg, 100);
 });
 
+test('recyclable collection uses unique validated intake, not declaration, pathway or final recycling output', () => {
+  const recyclable = { ...batch, condition: 'Recyclable' as const };
+  const value = aggregate([recyclable, recyclable], [transfer, transfer], [record(), final, final]);
+  assert.equal(value.recyclableCollectedKg, 100);
+  assert.equal(value.recyclableCollectedBatches, 1);
+  assert.equal(value.recycledKg, 72);
+  assert.equal(aggregate([recyclable], [transfer], [record()]).recyclableCollectedKg, 100, 'Final processing is not required for recyclable intake.');
+  const uncollected = aggregate([recyclable], [transfer], [final]);
+  assert.equal(uncollected.recyclableCollectedKg, 0);
+  assert.equal(uncollected.recyclableCollectedBatches, 0);
+  for (const condition of ['Reusable', 'For assessment'] as const) {
+    const other = aggregate([{ ...recyclable, condition, circularPathway: 'Recycling' }], [transfer], [record(), final]);
+    assert.equal(other.collectedKg, 100);
+    assert.equal(other.recyclableCollectedKg, 0, 'Intended recycling does not classify a batch as recyclable.');
+    assert.equal(other.recyclableCollectedBatches, 0);
+    assert.equal(other.recycledKg, 72, 'Final outcome metrics remain independent of intake classification.');
+  }
+});
+
+test('recyclable collection respects receipt corrections and withholds conflicting intake and remainder lots', () => {
+  const recyclable = { ...batch, condition: 'Recyclable' as const };
+  const receipt = { ...validation, stage: 'Receipt' as const };
+  const corrected = { ...receipt, id: 'CORRECTED', weightKg: 75, supersedesMeasurementId: receipt.id };
+  assert.equal(aggregate([recyclable], [transfer], [], { measurements: [receipt, corrected] }).recyclableCollectedKg, 75);
+  assert.equal(aggregate([recyclable], [transfer], [], { measurements: [{ ...receipt, stage: 'Declaration', canonicalStage: 'listing' }] }).recyclableCollectedKg, 0);
+  assert.equal(aggregate([recyclable], [transfer], [record(), record({ id: 'DUPLICATE' })]).recyclableCollectedKg, 0);
+  assert.equal(aggregate([recyclable], [transfer], [record({ outputWeightKg: 101 })]).recyclableCollectedKg, 0);
+  assert.equal(aggregate([recyclable], [transfer], [record()], { listings: [{ ...seed.listings[0], batchId: batch.id, remainderOfId: 'PARENT' }] }).recyclableCollectedKg, 0);
+});
+
 test('pending, flagged, reversed and unapproved records are not official outcomes', () => {
   for (const change of [{ status: 'Recorded' as const }, { status: 'Flagged' as const }, { status: 'Reversed' as const }, { validatedBy: null }]) {
     const value = aggregate([batch], [transfer], [record(), { ...final, ...change }]);

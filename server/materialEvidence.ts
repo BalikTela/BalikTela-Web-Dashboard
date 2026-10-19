@@ -21,6 +21,7 @@ export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transf
   // Cross-batch remainders need a root-lot allocation contract before they can be added as new material.
   const remainderBatches = new Set(listings.filter(item => item.remainderOfId).map(item => item.batchId));
   let generatedKg = 0, collectedKg = 0, sortedKg = 0, reusedKg = 0, recycledKg = 0;
+  let recyclableCollectedKg = 0, recyclableCollectedBatches = 0;
   let matchedDiversionKg = 0, matchedSortedKg = 0, matchedSortedOutcomeKg = 0;
   let collectedBatches = 0, sortedBatches = 0, reuseRecords = 0, recyclingRecords = 0, collectionConflicts = 0, outcomeConflicts = 0;
   let unlinkedOutcomeKg = 0, unresolvedCollectedKg = 0, outcomeEvidenceBatches = 0, matchedOutcomeBatches = 0;
@@ -48,7 +49,10 @@ export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transf
       if (receipts.length === 1 && batchTransfers.length === 1) intake = receipts[0].weightKg;
       else if (receipts.length) collectionConflicts++;
     }
-    if (intake !== null) { collectedKg += intake; collectedBatches++; }
+    if (intake !== null) {
+      collectedKg += intake; collectedBatches++;
+      if (batch.condition === 'Recyclable') { recyclableCollectedKg += intake; recyclableCollectedBatches++; }
+    }
     const sorting = batchRecords.filter(item => item.stage === 'Sorting');
     const sorted = sorting.length === 1 && validMass(sorting[0].inputWeightKg) && validMass(sorting[0].outputWeightKg)
       && sorting[0].outputWeightKg! <= sorting[0].inputWeightKg + 0.001 ? sorting[0].outputWeightKg : null;
@@ -116,6 +120,7 @@ export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transf
   const completedKg = knownCompleted.reduce((sum, item) => sum + item.value!, 0);
   return {
     generatedKg: round(generatedKg), collectedKg: round(collectedKg), sortedKg: round(sortedKg),
+    recyclableCollectedKg: round(recyclableCollectedKg), recyclableCollectedBatches,
     reusedKg: round(reusedKg), recycledKg: round(recycledKg), transactionCount: completed.length,
     completedKg: round(completedKg), completedWithWeight: knownCompleted.length,
     completedMissingWeight: completed.length - knownCompleted.length,

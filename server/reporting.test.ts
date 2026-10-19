@@ -119,7 +119,26 @@ test('engagement uses timestamp years and Manila months, and missing monthly sum
   assert.equal(january.engagementMetrics.monthlyActiveUsers, 3);
   assert.equal(january.engagementMetrics.monthlyActiveUsersAvailable, true);
   const october = await buildDashboardAnalytics(store, seed.users[0], {}, undefined, now);
-  assert.equal(october.kpis.find(item => item.label === 'Monthly Active Users')?.value, 'Not available');
+  assert.equal(october.kpis.find(item => item.label === 'Reported Active Users')?.value, 'Not available');
+});
+
+test('Overview recyclable collection tile uses classified intake and recomputes under material and regional filters', async () => {
+  const seed = await createSeedData();
+  const recyclable = { ...seed.materialBatches[0], id: 'RECYCLABLE', condition: 'Recyclable' as const, materialCategory: 'Cotton', region: 'Metro Manila' };
+  const reusable = { ...recyclable, id: 'REUSABLE', condition: 'Reusable' as const, materialCategory: 'Denim', region: 'Central Visayas' };
+  seed.materialBatches = [recyclable, reusable];
+  seed.measurements = [];
+  seed.transfers = [];
+  seed.recoveryRecords = [recyclable, reusable].map((batch, index) => ({ ...seed.recoveryRecords[0], id: `COL-${index}`, batchId: batch.id,
+    stage: 'Collection', status: 'Validated', validatedBy: seed.users[0].id, inputWeightKg: 100, outputWeightKg: 100,
+    residualWeightKg: 0, lossWeightKg: 0, outcome: null }));
+  const store = new MemoryStore(seed);
+  const tile = async (filters: Record<string, unknown>) => (await buildDashboardAnalytics(store, seed.users[0], { ...custom, ...filters }, undefined, now)).kpis.find(item => item.label === 'Recyclable Textiles Collected')!;
+  assert.equal((await tile({})).value, '0.1 t');
+  assert.equal((await tile({})).delta, '1 collected batch classified as recyclable');
+  assert.equal((await tile({ textileType: 'Cotton' })).value, '0.1 t');
+  assert.equal((await tile({ region: 'Central Visayas' })).value, '0 t');
+  assert.equal((await tile({ textileType: 'Polyester' })).value, 'Pending evidence');
 });
 
 test('quality reports use the configured discrepancy rule, and organization aggregates never contain identities', async () => {

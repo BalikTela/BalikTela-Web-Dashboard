@@ -2,7 +2,6 @@ import { formatMass } from '../../shared/metrics';
 import { AlertTriangle, Check, Clock3, MapPin, X } from 'lucide-react';
 import type { LifecycleEvent, Transaction } from '../types';
 import { StatusBadge } from './StatusBadge';
-import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 
 export function TransactionDrawer({ transaction, onClose }: { transaction: Transaction | null; onClose: () => void }) {
@@ -13,7 +12,7 @@ export function TransactionDrawer({ transaction, onClose }: { transaction: Trans
       <div className="drawer-enter absolute right-0 top-0 h-full w-full max-w-2xl overflow-y-auto border-l border-slate-200 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="flex flex-wrap items-center gap-2"><p className="text-sm text-slate-500">Lifecycle traceability</p><Badge variant="outline">{transaction.isDemo ? 'Demo record' : 'Operational record'}</Badge></div>
+            <p className="text-sm text-slate-500">Lifecycle traceability</p>
             <h2 className="mt-1 text-xl font-semibold text-slate-950">{transaction.id}</h2>
           </div>
           <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="Close transaction detail"><X size={18} /></Button>

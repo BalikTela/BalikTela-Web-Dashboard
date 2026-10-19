@@ -109,6 +109,7 @@ export interface Stakeholder {
   id: string;
   name: string;
   type: StakeholderType;
+  accountRole?: StakeholderType;
   city: string;
   region: Exclude<Region, 'All regions'>;
   recoveredKg: number;
@@ -118,11 +119,16 @@ export interface Stakeholder {
   utilization?: number;
   participation: number;
   transactions: number;
+  linkedTransferIds?: string[];
+  hubActivity?: {
+    state: 'Approved' | 'Pending approval' | 'Suspended' | 'Rejected'; assignedListings: number; awaitingWeighing: number;
+    measurements: number; latestWeighedKg: number | null; lastWeighedAt: string | null; facilities: Array<{ id: string; name: string }>;
+  };
   verification: 'Demo verified' | 'Pending demo review';
   reliabilityPlaceholder: number;
   sustainabilityActivities: string[];
   joinedAt: string;
-  isDemo: true;
+  isDemo: boolean;
 }
 
 export interface Facility {

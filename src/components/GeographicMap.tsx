@@ -166,6 +166,6 @@ export function GeographicMap({ regions, metric, onMetricChange, selectedRegion,
       </aside> : null}
       {!regions.length && ready ? <div className="geo-map-message" role="status">No regional activity matches the current filters.</div> : null}
     </div>
-    <div className="geo-map-footer"><p><span className={maximum === 0 ? 'geo-legend-dot geo-legend-zero' : metric === 'wasteGapKg' ? 'geo-legend-dot geo-legend-gap' : 'geo-legend-dot'} />{activeMetric.label} <span className="tabular-nums">{regions.some(region => hasGeographicEvidence(region, metric)) ? `0–${formatMass(maximum)}` : 'Pending evidence'}</span></p><p>Sample activity · indicative regional locations</p></div>
+    <div className="geo-map-footer"><p><span className={maximum === 0 ? 'geo-legend-dot geo-legend-zero' : metric === 'wasteGapKg' ? 'geo-legend-dot geo-legend-gap' : 'geo-legend-dot'} />{activeMetric.label} <span className="tabular-nums">{regions.some(region => hasGeographicEvidence(region, metric)) ? `0–${formatMass(maximum)}` : 'Pending evidence'}</span></p><p>Regional activity · indicative locations</p></div>
   </div>;
 }

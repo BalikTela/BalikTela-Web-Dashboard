@@ -119,7 +119,7 @@ function DashboardWorkspace() {
   };
 
   return (
-    <Layout activePage={currentPage} onPageChange={openPage} dataContextLabel={currentPage === 'advanced' && advancedMode === 'Predictive' ? 'Synthetic PoC · Fixed snapshot' : undefined}>
+    <Layout activePage={currentPage} onPageChange={openPage} dataContextLabel={currentPage === 'advanced' && advancedMode === 'Predictive' ? 'Forecast model · Fixed snapshot' : undefined}>
       <div className="space-y-6">
         {filterablePages.has(currentPage) && (currentPage !== 'advanced' || advancedMode === 'Diagnostic') ? <FilterBar filters={filters} onChange={setFilters} /> : null}
         {needsDashboardData && isRefreshing && data ? <p className="flex items-center gap-2 text-xs text-[#66736e]" role="status"><LoaderCircle size={14} className="animate-spin" />Refreshing analytics…</p> : null}

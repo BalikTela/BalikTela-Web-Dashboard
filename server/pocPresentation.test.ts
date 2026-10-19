@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createSeedData } from './seed.js';
+import { MemoryStore } from './store.js';
+import { buildDashboardAnalytics } from './dashboardAnalytics.js';
+import { buildGovernance } from './governance.js';
+import { planImport, commitImport } from './imports.js';
+import { IMPORT_COLUMNS } from '../shared/imports.js';
+
+test('unified PoC reporting includes both sources without changing provenance or relaxing evidence rules',async()=>{
+  const seed=await createSeedData(),admin=seed.users[0],now=new Date('2026-10-19T04:00:00Z');
+  for(const record of [...seed.materialBatches,...seed.listings,...seed.transfers,...seed.recoveryRecords])record.isDemo=false;
+  const store=new MemoryStore(seed),before=await buildDashboardAnalytics(store,admin,{},undefined,now);
+  const csv=[IMPORT_COLUMNS.join(','),'poc-unified-fixture,2026-09-10T01:00:00Z,USR-PROD-01,USR-REC-01,FAC-001,Cotton,100,90,80,Recycling,70'].join('\n');
+  const preview=await planImport(store,admin,csv,now);
+  const imported=await commitImport(store,admin,csv,preview.preview.previewHash,'Disposable combined-source test',now,0);
+  assert.ok(imported.complete);
+  const records=async()=>({batches:await store.all('materialBatches'),listings:await store.all('listings'),transfers:await store.all('transfers'),recovery:await store.all('recoveryRecords')});
+  const snapshot=structuredClone(await records());
+  const combined=await buildDashboardAnalytics(store,admin,{},undefined,now);
+  assert.equal(combined.circularFlow.collectedKg,before.circularFlow.collectedKg+90);
+  assert.equal(combined.circularFlow.recycledKg,before.circularFlow.recycledKg+70);
+  assert.equal(combined.barterMetrics.completed,before.barterMetrics.completed+1);
+  assert.equal(combined.sharedActivity.demoBatches,1);
+  assert.equal(combined.sharedActivity.operationalBatches,before.sharedActivity.operationalBatches);
+  assert.deepEqual(await records(),snapshot,'Reporting must not rewrite source classifications or records.');
+  assert.ok(snapshot.batches.some(item=>item.isDemo)&&snapshot.batches.some(item=>!item.isDemo));
+  assert.match(combined.metadata.sampleDisclosure,/combines synthetic scenario records and shared operational records/);
+  assert.equal(combined.impactMetrics.landfillAvoidedKg,null);
+  assert.ok(combined.kpis.some(item=>item.label==='Reported Active Users'));
+  const governance=buildGovernance(admin,seed.configurations[0]);
+  assert.match(governance.policyIndicators.find(item=>item.label==='PoC reporting scope')!.caveat,/Original source classifications remain/);
+  assert.match(governance.methodology.predictiveAnalytics,/Bundled synthetic/);
+});

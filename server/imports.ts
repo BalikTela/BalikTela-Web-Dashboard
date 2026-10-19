@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { Express } from 'express';
 import ExcelJS from 'exceljs';
-import { IMPORT_COLUMNS, IMPORT_MAX_BYTES, IMPORT_MAX_ROWS, type ImportPreview, type ImportResult } from '../shared/imports.js';
+import { IMPORT_COLUMNS, IMPORT_MAX_BYTES, IMPORT_MAX_ROWS, IMPORT_COMMIT_ROWS, IMPORT_RECORD_NAMES, type ImportPreview, type ImportResult, type ImportExistingRecord } from '../shared/imports.js';
 import { MATERIAL_CATEGORIES } from '../shared/workflows.js';
 import { authorize, hasPermission } from './access-control.js';
 import { requireAuth, type AuthenticatedRequest } from './auth.js';
@@ -22,7 +22,7 @@ export function importCsv(body: Record<string, unknown>) {
   return csv;
 }
 
-export async function planImport(store: Store, actor: UserRecord, csv: string, now = new Date()): Promise<ImportPlan> {
+export async function planImport(store: Store, actor: UserRecord, csv: string, now = new Date(), startRow = 0, rowLimit = IMPORT_MAX_ROWS): Promise<ImportPlan> {
   if (!hasPermission(actor, 'batches.manage')) throw new ManagementError('Only authorized administrators may import datasets.',403);
   if (!csv.trim() || Buffer.byteLength(csv,'utf8') > IMPORT_MAX_BYTES) throw new ManagementError('Select a non-empty CSV within the file size limit.');
   const workbook = new ExcelJS.Workbook();
@@ -33,9 +33,19 @@ export async function planImport(store: Store, actor: UserRecord, csv: string, n
   if (sheet.getRow(1).cellCount !== IMPORT_COLUMNS.length || headers.some((value,index) => value !== IMPORT_COLUMNS[index])) throw new ManagementError('CSV columns must match the downloaded template, in order.');
   if (sheet.rowCount < 2 || sheet.rowCount - 1 > IMPORT_MAX_ROWS) throw new ManagementError(`Import between 1 and ${IMPORT_MAX_ROWS} data rows per file.`);
   const [users, facilities] = await Promise.all([store.all('users'), store.all('facilities')]);
-  const existing = new Map<string, RecordMutation['record']>();
-  for (const name of ['materialBatches','listings','offers','transfers','measurements','recoveryRecords'] as const) {
-    for (const record of await store.all(name)) existing.set(`${name}:${record.id}`, record);
+  const existing = new Map<string, ImportExistingRecord>();
+  if (store.lookupImportRecords) {
+    const prefixes = Array.from({ length: Math.min(rowLimit, sheet.rowCount - 1 - startRow) }, (_, index) =>
+      `IMP-DEMO-${hash(String(sheet.getRow(startRow + index + 2).getCell(1).value ?? '').trim()).slice(0,24)}`);
+    const suffixes = { materialBatches:['BAT'], listings:['LST'], offers:['REQ'], transfers:['TRF'],
+      measurements:['DECL','RCPT','VALID','OUT'], recoveryRecords:['COL','SORT','FINAL'] };
+    const records = await store.lookupImportRecords(IMPORT_RECORD_NAMES.map(name => ({ name,
+      ids: prefixes.flatMap(prefix => suffixes[name].map(suffix => `${prefix}-${suffix}`)) })));
+    for (const record of records) existing.set(`${record.name}:${record.id}`, record);
+  } else {
+    for (const name of IMPORT_RECORD_NAMES) {
+      for (const record of await store.all(name)) existing.set(`${name}:${record.id}`, { name, ...record });
+    }
   }
   const preview: ImportPreview = { previewHash: hash(`${actor.id}\0${csv}`), valid: true, totalRows: sheet.rowCount - 1, newRows: 0, skippedRows: 0,
     totals: { declaredKg: 0, collectedKg: 0, reusedKg: 0, recycledKg: 0 }, rows: [] };
@@ -102,10 +112,12 @@ export async function planImport(store: Store, actor: UserRecord, csv: string, n
         if (sorted !== null) writes.push(recovery('SORT','Sorting',collected,sorted,at(4)));
         if (final !== null) writes.push(recovery('FINAL','Recovery',sorted ?? collected,final,at(5)),{name:'measurements',record:{id:makeId('OUT'),batchId,transferId,stage:'Recovery',canonicalStage:'recovery_output',weightKg:final,status:'Verified',method:'Synthetic imported final output',recordedBy:recipient.id,verifiedBy:recipient.id,timestamp:at(5),note,facilityId:facility.id}});
       }
+      // Validate the whole file, but only resolve/write the current bounded request window.
+      if (index - 2 < startRow || index - 2 >= startRow + rowLimit) continue;
       const present = writes.filter(write => existing.has(`${write.name}:${write.record.id}`));
       if (present.length) {
-        const priorBatch = existing.get(`materialBatches:${batchId}`) as MaterialBatchRecord | undefined;
-        const priorListing = existing.get(`listings:${listing.id}`) as ListingRecord | undefined;
+        const priorBatch = existing.get(`materialBatches:${batchId}`);
+        const priorListing = existing.get(`listings:${listing.id}`);
         if (present.length !== writes.length || priorBatch?.isDemo !== true || priorListing?.description !== note) throw new ManagementError('External ID conflicts with an existing or changed dataset. No records will be overwritten.');
         preview.skippedRows++;
       } else {
@@ -123,22 +135,29 @@ export async function planImport(store: Store, actor: UserRecord, csv: string, n
   return {preview,groups};
 }
 
-export async function commitImport(store: Store, actor: UserRecord, csv: string, previewHash: string, reason: string, now = new Date()): Promise<ImportResult> {
-  const plan=await planImport(store,actor,csv,now);
+export async function commitImport(store: Store, actor: UserRecord, csv: string, previewHash: string, reason: string, now = new Date(), startRow?: number): Promise<ImportResult> {
+  if (startRow !== undefined && (!Number.isInteger(startRow) || startRow < 0 || startRow >= IMPORT_MAX_ROWS)) throw new ManagementError('Import position is invalid. Preview the file again.');
+  const plan=await planImport(store,actor,csv,now,startRow ?? 0,startRow === undefined ? IMPORT_MAX_ROWS : IMPORT_COMMIT_ROWS);
+  if (startRow !== undefined && startRow >= plan.preview.totalRows) throw new ManagementError('Import position exceeds the file.');
   if (!plan.preview.valid || plan.preview.previewHash !== previewHash) throw new ManagementError('Preview this exact file and resolve every error before importing.');
   text(reason,'Import reason');
   let importedRows=0;
   // Each chunk is one atomic transaction below the existing 200 canonical-mutation limit.
   for (let offset=0;offset<plan.groups.length;offset+=5) {
     const chunk=plan.groups.slice(offset,offset+5), writes=chunk.flat();
-    const current=await store.findById('users',actor.id);
+    let current: UserRecord | null;
+    try { current=await store.findById('users',actor.id); }
+    catch { return {complete:false,importedRows,skippedRows:plan.preview.skippedRows,message:'Import paused while checking administrator access. Some rows may already be saved. Preview the same file to check progress and resume safely.'}; }
     if (!current || !hasPermission(current,'batches.manage')) return {complete:false,importedRows,skippedRows:plan.preview.skippedRows,message:'Import stopped because administrator access changed. Completed chunks are retained; an authorized administrator can resume the same file.'};
     writes.push({name:'auditRecords',record:{id:`AUD-${randomUUID()}`,actorId:actor.id,action:'dataset.demo.imported',entityType:'materialBatches',entityId:plan.preview.previewHash,timestamp:now.toISOString(),details:JSON.stringify({reason,demo:true,rows:chunk.length,batchIds:chunk.map(items=>items[0].record.id)})}});
     if (canonicalMutations(writes).length>200) throw new ManagementError('Import chunk exceeds the transaction limit.');
     try { await store.commit(writes); importedRows+=chunk.length; }
-    catch { return {complete:false,importedRows,skippedRows:plan.preview.skippedRows,message:'Import stopped before the next atomic chunk. Completed chunks remain visible. Preview and retry the same file to skip existing rows; no existing records were overwritten.'}; }
+    catch { return {complete:false,importedRows,skippedRows:plan.preview.skippedRows,message:'The latest save response could not be confirmed. Some rows may already be saved. Preview and retry the same file to skip saved rows; no existing records were overwritten.'}; }
   }
-  return {complete:true,importedRows,skippedRows:plan.preview.skippedRows,message:'Demo dataset imported. Analytics refresh automatically; the selected dates and scope still apply.'};
+  const nextRow = startRow === undefined ? plan.preview.totalRows : Math.min(startRow + IMPORT_COMMIT_ROWS, plan.preview.totalRows);
+  const complete = nextRow === plan.preview.totalRows;
+  return {complete,importedRows,skippedRows:plan.preview.skippedRows,nextRow,totalRows:plan.preview.totalRows,
+    message:complete?'Demo dataset imported. Analytics refresh automatically; the selected dates and scope still apply.':'Import progress saved. Continue with the next group.'};
 }
 
 export function registerImportRoutes(app: Express, store: Store) {
@@ -148,5 +167,5 @@ export function registerImportRoutes(app: Express, store: Store) {
     res.json({producers:users.filter(user=>user.role==='Producer'&&user.accountStatus==='Active').map(user=>({id:user.id,name:user.fullName,region:user.region})),recipients:users.filter(user=>['Recycler','BalikTela Hub','Upcycler'].includes(user.role)&&user.accountStatus==='Active').map(user=>({id:user.id,name:user.fullName,organizationId:user.organizationId})),facilities:facilities.filter(item=>item.status!=='Inactive').map(item=>({id:item.id,name:item.name,organizationId:item.organizationId}))});
   });
   app.post('/api/imports/preview',requireAuth,authorize(store,'batches.manage'),async (req:AuthenticatedRequest,res)=>res.json((await planImport(store,req.actor!,importCsv(req.body))).preview));
-  app.post('/api/imports/commit',requireAuth,authorize(store,'batches.manage'),async (req:AuthenticatedRequest,res)=>res.json(await commitImport(store,req.actor!,importCsv(req.body),text(req.body.previewHash,'Preview hash'),text(req.body.reason,'Import reason'))));
+  app.post('/api/imports/commit',requireAuth,authorize(store,'batches.manage'),async (req:AuthenticatedRequest,res)=>res.json(await commitImport(store,req.actor!,importCsv(req.body),text(req.body.previewHash,'Preview hash'),text(req.body.reason,'Import reason'),new Date(),req.body.startRow ?? 0)));
 }

@@ -3,7 +3,7 @@ import { isHubProfile, type HubDisposalMonitoring, type HubDisposalRecord } from
 import type { DashboardSourceSnapshot } from './store.js';
 import type { MaterialBatchRecord, UserRecord } from './types.js';
 
-export function hubDisposalEvidence(source: DashboardSourceSnapshot, selected: MaterialBatchRecord[], actor: UserRecord, now = new Date()) {
+export function hubDisposalEvidence(source: DashboardSourceSnapshot, selected: MaterialBatchRecord[], actor: UserRecord, now = new Date(), siteTotals = false) {
   const available = source.hubDisposals?.available ?? false;
   const batches = new Map(selected.map(item => [item.id, item]));
   const listings = new Map(source.listings.map(item => [item.id, item]));
@@ -11,7 +11,7 @@ export function hubDisposalEvidence(source: DashboardSourceSnapshot, selected: M
   const unique = new Map<string, HubDisposalRecord>(), conflicts = new Set<string>();
   const businessEvidence = (item: HubDisposalRecord) => [item.listingId, item.operatorId, item.weightKg, Date.parse(item.disposedAt), item.reason.trim()];
   for (const item of available ? source.hubDisposals!.records : []) {
-    if (isHubProfile(actor) && item.operatorId !== actor.id) continue;
+    if (!siteTotals && isHubProfile(actor) && item.operatorId !== actor.id) continue;
     const previous = unique.get(item.id);
     if (previous && !isDeepStrictEqual(businessEvidence(previous), businessEvidence(item))) conflicts.add(item.id);
     if (!previous) unique.set(item.id, item);

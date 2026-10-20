@@ -165,7 +165,7 @@ try {
     await page.waitForFunction(() => document.querySelector('main [aria-hidden="false"] tbody')?.children.length === 10);
     assert.equal(await table().locator('tr').count(), 10);
     await pager().getByRole('button', { name: 'Next page', exact: true }).click();
-    await table().getByText('UI-LIST-010 · Demo', { exact: true }).waitFor();
+    await table().getByText('Material listing 10 (demo)', { exact: true }).waitFor();
     await pager().getByRole('button', { name: 'Last page', exact: true }).click();
     assert.equal(await table().locator('tr').count(), 7);
     await page.getByLabel('Listing status', { exact: true }).selectOption('Available');

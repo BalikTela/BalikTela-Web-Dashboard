@@ -7,7 +7,7 @@ export type Permission =
   | 'listings.read' | 'listings.create' | 'listings.match' | 'listings.manage' | 'offers.read' | 'offers.create' | 'offers.manage' | 'batches.read' | 'batches.manage'
   | 'facilities.read' | 'facilities.manage' | 'transfers.read' | 'transfers.manage' | 'recovery.read' | 'recovery.create' | 'recovery.manage'
   | 'analytics.read' | 'analytics.predictive.read' | 'dataQuality.read' | 'audit.read' | 'configuration.read' | 'configuration.manage'
-  | 'governance.read' | 'reports.read' | 'reports.export' | 'messages.read' | 'messages.create' | 'wallet.read'
+  | 'governance.read' | 'reports.read' | 'reports.export' | 'messages.read' | 'messages.create' | 'wallet.read' | 'rewards.read'
   | 'hubs.read' | 'hubs.manage' | 'weighing.read';
 
 export interface AccessSummary {
@@ -132,7 +132,7 @@ export interface WalletEntry {
   id: string;
   userId: string;
   transferId: string | null;
-  type: 'Earned' | 'Redeemed' | 'Adjustment';
+  type: 'Earned' | 'Redeemed' | 'Reversal' | 'Adjustment';
   credits: number;
   description: string;
   createdAt: string;
@@ -190,6 +190,7 @@ export interface OperationsAnalytics {
 }
 
 export interface DashboardAnalytics {
+  hubStorage?: import('../shared/hubStorage.js').HubStorageAnalytics;
   hubFacilities?: import('../shared/hubFacilities.js').HubFacilityAnalytics;
   hubOperations?: import('../shared/hubs.js').HubOperationsMonitoring['summary'];
   hubDisposal?: Pick<import('../shared/hubs.js').HubDisposalMonitoring, 'available' | 'summary'>;
@@ -230,13 +231,14 @@ export interface MaterialBatch {
 }
 
 export interface Organization {
-  id: string; name: string; type: string; verification: PlatformUser['verification']; recordLabel: 'Demo' | 'Sample'; region: string; city: string;
-  status: 'Confirmed demo' | 'Prospective sample' | 'Inactive'; serviceAreas: string[]; acceptedMaterials: string[]; contactEmail: string;
+  id: string; name: string; type: string; verification: import('../shared/registry.js').RegistryVerification; recordLabel: 'Operational' | 'Demo' | 'Sample'; region: string; city: string;
+  status: import('../shared/registry.js').OrganizationStatus; serviceAreas: string[]; acceptedMaterials: string[]; contactEmail: string;
 }
 
 export interface PlatformFacility {
+  storageCapacityKg?: number | null;
   id: string; organizationId: string; name: string; type: 'Collection point' | 'Sorting facility' | 'Recycler' | 'Upcycling hub' | 'Repair hub'; city: string; region: string;
-  serviceAreas: string[]; acceptedMaterials: string[]; monthlyCapacityKg: number; currentIntakeKg: number; status: 'Available' | 'Near capacity' | 'Maintenance' | 'Pilot onboarding' | 'Inactive'; verification: PlatformUser['verification']; isDemo: boolean;
+  serviceAreas: string[]; acceptedMaterials: string[]; monthlyCapacityKg: number; currentIntakeKg: number; status: 'Available' | 'Near capacity' | 'Maintenance' | 'Pilot onboarding' | 'Inactive'; verification: import('../shared/registry.js').RegistryVerification; isDemo: boolean;
 }
 
 export interface RecoveryRecord {

@@ -27,6 +27,7 @@ export interface DashboardSourceSnapshot {
 }
 
 export interface Store {
+  loadRewards?(query: import('../shared/rewards.js').RewardQuery): Promise<import('../shared/rewards.js').RewardsPage>;
   mode: 'supabase' | 'mongodb' | 'memory-demo';
   all<K extends CollectionName>(name: K): Promise<RecordFor<K>[]>;
   findById<K extends CollectionName>(name: K, id: string): Promise<RecordFor<K> | null>;

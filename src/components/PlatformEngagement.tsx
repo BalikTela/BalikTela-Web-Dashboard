@@ -18,7 +18,6 @@ export function PlatformEngagement({ data, periodLabel }: { data: EngagementMetr
         ))}
       </div>
       <p className="mt-4 text-xs leading-5 text-slate-500">Accounts are counted as of {new Date(data.accountAsOf).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })} by profile geography, organization and role, not textile category. Listings, requests and transfers follow the selected batch cohort. Exports follow audit-event dates, not material filters. Combined material activity retains the PoC reporting scope.</p>
-      <dl className="mt-4 grid gap-3 border-t border-slate-200 pt-4 text-xs sm:grid-cols-3">{['Active users', 'Sessions', 'Average session duration'].map(label => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-700">Not available</dd></div>)}</dl>
     </section>
   );
 }

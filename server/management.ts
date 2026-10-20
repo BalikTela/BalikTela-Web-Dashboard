@@ -8,6 +8,7 @@ import type { FacilityRecord, MaterialBatchRecord, OrganizationRecord, RecoveryR
 import { canModerateListing, CIRCULAR_PATHWAYS, MATERIAL_CONDITIONS } from '../shared/workflows.js';
 import { REGISTRY_WEIGHT_STATUSES } from '../shared/registryWeights.js';
 import { recoveryMassBalance } from '../shared/recovery.js';
+import { ORGANIZATION_STATUSES, ORGANIZATION_TYPES, REGISTRY_VERIFICATIONS, organizationStatus, organizationType, registryVerification } from '../shared/registry.js';
 
 export class ManagementError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -32,7 +33,6 @@ export function list(value: unknown, label: string) {
   if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) throw new ManagementError(`${label} must be a list of text values.`);
   return [...new Set(value.map(item => text(item, label)).filter(Boolean))];
 }
-const orgTypes = ['Research','Government','Producer','Recycler','NGO','LGU/Collection Point','Upcycler','Research institution','Government agency','Producer/Retailer','NGO/Community','LGU/MRF','Collection point','Other'] as const;
 const facilityTypes = ['Collection point','Sorting facility','Recycler','Upcycling hub','Repair hub'] as const;
 const pathways = CIRCULAR_PATHWAYS;
 const wasteSources = ['Pre-consumer','Post-consumer','Obsolete inventory','Household','Institutional','Unknown'] as const;
@@ -42,27 +42,30 @@ const weights = ['Estimated','Measured','Verified'] as const;
 const newId = (prefix: string) => `${prefix}-${randomUUID()}`;
 
 export function organizationValues(body: Record<string, unknown>, current?: OrganizationRecord): OrganizationRecord {
+  if (body.recordLabel !== undefined && body.recordLabel !== (current?.recordLabel ?? 'Operational')) throw new ManagementError('Record classification cannot be changed. New organizations are operational records.');
   const input = { ...current, ...body };
   const email = text(input.contactEmail, 'Contact email', false);
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ManagementError('Enter a valid contact email.');
   return {
-    id: current?.id ?? newId('ORG'), name: text(input.name, 'Organization name'), type: choice(input.type, orgTypes, 'Organization type'),
+    id: current?.id ?? newId('ORG'), name: text(input.name, 'Organization name'), type: choice(organizationType(input.type), ORGANIZATION_TYPES, 'Organization type'),
     city: text(input.city, 'City'), region: text(input.region, 'Region'), contactEmail: email,
     serviceAreas: list(input.serviceAreas ?? [], 'Service areas'), acceptedMaterials: list(input.acceptedMaterials ?? [], 'Accepted materials'),
-    recordLabel: choice(input.recordLabel ?? 'Sample', ['Demo','Sample'], 'Record label'),
-    status: choice(input.status ?? 'Prospective sample', ['Confirmed demo','Prospective sample','Inactive'], 'Organization status'),
-    verification: choice(input.verification ?? 'Pending demo review', ['Demo verified','Pending demo review'], 'Verification'),
+    recordLabel: current?.recordLabel ?? 'Operational',
+    status: choice(organizationStatus(input.status as OrganizationRecord['status'] ?? 'Pending review'), ORGANIZATION_STATUSES, 'Organization status'),
+    verification: choice(registryVerification(input.verification as OrganizationRecord['verification'] ?? 'Pending review'), REGISTRY_VERIFICATIONS, 'Verification'),
   };
 }
 export function facilityValues(body: Record<string, unknown>, current?: FacilityRecord): FacilityRecord {
+  if (body.isDemo !== undefined && body.isDemo !== (current?.isDemo ?? false)) throw new ManagementError('Record classification cannot be changed. New Hubs are operational records.');
   const input = { ...current, ...body };
   return {
     id: current?.id ?? newId('FAC'), organizationId: text(input.organizationId, 'Organization'), name: text(input.name, 'Facility name'),
     type: choice(input.type ?? 'Collection point', facilityTypes, 'Facility type'), city: text(input.city, 'City'), region: text(input.region, 'Region'),
     serviceAreas: list(input.serviceAreas ?? [], 'Service areas'), acceptedMaterials: list(input.acceptedMaterials ?? [], 'Accepted materials'),
-    monthlyCapacityKg: number(input.monthlyCapacityKg ?? 0, 'Monthly capacity'), currentIntakeKg: number(input.currentIntakeKg ?? 0, 'Current intake'),
+    monthlyCapacityKg: current?.monthlyCapacityKg ?? 0, currentIntakeKg: current?.currentIntakeKg ?? 0,
+    storageCapacityKg: !current || Object.hasOwn(body, 'storageCapacityKg') ? number(body.storageCapacityKg, 'Storage capacity', 0.001) : current.storageCapacityKg ?? null,
     status: choice(input.status ?? 'Pilot onboarding', ['Available','Near capacity','Maintenance','Pilot onboarding','Inactive'], 'Facility status'),
-    verification: choice(input.verification ?? 'Pending demo review', ['Demo verified','Pending demo review'], 'Verification'), isDemo: current?.isDemo ?? body.isDemo === true,
+    verification: choice(registryVerification(input.verification as FacilityRecord['verification'] ?? 'Pending review'), REGISTRY_VERIFICATIONS, 'Verification'), isDemo: current?.isDemo ?? false,
   };
 }
 export async function saveManagement(store: Store, actor: UserRecord, mutations: RecordMutation[], action: string, entityId: string, reason: string) {

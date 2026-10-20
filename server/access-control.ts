@@ -17,7 +17,7 @@ export const PERMISSIONS = [
   'analytics.read', 'analytics.predictive.read', 'dataQuality.read', 'audit.read',
   'configuration.read', 'configuration.manage',
   'governance.read', 'reports.read', 'reports.export',
-  'messages.read', 'messages.create', 'wallet.read',
+  'messages.read', 'messages.create', 'wallet.read', 'rewards.read',
   'hubs.read', 'hubs.manage', 'weighing.read',
 ] as const;
 

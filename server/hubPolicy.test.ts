@@ -111,6 +111,64 @@ test('Hub scope excludes other operators and direct exchange listings without ha
   assert.equal(buildHubOperations(source, [batch], admin, 'All time', now).summary.assigned, 0);
 });
 
+test('consumer Hub submissions count declared batch weight once and stay cumulative after partial or full disposal', async () => {
+  const {source,hub,admin,batch,listing}=await fixture(), original=structuredClone(source);
+  source.listings.push({...listing},{...listing,id:'SAME-BATCH-SECOND-LISTING'});
+  let result=buildHubOperations(source,[batch],admin,'All time',now);
+  assert.equal(result.summary.sentKg,100);assert.equal(result.summary.sentBatches,1);assert.equal(result.summary.sentMissingWeights,0);
+  assert.equal(result.records.filter(row=>row.sentKg!==null).length,1);
+  assert.equal(result.summary.collectedKg,null,'Submission weights must not become physical receipts.');
+  assert.equal(result.records.length,2,'Duplicate listing IDs must not create extra table records.');
+  source.hubDisposals!.records=[{id:'SENT-DISPOSAL',listingId:listing.id,operatorId:hub.id,weightKg:20,reason:'Fixture disposal',disposedAt:'2026-10-18T01:00:00Z',listingTitle:listing.title,category:listing.textileType}];
+  source.listings[0]={...listing,availableWeightKg:80,disposedWeightKg:20};
+  result=buildHubOperations(source,[batch],admin,'All time',now);
+  assert.equal(result.summary.sentKg,100);assert.equal(result.summary.disposedKg,20);
+  source.hubDisposals!.records[0].weightKg=100;
+  source.listings=source.listings.map(item=>({...item,status:'Archived',disposedAt:'2026-10-18T01:00:00Z',availableWeightKg:0}));
+  result=buildHubOperations(source,[{...batch,currentStatus:'Archived',currentWeightKg:0}],admin,'All time',now);
+  assert.equal(result.summary.sentKg,100);assert.equal(result.summary.disposedKg,100);
+  assert.equal(result.regions.reduce((sum,row)=>sum+(row.sentKg??0),0),100);
+  const aggregate=buildHubOperations(source,[batch],{...admin,role:'Government'},'All time',now);
+  assert.deepEqual(aggregate.records,[]);assert.equal(aggregate.summary.sentKg,100);
+  assert.deepEqual(source.allBatches,original.allBatches,'Analytics must never rewrite material data.');
+});
+
+test('Hub submission totals exclude direct exchanges, drafts, remainders and non-consumers, and disclose unknown weights', async () => {
+  const {source,hub,admin,batch,listing}=await fixture();
+  for(const excluded of [{...listing,deliveryRoute:'direct' as const},{...listing,status:'Draft' as const,canonicalStatus:'draft'},{...listing,remainderOfId:'ORIGINAL'}]){
+    const result=buildHubOperations({...source,listings:[excluded]},[batch],admin,'All time',now);
+    assert.equal(result.summary.sentKg,0);assert.equal(result.summary.sentBatches,0);
+  }
+  const producer=source.users.find(item=>item.role==='Producer')!;
+  const nonConsumer=buildHubOperations({...source,listings:[{...listing,ownerId:producer.id}]},[{...batch,sourceUserId:producer.id}],admin,'All time',now);
+  assert.equal(nonConsumer.summary.sentKg,0);
+  for(const weight of [null,Number.NaN,-1]){
+    const result=buildHubOperations(source,[{...batch,declaredWeightKg:weight}],admin,'All time',now);
+    assert.equal(result.summary.sentKg,null);assert.equal(result.summary.sentMissingWeights,1);
+  }
+  const missing={...batch,id:'MISSING-SENT',declaredWeightKg:null};
+  const mixed=buildHubOperations({...source,listings:[listing,{...listing,id:'MISSING-LISTING',batchId:missing.id}]},[batch,missing],admin,'All time',now);
+  assert.equal(mixed.summary.sentKg,100);assert.equal(mixed.summary.sentBatches,2);assert.equal(mixed.summary.sentMissingWeights,1);
+  const future=buildHubOperations({...source,listings:[{...listing,createdAt:'2027-01-01T00:00:00Z'}]},[batch],hub,'All time',now);
+  assert.equal(future.summary.sentBatches,0);
+});
+
+test('Hub sent totals respect operator scope and withhold ambiguous multi-Hub batch attribution', async () => {
+  const {source,hub,admin,batch,listing}=await fixture();
+  const other={...hub,id:'OTHER-SENT-HUB'};
+  source.users.push(other);
+  const otherBatch={...batch,id:'OTHER-SENT-BATCH',declaredWeightKg:70};
+  source.listings.push({...listing,id:'OTHER-SENT-LISTING',batchId:otherBatch.id,weighingHubId:other.id});
+  const batches=[batch,otherBatch];
+  assert.equal(buildHubOperations(source,batches,admin,'All time',now).summary.sentKg,170);
+  assert.equal(buildHubOperations(source,batches,hub,'All time',now).summary.sentKg,100);
+  assert.equal(buildHubOperations(source,batches,other,'All time',now).summary.sentKg,70);
+  source.listings.push({...listing,id:'AMBIGUOUS-SENT-LISTING',weighingHubId:other.id});
+  const conflict=buildHubOperations(source,batches,hub,'All time',now);
+  assert.equal(conflict.summary.sentKg,null);assert.equal(conflict.summary.sentMissingWeights,1);
+  assert.equal(conflict.records[0].sentWeightBasis,'Hub assignment needs review');
+});
+
 test('Hub operations API enforces current legacy identity, private scoping and server-side processing denial', async () => {
   const { source, hub, batch } = await fixture(), data = await createSeedData();
   const legacy = { ...hub, role: 'Recycler' as const };

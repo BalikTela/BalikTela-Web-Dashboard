@@ -1,6 +1,7 @@
 import type { Document } from 'mongodb';
 import type { DatabaseShape, LifecycleEventRecord } from '../types.js';
 import { BATCH_STATUSES, LISTING_STATUSES, OFFER_STATUSES, TRANSFER_STATUSES, canonicalStatus } from '../../shared/workflows.js';
+import { organizationType } from '../../shared/registry.js';
 
 export type DomainCollectionName = keyof DatabaseShape;
 export type DomainRecord<K extends DomainCollectionName> = DatabaseShape[K][number];
@@ -17,6 +18,8 @@ const accountStatusToDb = { Active: 'active', 'Pending verification': 'pending_v
 const accountStatusFromDb = { active: 'Active', pending_verification: 'Pending verification', suspended: 'Suspended', deactivated: 'Deactivated' } as const;
 const verificationToDb = { 'Demo verified': 'verified', 'Pending demo review': 'pending' } as const;
 const verificationFromDb = { verified: 'Demo verified', pending: 'Pending demo review', rejected: 'Pending demo review', suspended: 'Pending demo review' } as const;
+const registryVerificationToDb = { 'Demo verified': 'verified', 'Pending demo review': 'pending', Verified: 'verified', 'Pending review': 'pending', Rejected: 'rejected', Suspended: 'suspended' } as const;
+const registryVerificationFromDb = { verified: 'Verified', pending: 'Pending review', rejected: 'Rejected', suspended: 'Suspended' } as const;
 const listingStatusFromDb = LISTING_STATUSES;
 const offerStatusFromDb = OFFER_STATUSES;
 const transferStatusFromDb = TRANSFER_STATUSES;
@@ -29,8 +32,7 @@ const batchStatusFromDb: Record<string, string> = BATCH_STATUSES;
 const measurementStageToDb: Record<string, string> = { Declaration: 'declaration', Handover: 'handover', Receipt: 'receipt', Validation: 'validation', Recovery: 'recovery_output' };
 const measurementStageFromDb: Record<string, string> = { declaration: 'Declaration', listing: 'Declaration', handover: 'Handover', collection: 'Receipt', receipt: 'Receipt', processing_input: 'Recovery', recovery_output: 'Recovery', rejection: 'Recovery', loss: 'Recovery', validation: 'Validation' };
 
-const organizationTypeToDb = (type: string) => ({ Research: 'Research institution', Government: 'Government agency', Producer: 'Producer/Retailer', Recycler: 'Recycler', NGO: 'NGO/Community', 'LGU/Collection Point': 'LGU/MRF', Upcycler: 'Upcycler' }[type] ?? type);
-const organizationStatusToDb = (status: string) => ({ 'Confirmed demo': 'active', 'Prospective sample': 'prospective', Inactive: 'inactive' }[status] ?? 'prospective');
+const organizationStatusToDb = (status: string) => ({ Active: 'active', 'Pending review': 'prospective', 'Confirmed demo': 'active', 'Prospective sample': 'prospective', Inactive: 'inactive' }[status] ?? 'prospective');
 const facilityStatusToDb = (status: string) => ({ Available: 'available', 'Near capacity': 'near_capacity', Maintenance: 'maintenance', 'Pilot onboarding': 'onboarding', Inactive: 'inactive' }[status] ?? 'onboarding');
 const facilityStatusFromDb = (status: string) => ({ available: 'Available', near_capacity: 'Near capacity', maintenance: 'Maintenance', onboarding: 'Pilot onboarding', inactive: 'Inactive' }[status] ?? 'Pilot onboarding');
 
@@ -47,7 +49,7 @@ export function encodeRecord<K extends DomainCollectionName>(name: K, record: Do
       trust_placeholder: r.trustPlaceholder, last_login_at: null, created_at: toDate(r.joinedAt), updated_at: now(),
     };
     case 'organizations': return {
-      _id: r.id, name: r.name, type: organizationTypeToDb(r.type), verification_status: verificationToDb[r.verification as keyof typeof verificationToDb], status: organizationStatusToDb(r.status),
+      _id: r.id, name: r.name, type: organizationType(r.type) ?? r.type, verification_status: registryVerificationToDb[r.verification as keyof typeof registryVerificationToDb], status: organizationStatusToDb(r.status),
       record_label: String(r.recordLabel).toLowerCase(), region: r.region, city: r.city, address: [r.city, r.region].filter(Boolean).join(', '), service_areas: r.serviceAreas,
       accepted_materials: r.acceptedMaterials, contact_email: r.contactEmail, created_at: now(), updated_at: now(),
     };
@@ -55,7 +57,8 @@ export function encodeRecord<K extends DomainCollectionName>(name: K, record: Do
       _id: r.id, organization_id: r.organizationId, name: r.name, type: r.type, address: [r.city, r.region].filter(Boolean).join(', '), city: r.city, region: r.region,
       location: { type: 'Point', coordinates: [0, 0] }, categories: r.acceptedMaterials, pathways: ['Collection', 'Reuse', 'Upcycling', 'Recycling', 'Recovery'],
       schedule: 'Schedule pending confirmation', instructions: '', service_areas: r.serviceAreas, monthly_capacity_kg: r.monthlyCapacityKg, current_intake_kg: r.currentIntakeKg,
-      verification_status: verificationToDb[r.verification as keyof typeof verificationToDb], status: facilityStatusToDb(r.status), is_demo: r.isDemo, created_at: now(), updated_at: now(),
+      ...(r.storageCapacityKg !== undefined ? { storage_capacity_kg: r.storageCapacityKg } : {}),
+      verification_status: registryVerificationToDb[r.verification as keyof typeof registryVerificationToDb], status: facilityStatusToDb(r.status), is_demo: r.isDemo, created_at: now(), updated_at: now(),
     };
     case 'materialBatches': return {
       _id: r.id, source_user_id: r.sourceUserId, source_organization_id: r.sourceOrganizationId, material_category: r.materialCategory, composition: '', waste_source: r.wasteSource,
@@ -106,7 +109,7 @@ export function encodeRecord<K extends DomainCollectionName>(name: K, record: Do
       _id: r.id, conversation_id: r.conversationId, sender_id: r.senderId, sender_name: r.senderName, body: r.body, read_by: [], created_at: toDate(r.createdAt), edited_at: null,
     };
     case 'walletEntries': return {
-      _id: r.id, user_id: r.userId, transfer_id: r.transferId, rule_id: null, points: Math.round(r.credits), entry_type: ({ Earned: 'earned', Redeemed: 'redemption', Adjustment: 'adjustment' } as Record<string, string>)[r.type],
+      _id: r.id, user_id: r.userId, transfer_id: r.transferId, rule_id: null, points: Math.round(r.credits), entry_type: ({ Earned: 'earned', Redeemed: 'redemption', Reversal: 'reversal', Adjustment: 'adjustment' } as Record<string, string>)[r.type],
       title: r.description, idempotency_key: `web-${r.id}`, created_at: toDate(r.createdAt),
     };
     case 'auditRecords': return {
@@ -143,13 +146,14 @@ export function decodeRecord<K extends DomainCollectionName>(name: K, document: 
       trustPlaceholder: Number(value(d.trust_placeholder, 50)), profile: { ageGroup: value(d.profile?.age_group, ''), organizationSize: value(d.profile?.organization_size, ''), productionVolumeKg: Number(value(d.profile?.production_volume_kg, 0)), recyclingPractices: value(d.profile?.recycling_practices, ''), acceptedTextiles: stringArray(d.profile?.accepted_textiles), sustainabilityInterests: stringArray(d.profile?.sustainability_interests) },
     }; break;
     case 'organizations': decoded = {
-      id: String(d._id), name: d.name, type: d.type, verification: verificationFromDb[d.verification_status as keyof typeof verificationFromDb], recordLabel: d.record_label === 'demo' ? 'Demo' : 'Sample',
-      region: d.region, city: d.city, status: d.status === 'active' ? 'Confirmed demo' : d.status === 'inactive' ? 'Inactive' : 'Prospective sample', serviceAreas: stringArray(d.service_areas), acceptedMaterials: stringArray(d.accepted_materials), contactEmail: value(d.contact_email, ''),
+      id: String(d._id), name: d.name, type: organizationType(d.type) ?? d.type, verification: registryVerificationFromDb[d.verification_status as keyof typeof registryVerificationFromDb] ?? 'Pending review', recordLabel: d.record_label === 'operational' ? 'Operational' : d.record_label === 'demo' ? 'Demo' : 'Sample',
+      region: d.region, city: d.city, status: d.status === 'active' ? 'Active' : d.status === 'inactive' ? 'Inactive' : 'Pending review', serviceAreas: stringArray(d.service_areas), acceptedMaterials: stringArray(d.accepted_materials), contactEmail: value(d.contact_email, ''),
     }; break;
     case 'facilities': decoded = {
       id: String(d._id), organizationId: d.organization_id, name: d.name, type: d.type, city: d.city, region: d.region, serviceAreas: stringArray(d.service_areas), acceptedMaterials: stringArray(d.categories),
       monthlyCapacityKg: Number(value(d.monthly_capacity_kg, 0)), currentIntakeKg: Number(value(d.current_intake_kg, 0)), status: facilityStatusFromDb(d.status),
-      verification: verificationFromDb[d.verification_status as keyof typeof verificationFromDb], isDemo: Boolean(d.is_demo),
+      ...(Object.hasOwn(d, 'storage_capacity_kg') ? { storageCapacityKg: nullableNumber(d.storage_capacity_kg) } : {}),
+      verification: registryVerificationFromDb[d.verification_status as keyof typeof registryVerificationFromDb] ?? 'Pending review', isDemo: Boolean(d.is_demo),
     }; break;
     case 'materialBatches': decoded = {
       id: String(d._id), sourceUserId: d.source_user_id, sourceOrganizationId: value(d.source_organization_id, null), materialCategory: d.material_category, wasteSource: d.waste_source,
@@ -208,7 +212,7 @@ export function decodeRecord<K extends DomainCollectionName>(name: K, document: 
     }; break;
     case 'conversations': decoded = { id: String(d._id), listingId: d.listing_id, listingTitle: value(d._listing?.title, ''), participantIds: stringArray(d.participant_ids), participantNames: stringArray(d.participant_names), updatedAt: toIso(d.updated_at) }; break;
     case 'messages': decoded = { id: String(d._id), conversationId: d.conversation_id, senderId: d.sender_id, senderName: value(d.sender_name, d._sender?.name ?? ''), body: d.body, createdAt: toIso(d.created_at) }; break;
-    case 'walletEntries': decoded = { id: String(d._id), userId: d.user_id, transferId: value(d.transfer_id, null), type: ({ earned: 'Earned', redemption: 'Redeemed', reversal: 'Adjustment', adjustment: 'Adjustment' } as Record<string, string>)[d.entry_type], credits: Number(d.points), description: d.title, createdAt: toIso(d.created_at) }; break;
+    case 'walletEntries': decoded = { id: String(d._id), userId: d.user_id, transferId: value(d.transfer_id, null), type: ({ earned: 'Earned', redemption: 'Redeemed', reversal: 'Reversal', adjustment: 'Adjustment' } as Record<string, string>)[d.entry_type], credits: Number(d.points), description: d.title, createdAt: toIso(d.created_at) }; break;
     case 'auditRecords': decoded = { id: String(d._id), actorId: value(d.actor_id, ''), action: d.action, entityType: d.entity_type, entityId: d.entity_id, timestamp: toIso(d.occurred_at), details: value(d.details?.summary, JSON.stringify(d.details)) }; break;
     case 'systemInteractions': decoded = {
       id: String(d._id), userId: value(d.user_id, null), organizationId: value(d.organization_id, null), sessionId: value(d.session_id, null),

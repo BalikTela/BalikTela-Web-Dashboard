@@ -25,6 +25,13 @@ export class SupabaseStore implements Store {
 
   private table<K extends CollectionName>(name: K) { return WEB_PERSISTENCE_COLLECTION_MAP[name]; }
 
+  async loadRewards(query: import('../shared/rewards.js').RewardQuery): Promise<import('../shared/rewards.js').RewardsPage> {
+    const { data, error } = await this.client.rpc('dashboard_rewards', { p_view: query.view, p_page: query.page, p_limit: query.limit });
+    if (error) throw databaseError('read dashboard rewards', error);
+    if (!data) throw databaseError('read dashboard rewards', { message: 'Missing rewards response.' });
+    return data;
+  }
+
   async lookupImportRecords(lookups: ImportRecordLookup[]): Promise<ImportExistingRecord[]> {
     const records: ImportExistingRecord[] = [];
     let next = 0;

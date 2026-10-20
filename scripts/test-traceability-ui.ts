@@ -54,6 +54,10 @@ try {
     await active.getByRole('button',{name:'TRACEABILITY-OK',exact:true}).waitFor();
     assert.equal(offerRequests,0,'Transfer monitoring must not wait for an unrelated offers lookup.');
     assert.equal(await active.locator('thead th').first().innerText(),'Requester');
+    await active.getByRole('columnheader',{name:'Transaction ID',exact:true}).waitFor();
+    await active.getByRole('columnheader',{name:'Batch ID',exact:true}).waitFor();
+    assert.equal(await active.getByRole('columnheader',{name:'Transfer',exact:true}).count(),0);
+    assert.equal(await active.getByRole('columnheader',{name:'Batch',exact:true}).count(),0);
     await active.locator('tbody').getByText('Metro Textile Review Requester',{exact:true}).waitFor();
     const search=active.getByRole('textbox',{name:'Search transfers',exact:true});
     await search.fill('  METRO TEXTILE  ');

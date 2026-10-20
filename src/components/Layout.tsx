@@ -1,7 +1,7 @@
 import {
   BarChart3, ChevronRight, CircleUserRound, ClipboardList, Factory, FileText, Home, LineChart, LogOut,
   MapPinned, Menu, ListChecks, Settings, UserRoundCog, UsersRound, X,
-  PackageSearch, Activity, ShieldAlert, Landmark, Building2, History,
+  PackageSearch, Activity, ShieldAlert, Landmark, Building2, History, Trophy,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { PageKey } from '../App';
@@ -28,6 +28,7 @@ const navigation: Array<{ key: PageKey; label: string; icon: React.ComponentType
   { key: 'reports', label: 'Reports', icon: FileText, section: 'Manage' },
   { key: 'organizations', label: 'Organizations', icon: Building2, section: 'Manage' },
   { key: 'users', label: 'User Accounts', icon: UserRoundCog, section: 'Manage' },
+  { key: 'rewards', label: 'Rewards', icon: Trophy, section: 'Manage' },
   { key: 'audit', label: 'Audit Trail', icon: History, section: 'Manage' },
   { key: 'profile', label: 'My Profile', icon: CircleUserRound, section: 'Manage' },
   { key: 'settings', label: 'Configuration', icon: Settings, section: 'Manage' },
@@ -37,17 +38,18 @@ const pageMeta: Record<PageKey, { title: string; description: string }> = {
   overview: { title: 'Overview', description: 'Textile recovery and circular economy performance' },
   listings: { title: 'Listing Oversight', description: 'Monitor mobile-originated material listings and availability' },
   materials: { title: 'Material Registry', description: 'Batch provenance, measurements, custody, and pathway' },
-  operations: { title: 'Recovery Monitoring', description: 'Hub collection and disposal, with separate recovery evidence' },
+  operations: { title: 'Recovery Monitoring', description: 'Hub collection, management, and disposal' },
   waste: { title: 'Waste Analytics', description: 'Monitor waste streams, recovery rates, and category mix' },
   transactions: { title: 'Transactions', description: 'Trace textile movement through the circular network' },
   stakeholders: { title: 'Stakeholders', description: 'Participation and performance across the ecosystem' },
-  facilities: { title: 'Hub Facilities', description: 'Registered Hubs, handling capacity, utilization, and disposal analytics' },
+  facilities: { title: 'Hub Facilities', description: 'Hub storage capacity, current utilization, and intake availability' },
   geographic: { title: 'Geographic Insights', description: 'Regional activity and collection coverage' },
   advanced: { title: 'Advanced Analytics', description: 'Diagnostic and predictive views' },
   quality: { title: 'Data Quality', description: 'Validation coverage, discrepancies, and integrity findings' },
   governance: { title: 'Governance & Policy', description: 'Policy monitoring, regional performance, and accountable evidence' },
   reports: { title: 'Reports', description: 'Exportable summaries for program stakeholders' },
   users: { title: 'User Accounts', description: 'Role, consent, verification, and profile oversight' },
+  rewards: { title: 'Rewards & Leaderboard', description: 'Consumer points and reward activity' },
   organizations: { title: 'Organizations', description: 'Organization and Hub registry' },
   audit: { title: 'Audit Trail', description: 'Sensitive changes, exports, and lifecycle actions' },
   profile: { title: 'My Profile', description: 'Institutional identity, organization scope, consent, and verification' },

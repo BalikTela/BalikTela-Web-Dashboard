@@ -10,38 +10,41 @@ import { SummaryCard } from '../components/SummaryCard';
 import type { DashboardAnalytics } from '../platformTypes';
 
 export function Facilities({ data }: { data: DashboardAnalytics }) {
-  const rows = data.facilities;
+  const storage = data.hubStorage;
+  const rows = storage?.rows ?? [];
   const capacity = rows.reduce((sum, item) => sum + item.capacityKg, 0);
-  const intake = rows.reduce((sum, item) => sum + item.intakeKg, 0);
-  const output = rows.reduce((sum, item) => sum + item.processedKg, 0);
-  const capacityConfigured = rows.length > 0 && rows.every(item => Number.isFinite(item.capacityKg) && item.capacityKg > 0);
-  const utilization = capacityConfigured ? percentage(intake, capacity) : null;
+  const complete = rows.length > 0 && rows.every(item => item.storedKg !== null && item.utilization !== null);
+  const held = complete ? rows.reduce((sum, item) => sum + item.storedKg!, 0) : null;
+  const utilization = held !== null && capacity > 0 ? percentage(held, capacity) : null;
+  const available = rows.length > 0 && rows.every(item => item.availableToReceiveKg !== null)
+    ? rows.reduce((sum, item) => sum + (item.status === 'Available' || storage?.aggregateOnly ? item.availableToReceiveKg! : 0), 0) : null;
   return <div className="space-y-5">
+    <p className="border-l-2 border-amber-500 pl-3 text-xs leading-5 text-amber-900">{storage?.illustrativeCapacity?'Some Hubs use labeled illustrative storage limits, not surveyed capacities. ':''}Current stock and incoming reservations include all recorded history and textile types, independent of the selected reporting dates. Mobile selection enforcement is not yet connected.</p>
     <section className="stagger-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <SummaryCard label={data.metadata.aggregateOnly ? 'Regional Hub groups' : 'Registered Hubs'} value={String(rows.length)} detail="Matching regional and textile filters" icon={Factory} />
-      <SummaryCard label="Period capacity" value={capacity > 0 ? formatMass(capacity) : 'Not configured'} detail={data.metadata.periodLabel} icon={Gauge} tone="blue" />
-      <SummaryCard label="Network utilization" value={utilization === null ? 'Not available' : `${utilization}%`} detail="Recorded intake / prorated period capacity" icon={Activity} tone={utilization !== null && utilization >= 85 ? 'amber' : 'emerald'} />
-      <SummaryCard label="Confirmed outcome output" value={rows.some(item => item.processedAvailable !== false) ? formatMass(output) : 'Pending evidence'} detail="Historical validated reuse and recycling output" icon={PackageCheck} tone="emerald" />
+      <SummaryCard label={storage?.aggregateOnly ? 'Regional Hub groups' : 'Registered Hubs'} value={String(rows.length)} detail="Matching Hub location and textile filters" icon={Factory} />
+      <SummaryCard label="Storage capacity" value={capacity > 0 ? formatMass(capacity) : 'Not configured'} detail={storage?.illustrativeCapacity?'Configured and labeled illustrative limits':'Configured physical storage limits'} icon={Gauge} tone="blue" />
+      <SummaryCard label="Storage utilization" value={utilization === null ? 'Not available' : `${utilization}%`} detail="Current stock held / storage capacity" icon={Activity} tone={utilization !== null && utilization >= 90 ? 'amber' : 'emerald'} />
+      <SummaryCard label="Storage headroom" value={formatMass(available, 'Not established')} detail="Below 90%; includes labeled simulations" icon={PackageCheck} tone="emerald" />
     </section>
+    {storage?.summary.unattributedBatches ? <p role="status" className="border-l-2 border-amber-500 pl-3 text-xs text-amber-900">{storage.summary.unattributedBatches} batches have ambiguous Hub assignments. Affected Hubs remain unavailable until the records are reconciled.</p> : null}
     <Panel>
-      <SectionHeader title="Hub Facilities" eyebrow="Capacity, utilization, and recorded performance" />
-      {rows.length ? <PaginatedRecords rows={rows} resetKey={data.metadata.periodLabel} label="Hub facilities">{pageRows => <div className="overflow-x-auto scrollbar-thin">
-        <table className="w-full min-w-[1050px] text-left text-sm" aria-label="Hub facility analytics">
-          <thead><tr><th>Hub</th><th>Location</th><th>Accepted textiles</th><th>Period capacity</th><th>Utilization</th><th>Recorded intake</th><th>Confirmed output</th><th>Processing time</th><th>Status</th></tr></thead>
+      <SectionHeader title="Hub Facilities" eyebrow="Storage, incoming reservations, and availability" />
+      {rows.length ? <PaginatedRecords rows={rows} resetKey={JSON.stringify(rows.map(item => item.id))} label="Hub facilities">{pageRows => <div className="overflow-x-auto scrollbar-thin">
+        <table className="w-full min-w-[1200px] text-left text-sm" aria-label="Hub facility analytics">
+          <thead><tr><th>Hub</th><th>Location</th><th>Accepted textiles</th><th>Storage capacity</th><th>Stock held</th><th>Incoming reservations</th><th>Utilization</th><th>Recorded disposal</th><th className="sticky right-0 z-10 min-w-40 border-l border-slate-200 bg-white pl-3">Status</th></tr></thead>
           <tbody className="divide-y divide-textile-thread">{pageRows.map(item => <tr key={item.id} className="data-row">
-            <td className="min-w-40 py-4 pr-4 font-semibold"><span>{item.name}</span></td>
+            <td className="min-w-40 py-4 pr-4 font-semibold"><span>{item.name}</span>{item.containsSimulation ? <p className="mt-1 text-xs font-normal text-amber-800">Includes synthetic simulation</p> : null}</td>
             <td className="pr-4">{item.location}</td><td className="max-w-44 pr-4">{item.acceptedTypes.join(', ') || 'Not configured'}</td>
-            <td className="whitespace-nowrap pr-4 tabular-nums">{item.capacityKg > 0 ? formatMass(item.capacityKg) : 'Not configured'}
-              {item.capacityKg > 0 ? <p className={`mt-1 text-xs ${item.intakeKg > item.capacityKg ? 'text-red-700' : 'text-slate-500'}`}>{formatMass(Math.abs(item.capacityKg - item.intakeKg))} {item.intakeKg > item.capacityKg ? 'over capacity' : 'remaining'}</p> : null}</td>
-            <td className="pr-4">{item.capacityKg > 0 ? <div className="flex items-center gap-2"><Progress value={Math.min(100, item.utilization)} className="w-24" indicatorClassName={item.utilization > 100 ? 'bg-red-600' : item.utilization >= 85 ? 'bg-amber-500' : undefined} /><span className="tabular-nums">{item.utilization}%</span></div> : 'Not available'}</td>
-            <td className="whitespace-nowrap pr-4 tabular-nums">{formatMass(item.intakeKg)}</td>
-            <td className="whitespace-nowrap pr-4 tabular-nums">{item.processedAvailable === false ? 'Pending evidence' : formatMass(item.processedKg)}</td>
-            <td className="whitespace-nowrap pr-4">{item.processingTimeDays > 0 && !data.metadata.aggregateOnly ? `${item.processingTimeDays} days` : 'Not reported'}</td>
-            <td><StatusBadge status={item.status} /></td>
+            <td className="whitespace-nowrap pr-4 tabular-nums">{item.capacityKg>0?formatMass(item.capacityKg):'Not configured'}{item.capacityKg>0?<p className="mt-1 text-xs text-slate-500">{formatMass(item.capacityKg * (storage?.thresholdPercent ?? 90) / 100)} intake cutoff</p>:null}{item.capacitySource==='Illustrative'?<p className="mt-1 text-xs text-amber-800">Illustrative limit</p>:null}</td>
+            <td className="pr-4 tabular-nums">{formatMass(item.storedKg, 'Not established')}{item.storedKg !== null && item.capacityKg>0 && item.storedKg > item.capacityKg ? <p className="mt-1 text-xs text-red-700">Exceeds storage limit</p> : null}</td>
+            <td className="pr-4 tabular-nums">{formatMass(item.reservedKg, 'Not established')}<p className="mt-1 text-xs text-slate-500">{formatMass(item.availableToReceiveKg, 'Unknown')} headroom</p></td>
+            <td className="pr-4">{item.utilization !== null ? <div className="flex items-center gap-2"><Progress value={Math.min(100, item.utilization)} className="w-24" indicatorClassName={item.status === 'Intake paused' ? 'bg-amber-500' : undefined} /><span className="tabular-nums">{item.utilization}%</span></div> : 'Not available'}{item.allocatedPercent !== null ? <p className="mt-1 text-xs text-slate-500">{item.allocatedPercent}% with reservations</p> : null}</td>
+            <td className="whitespace-nowrap pr-4 tabular-nums">{formatMass(item.disposedKg, 'Not available')}</td>
+            <td className="sticky right-0 border-l border-slate-200 bg-white pl-3"><StatusBadge status={item.status} />{item.simulationOnly ? <p className="mt-1 text-xs text-amber-800">Simulation only</p> : null}</td>
           </tr>)}</tbody>
         </table>
-      </div>}</PaginatedRecords> : <EmptyBlock label="No Hubs match these filters." />}
-      <p className="mt-4 border-t border-slate-200 pt-3 text-xs leading-5 text-slate-500">Utilization = recorded intake / period capacity. Available: below 85%; near capacity: 85% to below 100%; at capacity: 100%; over capacity: above 100%. Maintenance and onboarding remain operating conditions. Intake counts each batch once per Hub from a collection receipt or its earliest validated operation; later stages are not added again. This is handling volume, not storage occupancy or proof of disposal. Confirmed output is historical recovery evidence, not Hub disposal.</p>
+      </div>}</PaginatedRecords> : <EmptyBlock label="Storage analytics are unavailable or no Hubs match these filters." />}
+      <p className="mt-4 border-t border-slate-200 pt-3 text-xs leading-5 text-slate-500">Stock held = recorded physical intake minus unique disposal records and evidenced outbound movements. Pending consumer submissions reserve declared weight once per batch. Intake pauses when stock plus reservations reaches 90% of storage capacity; a new submission must fit within that limit. Supported mobile disposal records, monitored in Recovery Monitoring, release space on refresh. Missing or conflicting balances cannot establish availability; maintenance, inactive and unapproved Hubs remain unavailable.</p>
     </Panel>
   </div>;
 }

@@ -1,4 +1,5 @@
 import type { Document, IndexDescription } from 'mongodb';
+import { ORGANIZATION_TYPES } from '../../shared/registry.js';
 
 export const DATABASE_SCHEMA_VERSION = '1.1.0';
 
@@ -114,7 +115,7 @@ export const DATABASE_COLLECTIONS: CollectionSchemaDefinition[] = [
   collection('organizations', 'Institutional stakeholders and their verification state.',
     ['name', 'type', 'verification_status', 'status', 'region', 'city', 'service_areas', 'accepted_materials', 'created_at', 'updated_at'], {
       name: { bsonType: 'string', minLength: 1, maxLength: 240 },
-      type: { enum: ['Research institution', 'Government agency', 'Producer/Retailer', 'Recycler', 'Upcycler', 'NGO/Community', 'LGU/MRF', 'Collection point', 'Other'] },
+      type: { enum: [...ORGANIZATION_TYPES] },
       verification_status: { enum: ['pending', 'verified', 'rejected', 'suspended'] },
       status: { enum: ['active', 'prospective', 'inactive'] },
       record_label: { enum: ['operational', 'demo', 'sample'] },
@@ -209,6 +210,7 @@ export const DATABASE_COLLECTIONS: CollectionSchemaDefinition[] = [
       service_areas: stringArray,
       monthly_capacity_kg: nonNegative,
       current_intake_kg: nonNegative,
+      storage_capacity_kg: { bsonType: ['double', 'int', 'decimal', 'null'], minimum: 0.001 },
       is_demo: boolean,
       verification_status: { enum: ['pending', 'verified', 'rejected', 'suspended'] },
       status: { enum: ['available', 'near_capacity', 'maintenance', 'onboarding', 'inactive'] },

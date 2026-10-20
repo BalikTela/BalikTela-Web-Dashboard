@@ -11,6 +11,7 @@ export type UserRole =
   | 'Upcycler';
 
 export type VerificationStatus = 'Demo verified' | 'Pending demo review';
+import type { OrganizationStatus, RegistryVerification } from '../shared/registry.js';
 export type WeightStatus = 'Estimated' | 'Measured' | 'Verified';
 export type CircularPathway = typeof import('../shared/workflows.js').CIRCULAR_PATHWAYS[number];
 export type { ListingStatus, OfferStatus, TransferStatus } from '../shared/workflows.js';
@@ -62,11 +63,11 @@ export interface OrganizationRecord {
   id: string;
   name: string;
   type: string;
-  verification: VerificationStatus;
-  recordLabel: 'Demo' | 'Sample';
+  verification: RegistryVerification;
+  recordLabel: 'Operational' | 'Demo' | 'Sample';
   region: string;
   city: string;
-  status: 'Confirmed demo' | 'Prospective sample' | 'Inactive';
+  status: OrganizationStatus;
   serviceAreas: string[];
   acceptedMaterials: string[];
   contactEmail: string;
@@ -83,8 +84,9 @@ export interface FacilityRecord {
   acceptedMaterials: string[];
   monthlyCapacityKg: number;
   currentIntakeKg: number;
+  storageCapacityKg?: number | null;
   status: 'Available' | 'Near capacity' | 'Maintenance' | 'Pilot onboarding' | 'Inactive';
-  verification: VerificationStatus;
+  verification: RegistryVerification;
   isDemo: boolean;
 }
 
@@ -244,7 +246,7 @@ export interface WalletEntryRecord {
   id: string;
   userId: string;
   transferId: string | null;
-  type: 'Earned' | 'Redeemed' | 'Adjustment';
+  type: 'Earned' | 'Redeemed' | 'Reversal' | 'Adjustment';
   credits: number;
   description: string;
   createdAt: string;

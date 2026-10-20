@@ -14,6 +14,7 @@ import {
 import { createSeedData } from './seed.js';
 import { registerPredictiveRoutes } from './analytics/routes.js';
 import { registerHubRoutes } from './hubs.js';
+import { registerRewardRoutes } from './rewards.js';
 import { isHubCandidate, isHubProfile } from '../shared/hubs.js';
 import { textileRecyclability } from '../shared/materialClassification.js';
 import { recoveryMassBalance } from '../shared/recovery.js';
@@ -110,6 +111,7 @@ app.use((req, res, next) => {
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 registerSetupRoutes(app, { store, identity, enabled: usesSupabaseAuth });
 registerHubRoutes(app, store);
+registerRewardRoutes(app, store);
 
 app.post('/api/auth/login', async (req, res) => {
   const email = String(req.body.email ?? '').trim().toLowerCase();
@@ -506,7 +508,7 @@ app.patch('/api/users/:id', requireAuth, permit('users.manage'), async (req: Aut
     patch.organizationVerified=isHubCandidate({role}) ? target.organizationVerified === true : true;
   }
   if (isHubCandidate({role}) && (role !== target.role || organizationId !== target.organizationId)) patch.organizationVerified=false;
-  if (role !== target.role && role === 'BalikTela Hub') patch.stakeholder='Collection personnel';
+  if (role !== target.role) patch.stakeholder=role === 'BalikTela Hub' ? 'Collection personnel' : role === 'Consumer' ? 'Consumer / Beneficiary' : role === 'Recycler' ? 'Recycler / Upcycler' : role;
   if (accountStatus !== 'Active') patch.organizationVerified=false;
   const updated={...target,...patch};
   await saveManagement(store,req.actor!,[{name:'users',previous:target,record:updated}],'user.access.updated',target.id,String(req.body.reason ?? 'Account information or access updated.'));
@@ -614,8 +616,9 @@ app.post('/api/facilities', requireAuth, permit('facilities.manage'), async (req
   if (!organization || !String(req.body.name ?? '').trim()) return res.status(400).json({ message: 'A valid organization and facility name are required.' });
   if (!isWithinOperationalScope(actor, { organizationIds: [organization.id] })) return res.status(403).json({ message: 'The selected organization is outside your assigned scope.' });
   if (organization.status === 'Inactive') throw new ManagementError('Select an active organization.');
+  if (organization.recordLabel !== 'Operational') throw new ManagementError('Select an operational organization for a new Hub. Register the organization first if needed.');
   const facility = facilityValues({...req.body,city:req.body.city ?? organization.city,region:req.body.region ?? organization.region});
-  if (actor.role !== 'Administrator') { facility.verification='Pending demo review'; facility.status='Pilot onboarding'; }
+  if (actor.role !== 'Administrator') { facility.verification='Pending review'; facility.status='Pilot onboarding'; }
   await saveManagement(store,actor,[{name:'facilities',record:facility}],'facility.created',facility.id,'Facility registered.'); res.status(201).json({ facility });
 });
 
@@ -626,6 +629,7 @@ app.patch('/api/facilities/:id', requireAuth, permit('facilities.manage'), async
   const updated = facilityValues(req.body,current);
   const organization = await store.findById('organizations',updated.organizationId);
   if (!organization || !isWithinOperationalScope(actor,{organizationIds:[updated.organizationId]})) throw new ManagementError('Select an organization in your assigned scope.',403);
+  if (updated.organizationId !== current.organizationId && (organization.status === 'Inactive' || !current.isDemo && organization.recordLabel !== 'Operational')) throw new ManagementError('Select an active operational organization.');
   if (actor.role !== 'Administrator') updated.verification=current.verification;
   if (updated.organizationId !== current.organizationId && (await store.all('recoveryRecords')).some(item=>item.facilityId===current.id)) throw new ManagementError('A facility with recovery history cannot change organizations.',409);
   await saveManagement(store,actor,[{name:'facilities',previous:current,record:updated}],'facility.updated',current.id,String(req.body.reason ?? 'Facility information updated.'));

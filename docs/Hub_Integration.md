@@ -79,16 +79,29 @@ evidence stays unavailable rather than becoming a fabricated zero.
 Overview summaries, Recovery Monitoring and attributed Hub Facilities analytics
 use the same collection/disposal evidence and balance rules:
 
-- **Textiles Received by Hubs:** recorded physical intake, once per batch, with
-  the number of batches covered. Neither listing weights nor disposal records
-  are substituted for a missing receipt.
+- **Textiles Sent to Hubs (current Recovery Monitoring headline):** sum the
+  declared weights of unique Consumer-origin batches with a published, non-direct
+  Hub-linked listing in the selected handling cohort. Draft/unknown listings,
+  remainder listings and non-Consumer submissions do not add to this total.
+  Later disposal and archive history do not subtract from it. Batch IDs deduplicate
+  multiple listings; original declared mass, not remaining stock, is counted.
+  Missing/invalid weights and ambiguous multi-Hub assignments are disclosed and
+  excluded, not replaced by disposal, agreed transfer or estimated inventory sums.
+  Hub identities remain scoped; aggregate-only views omit record identities.
+  This is reported submission mass, not independent proof of physical receipt.
+  Physical collection evidence and recovery percentage formulas remain unchanged.
 - **Recorded Hub Disposal:** the existing unique disposal-ledger weights,
   including partial disposal and archived batch history.
-- **Awaiting Disposal:** intake minus recorded disposal and evidenced transfers
+- **Awaiting Disposal (internal balance / Hub Facilities only):** intake minus recorded disposal and evidenced transfers
   out. The total is published only when every linked batch has a reconciled
   balance and the disposal feed is available. A known empty balance is zero;
   missing intake, invalid disposal, ambiguous transfer evidence, multiple Hub
   allocations or outflows exceeding intake leave the balance unavailable.
+  Recovery Monitoring no longer displays this tile, column or explanatory balance.
+  Its two headline totals appear only in Hub Collection & Disposal; Hub Disposals
+  is the detailed ledger and does not repeat those cards. Sent and disposed are
+  overlapping lifecycle quantities, not additive totals. Handling includes archived
+  history while Overview declarations use active batches, so compare equal cohorts.
 
 Agreed transfer quantities, reservations and listing inventory are not physical
 outflows. Measured Hub handover evidence takes precedence over reported handover
@@ -156,10 +169,17 @@ Consumers. The original Auth-ID conflict handler remains email-only, so email
 confirmation and later Auth updates cannot convert or duplicate existing users.
 
 Follow-up integration testing on 19 October found an installed
-`normalize_recycler_role` trigger converting native Hub writes to Recycler,
-matching the current mobile login's Recycler label. The deployed weighing
-workflow remains compatible. Per the user's web-only instruction, that shared
-normalization remains unchanged; no role-rewrite migration is included. See
+`normalize_recycler_role` trigger converting native Hub writes to Recycler.
+On 21 October, the administrator's explicit Hub role changes were confirmed in
+the audit trail but the trigger had persisted Recycler instead. Migration
+`20261021030000_preserve_explicit_hub_role.sql` now preserves explicit
+`BalikTela Hub` writes with `Collection personnel` metadata. Ordinary Recycler
+accounts and the unrelated legacy LGU compatibility rule remain unchanged.
+`scripts/test-hub-role-sql.ts` tests the installed trigger with temporary rows;
+`scripts/repair-hub-role.ts` defaults to dry run and can restore only a specified
+account whose latest administrative audit explicitly requested Hub, without
+granting approval or changing assignments. Repairs are audited and revoke old
+dashboard sessions. No bulk role conversion is performed. See
 [Mobile / Web Hub Handoff](Mobile_Web_Hub_Contract.md) for current deployment
 evidence, role naming, validation scope and remaining data-quality findings.
 
@@ -506,6 +526,11 @@ directly on Recovery Monitoring after sign-in. Existing `hubs.read` / `hubs.mana
 permissions still control read access and administrative approval/assignment.
 Aggregate-only viewers may open the monitoring workspace, but receive regional
 summaries without operator/listing identities or processing-record actions.
+The Processing Records tab and its stage-record creation/management interface
+have been removed for all web roles. Recovery Monitoring requires `hubs.read`;
+`recovery.read` alone no longer exposes a page that has no Hub functionality.
+Existing recovery records and backend evidence calculations remain intact for
+analytics, data quality and reports. No mobile data or database records are deleted.
 
 Traceability retains transfers and permission-gated historical listing weights;
 it does not host Hub handling or management. Hub Facilities provides the Hub
@@ -528,12 +553,11 @@ values for mobile compatibility. User-facing classifications are Hub. No new
 login accounts or permissions are created by this reconciliation, and missing
 account-to-Hub links remain explicit as **No operator assigned**.
 
-Hub Facilities retains the compact performance table: capacity, utilization,
-recorded intake, historical confirmed output, processing time and status. It uses
-the dashboard `facilities` performance view for all seven registered Hubs, as do
-Overview's Hub utilization chart and stakeholder Hub capacity. An account
-assignment is not required to recognize directly linked validated history.
-Assigned Hubs are not excluded from this view.
+Hub Facilities now uses the `hubStorage` payload for storage capacity, stock held,
+incoming reservations, utilization, disposal and intake availability. Overview's
+Hub Storage Utilization chart uses the same rows. The older `facilities` payload
+remains historical period-handling performance, not current storage availability.
+No registry records or historical handling metrics are rewritten.
 
 Handling intake counts each batch once per Hub, using a measured collection
 receipt when available, otherwise its earliest balanced validated operation
@@ -556,14 +580,70 @@ possible Hubs remain unattributed; weights are never divided among Hubs by
 guesswork. The page reports unattributed batch/weight totals separately. Accounts
 with no Hub assignment require an administrator's assignment in Recovery Monitoring.
 
-Capacity is configured monthly handling volume prorated across the reporting
-period, not storage occupancy. Utilization is attributed recorded Hub intake /
-period capacity, with the same percentage thresholds as the status badge. Missing
-intake or capacity makes utilization unavailable; stored intake counters, listing
-weights, processing output and disposal totals do not substitute for receipts.
-Awaiting disposal subtracts accepted disposal and evidenced Hub transfers out,
-and remains unavailable for missing/conflicting evidence. Aggregate-only viewers
-receive regional groups without Hub/account identifiers.
+Storage capacity is configured in Organization administration's Hub editor and
+persisted as `facilities.storage_capacity_kg`. This is maximum physical storage,
+not monthly throughput. New Hubs require a positive capacity in kilograms (the UI
+accepts metric tons). Existing monthly handling targets and old intake counters
+remain historical fields; they cannot be edited through this form and do not
+supply storage capacity or stock. New operational Hubs without capacity remain
+unavailable until configured. Existing demo Hubs without this setting retain
+explicitly labeled illustrative limits from `shared/hubStorage.ts`; a configured
+capacity takes precedence without relabeling synthetic activity as operational.
+
+Current stock uses all recorded history, including
+archived batches and all textile categories, not the selected reporting cohort.
+Stock = supported physical intake - unique disposal - evidenced outbound movement.
+Pending published consumer batches reserve original declared weight once per batch;
+a receipt replaces that reservation. Missing or conflicting balances withhold
+availability, not manufacture zero stock. Aggregate-only viewers receive regional
+groups without Hub/account identifiers; regional groups are never selectable.
+
+Intake pauses when stock plus reservations reaches 90% of storage capacity.
+Headroom = max(0, 90% capacity - stock - reservations). Supported disposal releases
+space on the next refresh, without clearing history or changing capacity. Only
+approved, operational Hubs with known balances become available again. A complete
+disposal reaches 0% only if nothing remains; reservations still consume headroom.
+Actions remain in Recovery Monitoring, not Hub Facilities or Traceability.
+
+This is dashboard reporting, not enforced admission control. The additive storage
+capacity migration extends the service-only snapshot without changing existing
+rows, RLS, or grants. No mobile code is changed. Mobile must call a shared transactional
+check-and-reserve operation that locks the physical Hub, validates the positive
+submission weight fits headroom, and writes a unique reservation keyed to the
+submission. Recheck on commit; a stale picker response must not admit excess stock.
+Release reservations on cancellation, replace on receipt, and make retries and
+disposal events idempotent. Per-operator quotas cannot substitute for site totals.
+
+### Linked Hub Storage Simulation
+
+The approved small dataset `SYN-HUBSIM-V1-` links seven batches and listings to
+the seven existing demo Hubs; it creates no additional Hub registry records.
+It includes twelve declaration/intake measurements and four disposal ledger
+entries. Scenario totals: 20,500 kg declared/sent, 17,250 kg physically received,
+2,900 kg disposed, 14,350 kg held and 3,250 kg reserved awaiting receipt.
+
+Profiles are disabled non-login fixtures with no Auth IDs, passwords, verified
+email timestamps, public stock, published available listings or rewards. They
+are not real approved operators and must not appear as active mobile destinations.
+Storage may show their explicitly labeled **Simulation only** capacity state;
+`selectable` remains false. The narrow display-only recognition requires the
+dataset operator prefix, Recycler role, fixed synthetic profile note, disabled
+state, null Auth/password and reserved invalid email domain. This works with
+compact snapshots that omit stakeholder labels. It does not grant any permission
+or alter normal Hub approval.
+
+Run `node --import tsx scripts/seed-hub-simulation.ts` to preview. Application
+requires `SUPABASE_SYNTHETIC_SEED=true` plus `--apply`; first use
+`--apply --rollback-only` to verify a non-committing insert. Full repeat runs
+verify existing fixture values and make no writes. Partial or edited datasets
+are refused. Every existing row in 38 public tables was fingerprint-protected
+during the initial operation. No schema, Auth account, existing assignment,
+transaction, reward or real mobile record is rewritten.
+
+Manila's existing unrelated intake/disposal evidence gap remains visible in the
+combined Hub stock. The simulation cannot manufacture receipts for those real
+records. Simulation-only masses reconcile independently; combined reporting must
+keep unknown balances unknown.
 
 ### Governance and Policy Monitoring
 
@@ -597,3 +677,23 @@ permission, privacy and session-revocation checks. `npm run test:hubs:ui` checks
 admin decisions, filtering, pagination, aggregate-only views and responsiveness
 from 320px to 2560px with isolated fixtures. Build first; the UI test serves the
 built app on an ephemeral local port and never writes to Supabase.
+
+## Organization Type Alignment
+
+The latest supplied mobile archive (`baliktelaprogressive-main (1).zip`) uses
+Consumer/Recycler signup choices and recognizes Hub accounts in `src/lib/domain.ts`.
+These are account roles, not an organization-type registration vocabulary.
+The web organization registry uses the existing shared `organizations.type`
+constraint: Producer/Retailer, Recycler, Upcycler, NGO/Community, LGU/MRF,
+Collection point, School, Research institution, Government agency and Other.
+School is distinct from Research institution; the additive
+`20261021032000_school_organization_type.sql` migration extends the existing
+type constraint without reclassifying any organizations or user accounts.
+
+`shared/registry.ts` is the single list for the web form, API validation and
+schema. Legacy Producer, Research, Government, NGO and LGU/Collection Point
+aliases normalize to existing canonical values when read, edited or saved;
+they are not duplicate dropdown entries. Existing organization IDs, links and
+provenance remain intact. Existing shared rows are not changed.
+Organization classification never assigns a user role, grants Hub approval or
+creates a physical Hub; Hub registration and account authorization stay separate.

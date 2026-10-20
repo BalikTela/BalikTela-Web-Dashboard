@@ -15,7 +15,7 @@ import { MotionPage } from './lib/motion';
 import { AuthProvider } from './context/AuthContext';
 import { PageActivity } from './hooks/PageActivity';
 
-export type PageKey = 'overview' | 'listings' | 'materials' | 'operations' | 'waste' | 'transactions' | 'stakeholders' | 'facilities' | 'geographic' | 'advanced' | 'quality' | 'governance' | 'reports' | 'organizations' | 'users' | 'audit' | 'profile' | 'settings';
+export type PageKey = 'overview' | 'listings' | 'materials' | 'operations' | 'waste' | 'transactions' | 'stakeholders' | 'facilities' | 'geographic' | 'advanced' | 'quality' | 'governance' | 'reports' | 'organizations' | 'users' | 'audit' | 'profile' | 'settings' | 'rewards';
 
 const dataPages = new Set<PageKey>(['overview', 'waste', 'transactions', 'stakeholders', 'facilities', 'geographic', 'advanced']);
 const filterablePages = new Set<PageKey>([...dataPages, 'materials', 'operations', 'quality', 'reports', 'governance']);
@@ -26,6 +26,7 @@ const pageModules = {
   geographic: () => import('./pages/Geographic'), advanced: () => import('./pages/AdvancedAnalytics'), quality: () => import('./pages/DataQuality'),
   governance: () => import('./pages/Governance'), reports: () => import('./pages/Reports'), organizations: () => import('./pages/OrganizationAdmin'),
   users: () => import('./pages/UserAccounts'), audit: () => import('./pages/AuditTrail'), profile: () => import('./pages/UserProfile'), settings: () => import('./pages/Settings'),
+  rewards: () => import('./pages/Rewards'),
 };
 const Overview = lazy(() => pageModules.overview().then((module) => ({ default: module.Overview })));
 const ListingOversight = lazy(() => pageModules.listings().then((module) => ({ default: module.ListingOversight })));
@@ -45,6 +46,7 @@ const UserAccounts = lazy(() => pageModules.users().then((module) => ({ default:
 const AuditTrail = lazy(() => pageModules.audit().then((module) => ({ default: module.AuditTrail })));
 const UserProfile = lazy(() => pageModules.profile().then((module) => ({ default: module.UserProfile })));
 const Settings = lazy(() => pageModules.settings().then((module) => ({ default: module.Settings })));
+const Rewards = lazy(() => pageModules.rewards().then((module) => ({ default: module.Rewards })));
 
 function App() {
   const { user, access, isLoading: authLoading } = useAuth();
@@ -112,6 +114,7 @@ function DashboardWorkspace() {
     if (page === 'reports') return <Reports filters={filters} active={currentPage === 'reports'} />;
     if (page === 'organizations') return <OrganizationAdmin />;
     if (page === 'users') return <UserAccounts />;
+    if (page === 'rewards') return <Rewards />;
     if (page === 'audit') return <AuditTrail />;
     if (page === 'profile') return <UserProfile />;
     if (page === 'settings') return <Settings />;

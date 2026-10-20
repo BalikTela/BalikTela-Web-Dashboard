@@ -1,6 +1,7 @@
 import type { HubFacilityAnalytics, HubFacilityMetric } from '../shared/hubFacilities.js';
 import { facilityCapacityStatus } from '../shared/facilityCapacity.js';
 import { isHubProfile } from '../shared/hubs.js';
+import { isStorageSimulationOperator } from '../shared/hubStorage.js';
 import { percentage } from '../shared/metrics.js';
 import { hubCollectionEvidence } from './hubEvidence.js';
 import { hubDisposalEvidence } from './hubDisposals.js';
@@ -65,11 +66,12 @@ export function buildHubFacilityAnalytics(source: DashboardSourceSnapshot, facil
       unattributedBatches, unattributedReceivedKg: round(unattributedReceivedKg), unattributedDisposedKg: ledger.available ? round(unattributedDisposedKg) : null } };
 }
 
-export function hubFacilityAttributions(source: DashboardSourceSnapshot, batches: MaterialBatchRecord[], actor: UserRecord, now: Date) {
+export function hubFacilityAttributions(source: DashboardSourceSnapshot, batches: MaterialBatchRecord[], actor: UserRecord, now: Date, siteTotals = false) {
   const hubIds = identifyHubOperators(source, now);
-  const operators = source.users.filter(user => hubIds.has(user.id) && (!isHubProfile(actor) || user.id === actor.id));
+  if (siteTotals) source.users.filter(isStorageSimulationOperator).forEach(user => hubIds.add(user.id));
+  const operators = source.users.filter(user => hubIds.has(user.id) && (siteTotals || !isHubProfile(actor) || user.id === actor.id));
   const byOperator = new Map(operators.map(user => [user.id, [...new Set(user.scope.facilityIds)]]));
-  const ledger = hubDisposalEvidence(source, batches, actor, now);
+  const ledger = hubDisposalEvidence(source, batches, actor, now, siteTotals);
   const relevant = new Map<string, { receipt: ReturnType<typeof hubCollectionEvidence>; operatorIds: Set<string> }>();
   for (const batch of batches) {
     const receipt = hubCollectionEvidence(source, batch.id, hubIds, now);
@@ -78,8 +80,8 @@ export function hubFacilityAttributions(source: DashboardSourceSnapshot, batches
         && hubIds.has(item.weighingHubId ?? '') && item.deliveryRoute !== 'direct').map(item => item.weighingHubId!),
       ...ledger.records.filter(item => item.batchId === batch.id).map(item => item.operatorId),
       ...(receipt ? [receipt.operatorId] : []),
-    ].filter(id => !isHubProfile(actor) || id === actor.id));
-    if (operatorIds.size) relevant.set(batch.id, { receipt: receipt && (!isHubProfile(actor) || receipt.operatorId === actor.id) ? receipt : null, operatorIds });
+    ].filter(id => siteTotals || !isHubProfile(actor) || id === actor.id));
+    if (operatorIds.size) relevant.set(batch.id, { receipt: receipt && (siteTotals || !isHubProfile(actor) || receipt.operatorId === actor.id) ? receipt : null, operatorIds });
   }
   const batchSites = new Map<string, string>();
   for (const [batchId, { receipt, operatorIds }] of relevant) {

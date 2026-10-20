@@ -12,6 +12,7 @@ import { aggregateHubDisposals, hubDisposalEvidence } from './hubDisposals.js';
 import { buildPlatformActivity } from './platformActivity.js';
 import { facilityCapacityStatus } from '../shared/facilityCapacity.js';
 import { buildHubFacilityAnalytics, hubFacilityAttributions } from './hubFacilities.js';
+import { buildHubStorageAnalytics } from './hubStorage.js';
 import { recoveryMassBalance } from '../shared/recovery.js';
 import { changeDescription, formatMass, MATERIAL_METRIC_LABELS, percentage as percent } from '../shared/metrics.js';
 import { inReportingWindow, manilaDate, resolveReportingPeriod, type ReportingWindow } from '../shared/reporting.js';
@@ -101,6 +102,7 @@ export async function buildDashboardAnalytics(store: Store, actor: UserRecord, q
   const hubFacilities = buildHubFacilityAnalytics(snapshot, facilities, hubCohort.batches, hubCohort.actor, hubCohort.period.capacityMonths, now);
 
   return {
+    hubStorage: buildHubStorageAnalytics(snapshot, facilities, actor, now),
     hubFacilities,
     hubOperations: buildHubOperations(snapshot, hubCohort.batches, hubCohort.actor, hubCohort.period.label, now).summary,
     hubDisposal: { available: hubDisposal.available, summary: hubDisposal.summary },

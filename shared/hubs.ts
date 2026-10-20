@@ -73,10 +73,13 @@ export interface HubOperationsMonitoring {
   periodLabel: string;
   disposalFeedAvailable: boolean;
   summary: { assigned: number; awaitingCollection: number; collectedBatches: number; collectedKg: number | null; disposedKg: number | null; disposalRecords: number; legacyWeighings: number;
-    batches: number; missingIntakeBatches: number; balancedBatches: number; awaitingDisposalKg: number | null; invalidDisposalRecords: number };
+    batches: number; missingIntakeBatches: number; balancedBatches: number; awaitingDisposalKg: number | null; invalidDisposalRecords: number;
+    sentKg: number | null; sentBatches: number; sentMissingWeights: number };
   records: Array<{ batchId: string; listingId: string; title: string; owner: string; hub: string; operatorId: string;
     region: string; material: string; state: 'Awaiting collection' | 'Collected' | 'Partially disposed' | 'Disposed' | 'Transfer active' | 'Closed';
     collectionKg: number | null; collectionEvidence: string; disposedKg: number; remainingKg: number | null; lastActivityAt: string;
-    awaitingDisposalKg: number | null; transferredOutKg: number | null; balanceStatus: HubBalanceStatus }>;
-  regions: Array<{ region: string; assigned: number; collectedBatches: number; collectedKg: number; disposedKg: number; awaitingDisposalKg: number | null }>;
+    awaitingDisposalKg: number | null; transferredOutKg: number | null; balanceStatus: HubBalanceStatus;
+    sentKg: number | null; sentWeightBasis: string }>;
+  regions: Array<{ region: string; assigned: number; collectedBatches: number; collectedKg: number; disposedKg: number; awaitingDisposalKg: number | null;
+    sentKg: number | null; sentBatches: number; sentMissingWeights: number }>;
 }

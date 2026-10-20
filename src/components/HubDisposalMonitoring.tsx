@@ -7,7 +7,6 @@ import { platformApi } from '../services/platformApi';
 import { useRecordRefresh } from '../hooks/useRecordRefresh';
 import { Panel } from './Panel';
 import { SectionHeader } from './SectionHeader';
-import { HubHandlingSummary } from './HubHandlingSummary';
 import { PaginatedRecords } from './PaginatedRecords';
 import { Button } from './ui/button';
 import { EmptyBlock } from './StateBlock';
@@ -30,7 +29,6 @@ export function HubDisposalMonitoring({ filters }: { filters: Filters }) {
   useRecordRefresh(load, ['/hubs', '/hub-disposals', '/barter', '/material-batches', '/recovery-records', '/transfers', '/facilities']);
   const records = data?.records.filter(row => [row.id, row.listingTitle, row.listingId, row.batchId, row.operator, row.reason].join(' ').toLowerCase().includes(search.trim().toLowerCase())) ?? [];
   return <div className="space-y-4">
-    <HubHandlingSummary summary={data?.handling}/>
     <Panel><SectionHeader title="Hub Disposal Monitoring" eyebrow="Shared mobile disposal ledger · selected batch cohort" actions={<Button variant="outline" size="icon" disabled={busy} aria-label="Refresh disposals" title="Refresh disposals" onClick={() => void load()}><RotateCcw size={15} className={busy?'animate-spin':''}/></Button>}/>
       {data?.available && !data.aggregateOnly ? <label className="relative mb-4 block max-w-md"><Search size={15} className="absolute left-3 top-3 text-slate-400"/><Input className="pl-9" aria-label="Search disposal records" placeholder="Search textile, batch, operator or reason" value={search} onChange={event=>setSearch(event.target.value)}/></label> : null}
       {error ? <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 text-sm text-red-700"><p className="min-w-0 flex-1">{error}{data?' Showing the most recently loaded ledger.':''}</p><Button variant="outline" size="sm" disabled={busy} onClick={() => void load()}><RotateCcw size={14} />Retry disposals</Button></div> : null}

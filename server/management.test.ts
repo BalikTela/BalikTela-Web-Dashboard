@@ -28,7 +28,7 @@ test('management validation rejects invalid numbers and maps organization/facili
   const org=organizationValues({name:'Test NGO',type:'NGO',city:'Manila',region:'Metro Manila',status:'Inactive'});
   assert.equal(org.status,'Inactive');
   assert.throws(()=>organizationValues({...org,contactEmail:'broken'}));
-  assert.equal(facilityValues({name:'Test facility',organizationId:org.id,city:org.city,region:org.region,status:'Inactive'}).status,'Inactive');
+  assert.equal(facilityValues({name:'Test facility',organizationId:org.id,city:org.city,region:org.region,status:'Inactive',storageCapacityKg:1000}).status,'Inactive');
 });
 
 test('atomic memory writes roll back when a later operation conflicts',async()=>{

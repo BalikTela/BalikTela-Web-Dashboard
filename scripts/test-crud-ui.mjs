@@ -31,9 +31,9 @@ try {
     await navigate('Organizations');
     await page.getByRole('button',{name:'Organization',exact:true}).click();
     await dialog().getByLabel('Organization name',{exact:true}).fill(name);
-    await dialog().getByLabel('Organization type',{exact:true}).selectOption('NGO');
+    await dialog().getByLabel('Organization type',{exact:true}).selectOption('NGO/Community');
     await dialog().getByLabel('City',{exact:true}).fill('Manila');
-    await dialog().getByLabel('Record classification').selectOption('Demo');
+    assert.equal(await dialog().getByLabel('Record classification').count(),0);
     await dialog().getByLabel('Change reason').fill('Browser acceptance registration');
     await save();
     await page.getByLabel('Search registry', {exact:true}).fill(name);
@@ -50,11 +50,12 @@ try {
     await page.getByRole('button',{name:`Restore ${name}`,exact:true}).click();
     await dialog().getByLabel('Reason',{exact:true}).fill('Browser acceptance restore');
     await save();
-    await row().getByText('Prospective sample',{exact:true}).waitFor();
-    await page.getByRole('button',{name:'Facility',exact:true}).click();
+    await row().getByText('Pending review',{exact:true}).first().waitFor();
+    await page.getByRole('button',{name:'Hub',exact:true}).click();
+    await dialog().getByLabel('Organization',{exact:true}).selectOption({label:name});
     await dialog().getByLabel('Hub name').fill(`CRUD Browser Facility ${width} (demo)`);
     await dialog().getByLabel('City',{exact:true}).fill('Manila');
-    await dialog().getByLabel('Monthly capacity (t)').fill('1');
+    await dialog().getByLabel('Storage capacity (t)').fill('1');
     await dialog().getByLabel('Change reason').fill('Browser facility registration');
     await page.screenshot({path:`/tmp/baliktela-crud/${width}-facility-editor.png`});
     const modalOverflow=await dialog().evaluate(element=>element.scrollWidth>element.clientWidth+1);
@@ -83,17 +84,10 @@ try {
     await dialog().getByLabel('Measurement method').fill('Browser corrected reading');
     await dialog().getByLabel('Registration / correction reason').fill('Browser correction');await save();
     await navigate('Recovery Monitoring');
-    await page.getByRole('button',{name:'Record operation',exact:true}).click();
-    await dialog().getByLabel('Input weight (t)').fill('0.009');
-    await dialog().getByLabel('Output weight (t)').fill('0.008');
-    await dialog().getByLabel('Residual weight (t)').fill('0.001');
-    await dialog().getByLabel('Operational note').fill('Browser recovery registration');
-    const recoveryPromise=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/recovery-records'&&response.request().method()==='POST');
-    await save();const recovery=await (await recoveryPromise).json();
-    await page.getByRole('button',{name:`Manage ${recovery.record.id}`,exact:true}).click();
-    await dialog().getByLabel('Action',{exact:true}).selectOption('validate');
-    await dialog().getByLabel('Change / validation reason').fill('Browser validation');await save();
-    await page.getByRole('row').filter({hasText:recovery.record.id}).getByText('Validated',{exact:true}).waitFor();
+    await page.getByRole('region',{name:'Hub collection and disposal',exact:true}).waitFor();
+    assert.equal(await page.getByRole('group',{name:'Recovery sections',exact:true}).getByRole('button').count(),3);
+    assert.equal(await page.getByRole('button',{name:'Processing Records',exact:true}).count(),0);
+    assert.equal(await page.getByRole('button',{name:'Record operation',exact:true}).count(),0);
     const api=async(path,method,body,token=adminToken)=>{
       const response=await context.request.fetch(`${base}/api${path}`,{method,headers:{authorization:`Bearer ${token}`},data:body});
       const payload=await response.json();assert.ok(response.ok(),`${method} ${path}: ${JSON.stringify(payload)}`);return payload;
@@ -134,7 +128,7 @@ try {
     await page.screenshot({path:`/tmp/baliktela-crud/${width}-recovery.png`});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth+1),false,'Dashboard must fit viewport.');
     assert.deepEqual(errors,[]);
-    results.push({width,result:'passed',checks:['organization creation/edit/deactivate/restore','facility registration','batch registration/archive/restore/correction','recovery registration/validation','offer acceptance and transfer handover','account editing','configuration save/reset','editor and page width','no browser errors']});
+    results.push({width,result:'passed',checks:['organization creation/edit/deactivate/restore','facility registration','batch registration/archive/restore/correction','Hub-only recovery monitoring','offer acceptance and transfer handover','account editing','configuration save/reset','editor and page width','no browser errors']});
     await context.close();
   }
 } finally {await browser.close();}

@@ -41,8 +41,8 @@ function EditAccess({ user, organizations, onClose, onSaved }: {user:PlatformUse
   }}>
     <Field label="Full name"><Input required value={form.fullName} onChange={e=>setForm({...form,fullName:e.target.value})}/></Field>
     <div className="grid gap-3 sm:grid-cols-2"><Field label="City"><Input value={form.city} onChange={e=>setForm({...form,city:e.target.value})}/></Field><Field label="Region"><Input value={form.region} onChange={e=>setForm({...form,region:e.target.value})}/></Field></div>
-    <Field label="Role"><Select value={form.role} onChange={e=>setForm({...form,role:e.target.value as PlatformUser['role']})}>{user.role === 'BalikTela Hub' ? <option value="BalikTela Hub">BalikTela Hub (legacy)</option> : null}{roles.map(item=><option key={item}>{item}</option>)}</Select></Field>
-    <Field label="Organization"><Select value={form.organizationId} onChange={e=>setForm({...form,organizationId:e.target.value})}><option value="">No organization</option>{organizations.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</Select></Field>
+    <Field label="Role"><Select aria-label="Role" value={form.role} onChange={e=>setForm({...form,role:e.target.value as PlatformUser['role']})}>{roles.map(item=><option key={item}>{item}</option>)}</Select></Field>
+    <Field label="Organization"><Select aria-label="Organization" value={form.organizationId} onChange={e=>setForm({...form,organizationId:e.target.value})}><option value="">No organization</option>{organizations.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</Select></Field>
     <Field label="Account status"><Select value={form.accountStatus} onChange={e=>setForm({...form,accountStatus:e.target.value as PlatformUser['accountStatus']})}>{['Active','Pending verification','Suspended','Deactivated'].map(item=><option key={item}>{item}</option>)}</Select></Field>
     <Field label="Assigned regions"><Input value={form.regions} onChange={e=>setForm({...form,regions:e.target.value})}/></Field>
     <Field label="Assigned facility IDs"><Input value={form.facilityIds} onChange={e=>setForm({...form,facilityIds:e.target.value})}/></Field>

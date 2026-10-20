@@ -65,7 +65,9 @@ try {
     assert.match(await active.innerText(), /0\.02 t reserved/);
     await store.update('listings', listing.id, { status: 'Archived', canonicalStatus: 'archived' });
     await page.clock.fastForward(31_000);
-    await active.locator('tbody').getByText('Archived', { exact: true }).waitFor();
+    await active.locator('tbody').getByText('Closed', { exact: true }).waitFor();
+    await active.getByRole('button', { name: 'Expand listing NATIVE-LISTING', exact: true }).click();
+    await active.getByRole('region', { name: 'Listing details for Mobile textile fixture', exact: true }).getByText('archived', { exact: true }).waitFor();
     await navigate('Traceability');
     await active.getByText('Processing', { exact: true }).waitFor();
     const listingRequests = requests['/barter/listings'];

@@ -1,6 +1,7 @@
 import type { AccessSummary, AuditRecord, AuthSessionSummary, BarterListing, BarterOffer, ChatMessage, Conversation, DashboardAnalytics, DataQualityResult, GovernanceData, MaterialBatch, OperationsAnalytics, Organization, PlatformConfiguration, PlatformFacility, PlatformUser, RecoveryRecord, ReportDefinition, Transfer, WalletEntry } from '../platformTypes';
 
 import type { PredictiveReport } from '../../shared/predictive';
+import type { RewardQuery, RewardsPage } from '../../shared/rewards';
 import type { HubDirectory, WeighingMonitoring, HubDisposalMonitoring } from '../../shared/hubs';
 import type { ReportDocument } from '../../shared/reporting';
 import type { ImportPreview, ImportResult, ImportOptions } from '../../shared/imports';
@@ -197,4 +198,5 @@ export const platformApi = {
   messages: (conversationId: string) => request<{ conversation: Conversation; messages: ChatMessage[] }>(`/barter/conversations/${conversationId}/messages`),
   sendMessage: (conversationId: string, body: string) => request<{ message: ChatMessage }>(`/barter/conversations/${conversationId}/messages`, { method: 'POST', body: JSON.stringify({ body }) }),
   wallet: () => request<{ balance: number; entries: WalletEntry[] }>('/wallet'),
+  rewards: (query: RewardQuery) => request<RewardsPage>(`/rewards${queryString({ ...query })}`),
 };

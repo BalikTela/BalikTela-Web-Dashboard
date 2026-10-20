@@ -16,12 +16,12 @@ type Data = Awaited<ReturnType<typeof getDashboardData>>;
 export function Overview({ data }: { data: Data }) {
   const highestGap = [...data.regionalActivity].sort((a, b) => b.wasteGapKg - a.wasteGapKg)[0];
   const lowestRecovery = data.categoryShares.filter(item => item.recoveryRateAvailable !== false).sort((a, b) => a.recoveryRate - b.recoveryRate)[0];
-  const hubFacilities = data.facilities;
-  const spareFacility = hubFacilities.filter(item => item.utilization !== null && ['Available','Near capacity','At capacity','Over capacity'].includes(item.status)).sort((a, b) => a.utilization! - b.utilization!)[0];
+  const hubFacilities = data.hubStorage?.rows ?? [];
+  const spareFacility = hubFacilities.filter(item => item.selectable && item.availableToReceiveKg !== null).sort((a, b) => b.availableToReceiveKg! - a.availableToReceiveKg!)[0];
   const insights = [
     highestGap ? [`${highestGap.region}: outcome evidence review`, `${formatMass(highestGap.wasteGapKg)} of declared mass has no confirmed reuse or recycling outcome. This is an evidence gap, not measured landfill waste.`] : null,
     lowestRecovery ? [`${lowestRecovery.category}: confirmed recovery share`, `${lowestRecovery.recoveryRate}% of physically received textiles has a confirmed final outcome in this registration cohort.`] : null,
-    spareFacility ? [`${spareFacility.name}: Hub capacity review`, spareFacility.utilization! > 100 ? `${spareFacility.utilization}% utilization exceeds prorated period capacity; review intake and capacity records.` : `${Number((100 - spareFacility.utilization!).toFixed(1))}% of prorated period handling capacity remains available.`] : null,
+    spareFacility ? [`${spareFacility.name}: Hub storage headroom`, `${formatMass(spareFacility.availableToReceiveKg)} remains below the 90% intake cutoff after current stock and incoming reservations.${spareFacility.capacitySource==='Illustrative'?' This storage limit is illustrative for the PoC.':''}`] : null,
   ].filter((item): item is [string, string] => item !== null);
   if (!['Administrator', 'Government', 'Researcher'].includes(data.operations.scope.role)) return <div className="space-y-6"><OperationalSnapshot data={data} /><OperationalRoleDetail data={data} /></div>;
   return (
@@ -73,8 +73,8 @@ export function Overview({ data }: { data: Data }) {
           <PhilippinesMapMock regions={data.regionalActivity} />
         </Panel>
         <Panel>
-          <SectionHeader title="Hub Utilization" eyebrow="Recorded Hub intake / period handling capacity" />
-          {hubFacilities.some(item => item.utilization !== null) ? <div className="h-80 sm:h-96"><FacilityUtilizationChart data={hubFacilities} /></div> : <EmptyBlock label="Hub utilization needs linked intake and configured capacity." />}
+          <SectionHeader title="Hub Storage Utilization" eyebrow="Current stock / storage capacity · all history" />
+          {hubFacilities.some(item => item.utilization !== null) ? <div className="h-80 sm:h-96"><FacilityUtilizationChart data={hubFacilities} /></div> : <EmptyBlock label="Storage utilization needs reconciled physical intake, disposal and outbound records." />}
         </Panel>
       </section>
 

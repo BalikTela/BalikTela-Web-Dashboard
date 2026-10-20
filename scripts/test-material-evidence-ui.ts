@@ -126,9 +126,9 @@ try {
     assert.equal(await activity().getByText('Waste submissions', { exact: true }).count(), 0);
     assert.equal(await activity().getByText('Barter actions', { exact: true }).count(), 0);
     for (const label of ['Active users', 'Sessions', 'Average session duration']) {
-      const entry = activity().locator('dl > div').filter({ has: page.getByText(label, { exact: true }) });
-      await entry.getByText('Not available', { exact: true }).waitFor();
+      assert.equal(await activity().getByText(label, { exact: true }).count(), 0, 'Unavailable session metrics must not render.');
     }
+    assert.equal(await activity().locator('article').count(), 5, 'Keep all five record-based engagement metrics.');
     assert.match(await metric('Confirmed Recovery Share').innerText(), /45\.5%/);
     assert.match(await metric('Recyclable Textiles Received').innerText(), /0\.1 t/);
     assert.match(await metric('Recyclable Textiles Received').innerText(), /1 recyclable batch/);

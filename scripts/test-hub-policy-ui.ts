@@ -13,6 +13,7 @@ import type { UserRecord } from '../server/types.js';
 
 // All records and browser responses are local fixtures. No mobile or Supabase writes.
 const data = await createSeedData(), admin = data.users[0];
+const consumer = data.users.find(item => item.role === 'Consumer')!;
 const createdAt = new Date(Date.now() - 86400000).toISOString();
 const hub: UserRecord = { ...structuredClone(data.users.find(item => item.role === 'Recycler')!), id: 'UI-POLICY-HUB',
   fullName: 'Hub collection operator', role: 'BalikTela Hub', organizationVerified: true, webHubOperator: true };
@@ -21,8 +22,8 @@ data.users.push(hub, legacy);
 for (const operator of [hub, legacy]) {
   for (let index = 0; index < 12; index++) {
     const batchId = `${operator.id}-BATCH-${index}`;
-    data.materialBatches.push({ ...data.materialBatches[0], id: batchId, createdAt, updatedAt: createdAt });
-    data.listings.push({ ...data.listings[0], id: `${batchId}-LIST`, batchId, weighingHubId: operator.id,
+    data.materialBatches.push({ ...data.materialBatches[0], id: batchId, sourceUserId: consumer.id, declaredWeightKg: 100, createdAt, updatedAt: createdAt });
+    data.listings.push({ ...data.listings[0], id: `${batchId}-LIST`, batchId, ownerId: consumer.id, weighingHubId: operator.id,
       deliveryRoute: 'via_hub', title: `${operator.fullName} textile ${index}`, createdAt, status: 'Open', availableWeightKg: 100 });
   }
 }
@@ -76,6 +77,8 @@ try {
       }
       const section = page.getByRole('region', { name: 'Hub collection and disposal', exact: true });
       await section.getByRole('table', { name: 'Hub material handling' }).waitFor();
+      assert.equal(await section.getByText('Awaiting Disposal',{exact:true}).count(),0);
+      assert.equal(await section.getByRole('columnheader',{name:'Awaiting disposal',exact:true}).count(),0);
       if (actor !== admin) {
         assert.equal(await page.getByRole('button', { name: 'Governance & Policy', exact: true }).count(), 0);
         assert.equal(await page.getByRole('button', { name: 'Advanced Analytics', exact: true }).count(), 0);
@@ -98,22 +101,24 @@ try {
       await navigate(page, 'Recovery Monitoring');
       await section.getByRole('table', { name: 'Hub material handling' }).waitFor();
       assert.equal(await page.locator('main [aria-hidden="false"]').getByText('Diverted from landfill', { exact: true }).count(), 0);
+      assert.equal(await page.getByRole('group', { name: 'Recovery sections', exact: true }).getByRole('button').count(), 3);
+      for (const label of ['Processing Records', 'Record operation'])
+        assert.equal(await page.locator('main [aria-hidden="false"]').getByRole('button', { name: label, exact: true }).count(), 0);
+      assert.equal(await page.getByRole('heading', { name: 'Recovery Stage Records', exact: true }).count(), 0);
       if (actor !== admin) {
-        assert.equal(await page.getByRole('button', { name: 'Processing Records', exact: true }).count(), 0);
         assert.equal(await page.getByRole('button', { name: 'Record recovery', exact: true }).count(), 0);
         assert.equal(await page.getByText('Recovery stage records', { exact: true }).count(), 0);
         const metric = (name: string) => section.locator('article').filter({has:page.getByText(name,{exact:true})});
-        await metric('Textiles Received by Hubs').getByText('Intake not recorded',{exact:true}).waitFor();
-        await metric('Awaiting Disposal').getByText('Intake not recorded',{exact:true}).waitFor();
+        await metric('Textiles Sent to Hubs').getByText('1.2 t',{exact:true}).waitFor();
         intakeComplete = true;
         await section.getByRole('button',{name:'Refresh Hub operations',exact:true}).click();
-        await metric('Textiles Received by Hubs').getByText('1.2 t',{exact:true}).waitFor();
+        await metric('Textiles Sent to Hubs').getByText('1.2 t',{exact:true}).waitFor();
         await metric('Recorded Hub Disposal').getByText('0.02 t',{exact:true}).waitFor();
-        await metric('Awaiting Disposal').getByText('1.18 t',{exact:true}).waitFor();
         const active = page.locator('main [aria-hidden="false"]');
         await active.getByRole('button',{name:'Hub Disposals',exact:true}).click();
         await active.getByRole('table',{name:'Hub disposal ledger'}).waitFor();
-        await active.locator('article').filter({has:page.getByText('Awaiting Disposal',{exact:true})}).getByText('1.18 t',{exact:true}).waitFor();
+        assert.equal(await active.getByText('Awaiting Disposal',{exact:true}).count(),0);
+        assert.equal(await active.getByText('Textiles Sent to Hubs',{exact:true}).count(),0,'The disposal ledger must not repeat the submissions summary.');
         assert.equal(await active.getByText('Diverted from landfill',{exact:true}).count(),0);
         await page.evaluate(()=>scrollTo(0,0));
         await page.screenshot({path:`${output}/${actor.id}-ledger-${width}.png`,fullPage:true});

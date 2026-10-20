@@ -26,12 +26,13 @@ const browser=await chromium.launch({headless:true,executablePath:'/Applications
 const output='/tmp/baliktela-web-corrections-ui';await mkdir(output,{recursive:true});
 const results:unknown[]=[];
 try {
-  for(const width of [375,1366,2560]){
+  for(const width of [320,375,640,768,1366,2560]){
     const seed=await createSeedData(),actor=seed.users[0];
     const base=seed.listings[0];seed.listings.push({...base,id:'DISPOSED',title:'Disposed mobile lot',status:'Archived',canonicalStatus:'archived',disposedAt:'2026-10-18T01:00:00Z',disposedWeightKg:5},
       {...base,id:'PARTIAL',title:'Partially disposed mobile lot',canonicalStatus:'available',disposedWeightKg:2},
       {...base,id:'REMAINDER',title:'Pending remainder lot',status:'Draft',canonicalStatus:'draft',remainderPending:true},
-      ...Object.entries(LISTING_STATUSES).map(([canonicalStatus,status])=>({...base,id:`MOBILE-${canonicalStatus}`,title:`Mobile ${canonicalStatus} listing`,canonicalStatus,status})),
+      ...Object.entries(LISTING_STATUSES).map(([canonicalStatus,status])=>({...base,id:`MOBILE-${canonicalStatus}`,title:canonicalStatus==='available'?'Consumer textile listing with a deliberately long title for a compact oversight row':`Mobile ${canonicalStatus} listing`,canonicalStatus,status,
+        ...(canonicalStatus==='available'?{ownerName:'Consumer account with a deliberately long registered name',city:'Street 123, Building 456, Barangay with a very long address for responsive layout review'}:{})})),
       {...base,id:'MOBILE-UNKNOWN',title:'Unknown source listing',status:'Unknown',canonicalStatus:'future_mobile_state'});
     seed.transfers.push({...seed.transfers[0],id:'MOBILE-PROCESSED',status:'Processed',canonicalStatus:'processed'},
       {...seed.transfers[0],id:'MOBILE-COLLECTED',status:'Collected',canonicalStatus:'collected'});
@@ -83,31 +84,81 @@ try {
       await active().getByRole('combobox',{name:'Listing handling'}).selectOption(status);
       const row=active().locator('tbody tr');
       await row.getByText(status,{exact:true}).waitFor();
-      await row.locator('td').nth(1).getByText(status==='Disposed'?'Closed':status==='Partially disposed'?'Available':'Draft',{exact:true}).waitFor();
+      await row.locator('td[data-listing-status]').getByText(status==='Disposed'?'Closed':status==='Partially disposed'?'Available':'Draft',{exact:true}).waitFor();
+      assert.equal(await row.locator('td').first().getByText(status,{exact:true}).count(),0,'Status badges must not appear below the listing name.');
       assert.equal(await active().getByRole('button',{name:/^Manage /}).count(),0);
     }
     await active().getByRole('button',{name:'Reset filters',exact:true}).click();await fits();
-    for(const status of ['Draft','Available','In progress','Completed','Closed','Unknown']){
+    assert.deepEqual(await active().getByRole('combobox',{name:'Listing status'}).locator('option').allTextContents(),['All statuses','Draft','Available','In progress','Completed','Closed']);
+    for(const status of ['Draft','Available','In progress','Completed','Closed']){
       await active().getByRole('combobox',{name:'Listing status'}).selectOption(status);
       const expected=(await store.all('listings')).filter(item=>listingDisplayStatus(item)===status);
       await page.waitForFunction(count=>document.querySelector('main [aria-hidden="false"] tbody')?.children.length===count,expected.length);
-      for(const row of await active().locator('tbody tr').all())await row.locator('td').nth(1).getByText(status,{exact:true}).waitFor();
+      for(const row of await active().locator('tbody tr').all())await row.locator('td[data-listing-status]').getByText(status,{exact:true}).waitFor();
     }
     await active().getByRole('button',{name:'Reset filters',exact:true}).click();
+    await active().getByLabel('Search listings',{exact:true}).fill('MOBILE-UNKNOWN');
+    const unknownRow=active().locator('tr[data-listing-id="MOBILE-UNKNOWN"]');
+    await unknownRow.getByLabel('Listing status unavailable',{exact:true}).waitFor();
+    assert.equal((await unknownRow.locator('td[data-listing-status]').innerText()).trim(),'-');
+    assert.equal(await unknownRow.getByRole('button',{name:'Manage MOBILE-UNKNOWN',exact:true}).count(),0,'Unrecognized source statuses must remain read-only.');
+    await unknownRow.getByRole('button',{name:'Expand listing MOBILE-UNKNOWN',exact:true}).click();
+    const unknownDetails=active().getByRole('region',{name:'Listing details for Unknown source listing',exact:true});
+    await unknownDetails.getByText('future_mobile_state',{exact:true}).waitFor();
     await active().getByLabel('Search listings',{exact:true}).fill('MOBILE-available');
-    await active().locator('tbody tr').locator('td').nth(1).getByText('Available',{exact:true}).waitFor();
+    await active().locator('tbody tr td[data-listing-status]').getByText('Available',{exact:true}).waitFor();
+    const listingTable=active().getByRole('table',{name:'Material listings',exact:true});
+    assert.deepEqual(await listingTable.getByRole('columnheader').allTextContents(),width<640?['Listing','Status','Actions']:width<768?['Listing','Owner','Available weight','Status','Actions']:['Listing','Owner','Material','Available weight','Status','Actions']);
+    const listingCell=listingTable.locator('tbody tr[data-listing-id] td').first();
+    await listingCell.getByText('MOBILE-available',{exact:true}).waitFor();
+    const identity=await listingCell.locator('p').evaluateAll(items=>({titleBottom:items[0].getBoundingClientRect().bottom,idTop:items[1].getBoundingClientRect().top,id:items[1].textContent}));
+    assert.equal(identity.id,'MOBILE-available');
+    assert.ok(identity.idTop>=identity.titleBottom,'Listing ID must be directly beneath the name.');
+    assert.equal(await listingCell.getByText('Available',{exact:true}).count(),0);
+    const collapsedListingWidth=(await listingCell.boundingBox())!.width;
+    assert.equal(await listingTable.getByRole('region').count(),0,'Secondary details should start collapsed.');
+    const expand=listingTable.getByRole('button',{name:'Expand listing MOBILE-available',exact:true});
+    assert.equal(await expand.getAttribute('aria-expanded'),'false');
+    await expand.focus();await page.keyboard.press('Enter');
+    const listingDetails=listingTable.getByRole('region',{name:/^Listing details for Consumer textile listing/});
+    await listingDetails.waitFor();
+    const fact=(label:string)=>listingDetails.locator('dl > div').filter({has:page.getByText(label,{exact:true})}).locator('dd');
+    await fact('Listing ID').getByText('MOBILE-available',{exact:true}).waitFor();
+    await fact('Batch ID').getByText(base.batchId,{exact:true}).waitFor();
+    await fact('Mobile status').getByText('available',{exact:true}).waitFor();
+    assert.ok((await fact('Location').innerText()).includes('Building 456'));
+    assert.equal(await listingTable.evaluate(element=>element.scrollWidth>element.clientWidth+1),false,'Collapsed columns and expanded details must fit the table.');
+    assert.equal(await listingDetails.evaluate(element=>element.scrollWidth>element.clientWidth+1),false,'Long IDs and locations must wrap inside details.');
+    assert.ok((await listingCell.boundingBox())!.width>=collapsedListingWidth-1,'Expanded details must not squeeze the main listing column.');
+    assert.equal(await listingTable.locator('tbody tr[data-listing-id]').count(),1,'Expanding is not another listing.');
+    await listingTable.getByRole('button',{name:'Collapse listing MOBILE-available',exact:true}).press('Space');
+    await listingDetails.waitFor({state:'hidden'});
+    await listingTable.getByRole('button',{name:'Expand listing MOBILE-available',exact:true}).click();
+    await listingDetails.waitFor();
+    if(width===375){
+      for(const [resized,columns] of [[640,5],[768,6],[375,3]]){
+        await page.setViewportSize({width:resized,height:900});
+        await page.waitForFunction(columns=>document.querySelector('main [aria-hidden="false"] tbody td[colspan]')?.getAttribute('colspan')===String(columns),columns);
+        assert.equal(await listingTable.evaluate(element=>element.scrollWidth>element.clientWidth+1),false,'Expansions must adapt when resizing across breakpoints.');
+      }
+    }
+    await page.screenshot({path:`${output}/listing-expanded-${width}.png`,fullPage:true});
     await store.update('listings','MOBILE-available',{status:'Reserved',canonicalStatus:'reserved',reservedKg:base.quantityKg??1});
     await active().getByRole('button',{name:'Refresh listings',exact:true}).click();
-    await active().locator('tbody tr').locator('td').nth(1).getByText('In progress',{exact:true}).waitFor();
-    await active().getByText('Mobile: reserved',{exact:true}).waitFor();
+    await active().locator('tbody tr td[data-listing-status]').getByText('In progress',{exact:true}).waitFor();
+    await fact('Mobile status').getByText('reserved',{exact:true}).waitFor();
     assert.equal(await active().getByRole('button',{name:'Manage MOBILE-available',exact:true}).count(),0);
     await fits();await page.screenshot({path:`${output}/listing-refresh-${width}.png`,fullPage:true});
     await active().getByRole('button',{name:'Reset filters',exact:true}).click();
+    await listingDetails.waitFor({state:'hidden'});
+    assert.equal(await listingTable.getByRole('region').count(),0,'Changing filters must collapse stale details.');
     await active().getByRole('combobox',{name:'Listing status'}).selectOption('Available');
     await active().getByRole('combobox',{name:'Listing handling'}).selectOption('Partially disposed');
     await active().getByText('Partially disposed mobile lot',{exact:true}).waitFor();
     await fits();await page.screenshot({path:`${output}/listing-status-${width}.png`,fullPage:true});
     await navigate('Material Registry');
+    await active().getByRole('columnheader',{name:'Batch ID',exact:true}).waitFor();
+    assert.equal(await active().getByRole('columnheader',{name:'Batch',exact:true}).count(),0);
     await active().getByRole('columnheader',{name:'Weight Status',exact:true}).waitFor();
     const measuredMass=seed.materialBatches.filter(item=>item.currentStatus!=='Archived'&&registryWeightStatus(item.weightStatus)==='Measured').reduce((sum,item)=>sum+(item.currentWeightKg??0),0);
     await active().locator('article').filter({has:page.getByText('Measured mass',{exact:true})}).getByText(formatMass(measuredMass),{exact:true}).waitFor();

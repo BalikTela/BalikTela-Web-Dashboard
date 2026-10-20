@@ -135,7 +135,7 @@ try {
     assert.equal(await geographic.locator('.geo-pin-zero').count(), 4, 'Zero recycling activity must not appear as positive-volume bubbles.');
     await geographic.getByRole('button', { name: 'Recovery gap', exact: true }).click();
     assert.equal(await geographic.locator('.geo-map-gap').count(), 1);
-    await geographic.getByRole('button', { name: 'Collected', exact: true }).click();
+    await geographic.getByRole('button', { name: 'Received', exact: true }).click();
     await geographic.getByRole('button', { name: 'Close regional detail', exact: true }).click();
     await geographic.getByRole('button', { name: 'Fit Philippines', exact: true }).click();
     if (viewport.width >= 1366 && await geographic.getByRole('button', { name: 'Fullscreen map', exact: true }).count()) {

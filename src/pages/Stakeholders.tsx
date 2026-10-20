@@ -65,7 +65,7 @@ export function Stakeholders({ data }: { data: Data }) {
                     <Metric label="Recorded disposal" value={formatMass(item.hubActivity.disposedKg,'Feed unavailable')} />
                   </> : <>
                     <Metric label="Confirmed output" value={item.recoveredAvailable === false ? 'Pending evidence' : formatMass(item.recoveredKg)} />
-                    <Metric label="Generated" value={item.generatedKg ? `${formatMass(item.generatedKg)}` : 'Not reported'} />
+                    <Metric label="Declared textiles" value={item.generatedKg ? `${formatMass(item.generatedKg)}` : 'Not reported'} />
                     <Metric label="Completion rate" value={item.transactions ? `${item.participation}%` : 'Not available'} />
                     <Metric label="Utilization" value={item.utilization != null ? `${item.utilization}%` : 'Not applicable'} />
                   </>}

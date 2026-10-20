@@ -1,14 +1,14 @@
-import { formatMass } from '../../shared/metrics';
+import { formatMass, MATERIAL_METRIC_LABELS } from '../../shared/metrics';
 import type { CircularFlowMetrics } from '../types';
 
 export function CircularFlow({ data }: { data: CircularFlowMetrics }) {
   const stages = [
-    { label: 'Declared material', value: formatMass(data.generatedKg), color: 'bg-slate-400' },
-    { label: 'Validated collection', value: data.collectedAvailable === false ? 'Pending evidence' : formatMass(data.collectedKg), color: 'bg-emerald-700' },
+    { label: MATERIAL_METRIC_LABELS.declared, value: formatMass(data.generatedKg), color: 'bg-slate-400' },
+    { label: MATERIAL_METRIC_LABELS.received, value: data.collectedAvailable === false ? 'Pending evidence' : formatMass(data.collectedKg), color: 'bg-emerald-700' },
     { label: 'Sorted output', value: data.sortedAvailable === false ? 'Pending evidence' : formatMass(data.sortedKg), color: 'bg-emerald-700' },
     { label: 'Confirmed reuse', value: data.reusedAvailable === false ? 'Pending evidence' : formatMass(data.reusedKg), color: 'bg-emerald-700' },
     { label: 'Confirmed recycling', value: data.recycledAvailable === false ? 'Pending evidence' : formatMass(data.recycledKg), color: 'bg-emerald-700' },
-    { label: 'Collected · recovery unconfirmed', value: data.collectedAvailable === false ? 'Pending evidence' : formatMass(data.residualKg), color: 'bg-slate-400' },
+    { label: 'Received · recovery unconfirmed', value: data.collectedAvailable === false ? 'Pending evidence' : formatMass(data.residualKg), color: 'bg-slate-400' },
   ];
   return (
     <div className="circular-flow grid overflow-hidden rounded-md border border-b-0 border-r-0 border-slate-200 bg-white sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">

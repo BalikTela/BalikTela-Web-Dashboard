@@ -64,7 +64,7 @@ try {
     await navigate('Governance & Policy');
     await visible().getByRole('heading', { name: 'Policy monitoring', exact: true }).waitFor();
     const expected = (await buildGovernanceDashboard(store, actor, {}, undefined, now)).monitoring;
-    assert.match(await visible().locator('article').filter({ has: page.getByText('Validated collection', { exact: true }) }).innerText(), new RegExp(formatMass(expected.summary.collectedKg)));
+    assert.match(await visible().locator('article').filter({ has: page.getByText('Textiles Physically Received', { exact: true }) }).innerText(), new RegExp(formatMass(expected.summary.collectedKg)));
     await visible().getByText('Landfill diversion', { exact: true }).waitFor();
     await visible().getByText('Not established', { exact: true }).waitFor();
     await fits(); await page.screenshot({ path: `${output}/${role}-summary-${width}.png`, fullPage: true });
@@ -102,7 +102,7 @@ try {
     await page.waitForResponse(response => new URL(response.url()).pathname === '/api/governance');
     assert.ok(reads > priorReads);
     await page.getByRole('combobox', { name: /^Textile type/ }).selectOption('Polyester');
-    await visible().locator('article').filter({ has: page.getByText('Validated collection', { exact: true }) }).getByText('Pending evidence', { exact: true }).waitFor();
+    await visible().locator('article').filter({ has: page.getByText('Textiles Physically Received', { exact: true }) }).getByText('Pending evidence', { exact: true }).waitFor();
     await visible().getByRole('tab', { name: 'Producer Evidence', exact: true }).click();
     await visible().getByText('No producer source groups match these filters and search.', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Reset filters', exact: true }).click();

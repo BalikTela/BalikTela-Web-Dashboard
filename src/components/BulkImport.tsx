@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, FileUp, LoaderCircle, X } from 'lucide-react';
 import { IMPORT_COLUMNS, IMPORT_MAX_BYTES, IMPORT_MAX_ROWS, type ImportPreview, type ImportResult, type ImportOptions } from '../../shared/imports';
-import { formatMass } from '../../shared/metrics';
+import { formatMass, MATERIAL_METRIC_LABELS } from '../../shared/metrics';
 import { manilaDate } from '../../shared/reporting';
 import { platformApi } from '../services/platformApi';
 import { PaginatedRecords } from './PaginatedRecords';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+
+const totalLabels: Record<string, string> = {
+  declaredKg: MATERIAL_METRIC_LABELS.declared,
+  collectedKg: MATERIAL_METRIC_LABELS.received,
+  reusedKg: 'Confirmed reuse',
+  recycledKg: 'Confirmed recycling',
+};
 
 export function BulkImport({ onClose }: { onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -78,7 +85,7 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
     {progress?<div className="mt-4 space-y-2"><p className="text-sm tabular-nums" aria-live="polite">{progress.processed} of {progress.total} rows checked · {progress.imported} imported · {progress.skipped} already present</p><progress aria-label="Import progress" value={progress.processed} max={progress.total} className="h-2 w-full accent-emerald-700"/></div>:null}
     {error?<p role="alert" className="mt-4 break-words text-sm text-red-700">{error}</p>:null}
     {result?<p role="status" className={`mt-4 rounded-md border p-3 text-sm leading-6 ${result.complete?'border-emerald-200 bg-emerald-50 text-emerald-900':'border-amber-200 bg-amber-50 text-amber-900'}`}>{result.importedRows} imported · {result.skippedRows} already present. {result.message}</p>:null}
-    {preview?<section className="mt-5 space-y-4"><p className="text-sm font-semibold">{preview.totalRows} rows · {preview.newRows} new · {preview.skippedRows} already imported · {preview.rows.filter(row=>row.status==='Invalid').length} invalid</p><dl className="grid grid-cols-2 gap-3 border-y border-slate-200 py-3 sm:grid-cols-4">{Object.entries(preview.totals).map(([label,value])=><div key={label}><dt className="text-xs text-slate-500">{label.replace('Kg','').replace(/^./,letter=>letter.toUpperCase())}</dt><dd className="mt-1 font-semibold tabular-nums">{formatMass(value)}</dd></div>)}</dl>
+    {preview?<section className="mt-5 space-y-4"><p className="text-sm font-semibold">{preview.totalRows} rows · {preview.newRows} new · {preview.skippedRows} already imported · {preview.rows.filter(row=>row.status==='Invalid').length} invalid</p><dl className="grid grid-cols-2 gap-3 border-y border-slate-200 py-3 sm:grid-cols-4">{Object.entries(preview.totals).map(([label,value])=><div key={label} className="min-w-0"><dt className="break-words text-xs text-slate-500">{totalLabels[label]}</dt><dd className="mt-1 font-semibold tabular-nums">{formatMass(value)}</dd></div>)}</dl>
       <PaginatedRecords rows={preview.rows} resetKey={preview.previewHash} label="Import rows">{rows=><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr><th>CSV row</th><th>External ID</th><th>Status</th><th>Validation</th></tr></thead><tbody className="divide-y divide-slate-200">{rows.map(row=><tr key={row.row}><td className="py-3">{row.row}</td><td className="max-w-48 break-all">{row.externalId}</td><td className={row.status==='Invalid'?'text-red-700':'text-emerald-800'}>{row.status}</td><td className="max-w-sm break-words">{row.message}</td></tr>)}</tbody></table></div>}</PaginatedRecords>
       <label className="block"><span className="mb-1.5 block text-xs font-medium">Import reason</span><Input value={reason} maxLength={4000} disabled={busy} onChange={event=>setReason(event.target.value)}/></label>
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event=>setConfirmed(event.target.checked)} className="mt-1"/><span>I confirm this file contains synthetic demo data, not independently verified operational evidence.</span></label>

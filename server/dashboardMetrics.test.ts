@@ -81,13 +81,46 @@ test('collected stock stays in recovery denominators; declarations and transfers
   assert.equal(data.impactMetrics.diversionRate, percentage(86, 189));
   assert.equal(data.circularFlow.residualKg + data.materialEvidence.matchedDiversionKg, 189);
   assert.equal(data.wasteTrend.reduce((sum, point) => sum + point.recorded, 0), 575);
-  assert.match(data.kpis[0].value, / t$/);
+  assert.equal(data.kpis[0].label, 'Total Textiles Declared');
+  assert.equal(data.kpis[0].value, formatMass(data.circularFlow.generatedKg));
+  assert.notEqual(data.kpis[0].value, formatMass(data.circularFlow.collectedKg));
   assert.equal(data.facilities[0].capacityKg, 6480, 'Monthly capacity must be prorated over July 1-Sep 21 (2.7 months).');
   assert.equal(data.facilities[0].utilization, percentage(data.facilities[0].intakeKg, 6480));
   const filtered = await buildDashboardAnalytics(store, seed.users[0], { ...historicalQuery, textileType: 'Cotton' }, undefined, asOf);
   assert.equal(filtered.circularFlow.generatedKg, 320);
   assert.equal(filtered.circularFlow.reusedKg, 0);
   assert.equal(filtered.impactMetrics.diversionRate, null);
+});
+
+test('declared headline counts unique scoped batch declarations without requiring receipt or completion evidence', async () => {
+  const seed = await createSeedData();
+  seed.measurements = [];
+  seed.recoveryRecords = [];
+  seed.transfers = [];
+  const template = seed.materialBatches[0];
+  seed.materialBatches.push(
+    { ...template },
+    { ...template, id: 'DECLARED-MISSING', declaredWeightKg: null, currentWeightKg: null, weightStatus: null },
+    { ...template, id: 'DECLARED-ARCHIVED', declaredWeightKg: 10000, currentStatus: 'Archived' },
+    { ...template, id: 'DECLARED-FUTURE', declaredWeightKg: 10000, createdAt: '2026-10-18T00:00:00Z' },
+  );
+  const store = new MemoryStore(seed);
+  for (const [filters, expected] of [
+    [{}, 575],
+    [{ textileType: 'Cotton' }, 320],
+    [{ textileType: 'Denim' }, 18],
+    [{ region: 'Central Visayas' }, 0],
+    [{ dateRange: 'Custom range', startDate: '2026-07-01', endDate: '2026-07-31' }, 0],
+  ] as Array<[Record<string, unknown>, number]>) {
+    const data = await buildDashboardAnalytics(store, seed.users[0], { ...historicalQuery, ...filters }, undefined, asOf);
+    assert.equal(data.kpis[0].label, 'Total Textiles Declared');
+    assert.equal(data.kpis[0].value, formatMass(expected));
+    assert.equal(data.kpis.some(item => item.label === 'Total Textiles Collected'), false);
+    assert.equal(data.circularFlow.generatedKg, expected);
+    assert.equal(data.wasteTrend.reduce((sum, point) => sum + point.recorded, 0), expected);
+    assert.equal(data.circularFlow.collectedAvailable, false);
+    assert.equal(data.impactMetrics.diversionRate, null);
+  }
 });
 
 test('analytics excludes other years and future batches, keeps all transactions, and does not duplicate facility outcomes', async () => {

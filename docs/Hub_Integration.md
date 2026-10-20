@@ -53,7 +53,7 @@ The ZIP alone does not establish which commit is currently deployed on mobile.
   A new mobile Recycler signup with no explicit Hub role or activity therefore
   needs administrator clarification, not automatic Hub approval or conversion.
 - **Overview:** collection/disposal oversight is separate from the recovery KPIs;
-  Hub accounts open a dedicated handling workspace. Recyclable Textiles Collected
+  Hub accounts open a dedicated handling workspace. Recyclable Textiles Received
   uses only validated intake, including Consumer assumptions with disclosed basis.
 - **Listings / Material Registry:** retain original mobile stock and statuses;
   explain assumed recyclability without manufacturing collection evidence.
@@ -230,11 +230,22 @@ Other listings are marked locked. The web does not execute weighing mutations.
   disposal-event-date basis. Disposal does not enter the recovery-share numerator
   or establish landfill diversion. Final reuse/recycling outputs remain available
   in lifecycle charts, reports and governance calculations.
-- **Total Textiles Collected:** validated `Collection` recovery-record output,
+- **Total Textiles Declared:** sum of declared weights once per registered material
+  batch in the selected authorization scope and registration period. This replaces
+  the former Total Textiles Collected headline and uses the same Total Textiles
+  Declared label in the evidence summary and Material Flow report under identical
+  filters. Its sparkline groups declarations by registration month. Missing weights
+  are excluded, with no physical receipt or transfer-completion requirement.
+- **Textiles Physically Received (separate lifecycle evidence):** validated `Collection` recovery-record output,
   once per batch, regardless of textile condition. Where no collection record
   exists, a single unambiguous, non-superseded Verified receipt with verifier
   and linked non-cancelled transfer can establish intake. Collection and receipt
   are never added for the same batch. Multiple intake records need reconciliation.
+  Charts, Governance and reports use this display name; existing `collectedKg`
+  fields and the import CSV's `collected_kg` remain unchanged for compatibility.
+  Recyclable Textiles Received is the recyclable-eligible subset of this intake,
+  not a subset calculated from declarations alone. Recovery share still uses
+  supported physical intake as its denominator, never the declared headline.
 - **Confirmed Recycling Output:** balanced, validated final `Processing` or
   `Recovery` output with `outcome=Recycling`, linked to a completed transfer.
   Recovery takes precedence over Processing for the same portion. Recyclable

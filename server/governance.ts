@@ -17,7 +17,7 @@ export function buildGovernance(actor: UserRecord, configuration: ConfigurationR
   const aggregateOnly = actor.role === 'Government' || actor.scope.aggregateOnly;
   return {
     methodology: {
-      massAccounting: 'Confirmed recovery share = validated final reuse and recycling output linked to collected batches / validated collection in the same registration cohort. Transfers and stage weights are not additive.',
+      massAccounting: 'Total Textiles Declared sums reported batch weights entered into the platform. Textiles Physically Received is separately supported physical intake. Confirmed recovery share = matched validated final reuse and recycling output / physically received weight in the same registration cohort, not declared weight. Transfers and stage weights are not additive.',
       environmentalImpact: 'CO2e, water savings and landfill avoidance are not calculated without an approved methodology. Hub disposal is reported separately from recovered output.',
       predictiveAnalytics: 'Bundled synthetic training data; chronological holdout evaluation and regional history gates. Forecasts are estimates, not measured operational outcomes.',
       version: configuration?.methodologyVersion ?? 'Not approved',
@@ -100,7 +100,7 @@ export async function buildGovernanceDashboard(store: Store, actor: UserRecord, 
     hubDisposals: { available: disposals.available, records: disposals.summary.records, disposedKg: disposals.available ? disposals.summary.disposedKg : null, invalidRecords: disposals.summary.invalidRecords },
     notes: ['Dates select batch registration in Asia/Manila; outcomes are the latest recorded through the reporting timestamp, not historical status snapshots.',
       'Collection, transfers, sorting and final outcomes describe overlapping stages. Do not add their masses. Recyclable classification does not establish recycling output.',
-      'Recovery share uses matched validated final reuse/recycling output divided by validated collection. Missing evidence is not an observed zero.',
+      'Recovery share uses matched validated final reuse/recycling output divided by physically received weight, not declared weight. Missing evidence is not an observed zero.',
       'Regional activity describes participating platform records, not national waste generation. Missing locations are retained as an unattributed group.',
       'Producer evidence follows the source batch, not downstream ownership; roles and approvals reflect current account records. Regional producer groups may overlap in participants.',
       'Approved Hub participation follows assignments and historical handling evidence. Listing weighings are legacy history, not proof of physical collection. Facility counts are registered matching sites, not proof of service coverage.',

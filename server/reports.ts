@@ -7,11 +7,11 @@ import { aggregate, buildDashboardAnalytics, loadDashboardAnalyticsSnapshot, sel
 import { buildDataQuality } from './dataQuality.js';
 import type { Store } from './store.js';
 import type { UserRecord } from './types.js';
-import { formatMass, percentage, toTons } from '../shared/metrics.js';
+import { formatMass, MATERIAL_METRIC_LABELS, percentage, toTons } from '../shared/metrics.js';
 import { ReportingInputError, type ReportDocument } from '../shared/reporting.js';
 
 export const REPORT_DEFINITIONS = [
-  { id: 'material-flow', name: 'Material Flow Summary', description: 'Declared, collected, reused and recycled mass, by region and material. Includes reconciled cohort totals.', formats: ['CSV', 'Print / PDF'], available: true },
+  { id: 'material-flow', name: 'Material Flow Summary', description: 'Declared textiles, physical receipts, reuse and recycling, by region and material. Includes reconciled cohort totals.', formats: ['CSV', 'Print / PDF'], available: true },
   { id: 'data-quality', name: 'Data Quality Summary', description: 'Measurement evidence, validation coverage and discrepancy findings using the configured threshold.', formats: ['CSV', 'Print / PDF'], available: true },
   { id: 'organizations', name: 'Organization Participation', description: 'Source and recipient participation, with de-identified regional summaries for aggregate-only accounts.', formats: ['CSV', 'Print / PDF'], available: true },
 ];
@@ -47,7 +47,7 @@ export async function buildReport(store: Store, actor: UserRecord, id: string, q
       'The separate synthetic predictive dataset and its fixed cutoff are not used in these operational reports.'],
   };
   if (id === 'material-flow') {
-    report.columns = ['Region', 'Material', 'Unique batches', 'Declared (t)', 'Validated collection (t)', 'Confirmed reuse (t)', 'Confirmed recycling (t)', 'Collected outcome unconfirmed (t)', 'Confirmed recovery share (%)', 'Completed transfer mass (t)', 'Completed transfers missing weight'];
+    report.columns = ['Region', 'Material', 'Unique batches', `${MATERIAL_METRIC_LABELS.declared} (t)`, `${MATERIAL_METRIC_LABELS.received} (t)`, 'Confirmed reuse (t)', 'Confirmed recycling (t)', 'Received outcome unconfirmed (t)', 'Confirmed recovery share (%)', 'Completed transfer mass (t)', 'Completed transfers missing weight'];
     const keys = [...new Set(batches.map(item => JSON.stringify([item.region, item.materialCategory])))].sort();
     const makeRow = (region: string, category: string, selected: typeof batches) => {
       const flow = aggregate(selected, transfers, recovery, { measurements: context.currentMeasurements, listings: source.listings, users: source.users });
@@ -59,27 +59,27 @@ export async function buildReport(store: Store, actor: UserRecord, id: string, q
     const hasOutput = flow.reusedAvailable || flow.recycledAvailable;
     report.summary = [
       { label: 'Unique batches', value: count(batches.length), description: 'Distinct material batches registered within the selected dates and scope.' },
-      { label: 'Declared mass', value: formatMass(flow.generatedKg), description: 'Reported batch weights; declarations do not prove collection.' },
-      { label: 'Validated collection', value: flow.collectedAvailable ? formatMass(flow.collectedKg) : 'Pending evidence', description: 'Collected weight supported by validated intake evidence.' },
+      { label: MATERIAL_METRIC_LABELS.declared, value: formatMass(flow.generatedKg), description: 'Reported weights entered for unique batches; matches the Overview declaration total under the same filters.' },
+      { label: MATERIAL_METRIC_LABELS.received, value: flow.collectedAvailable ? formatMass(flow.collectedKg) : 'Pending evidence', description: 'Physical intake supported by validated evidence; separate from declared weight.' },
       { label: 'Confirmed reuse + recycling', value: hasOutput ? formatMass(flow.reusedKg + flow.recycledKg) : 'Pending evidence', description: 'All accepted final reuse/recycling output; some may lack a matching intake.' },
-      { label: 'Confirmed recovery share', value: data.impactMetrics.diversionRate !== null ? `${data.impactMetrics.diversionRate}%` : 'Not available', description: 'Only outcomes linked to collected batches / validated collection; not landfill diversion.' },
-      { label: 'Collected outcome unconfirmed', value: flow.collectedAvailable ? formatMass(evidence.unresolvedCollectedKg) : 'Pending evidence', description: 'Collected mass without confirmed recovery; not necessarily stock or disposal.' },
+      { label: 'Confirmed recovery share', value: data.impactMetrics.diversionRate !== null ? `${data.impactMetrics.diversionRate}%` : 'Not available', description: 'Matched final outcomes / physically received weight; not declared weight or landfill diversion.' },
+      { label: 'Received outcome unconfirmed', value: flow.collectedAvailable ? formatMass(evidence.unresolvedCollectedKg) : 'Pending evidence', description: 'Physically received mass without confirmed recovery; not necessarily stock or disposal.' },
     ];
     report.interpretation = [
-      { label: 'What was recorded', text: `${count(batches.length)} unique batches declare ${formatMass(flow.generatedKg)}. ${flow.collectedAvailable ? `${formatMass(flow.collectedKg)} has validated collection evidence; ${count(evidence.missingCollectionBatches)} batches still lack validated intake.` : 'No validated collection weight is available. Declared weights must not be treated as physically collected mass.'}` },
+      { label: 'What was recorded', text: `${count(batches.length)} unique batches declare ${formatMass(flow.generatedKg)} entered into the platform. ${flow.collectedAvailable ? `${formatMass(flow.collectedKg)} is separately supported as physically received; ${count(evidence.missingCollectionBatches)} batches still lack supported receipt evidence.` : 'No supported physical receipt weight is available. Declared weights remain counted as platform entries, not as physical receipts.'}` },
       { label: 'What was recovered', text: hasOutput ? `${flow.reusedAvailable ? formatMass(flow.reusedKg) : 'No confirmed weight'} is recorded for reuse and ${flow.recycledAvailable ? formatMass(flow.recycledKg) : 'no confirmed weight'} for recycling. These are final outcomes, not recyclable stock or completed-transfer quantities.` : 'No confirmed final reuse or recycling output is available. This means evidence is missing, not that nothing was recovered.' },
-      { label: 'How the percentage works', text: data.impactMetrics.diversionRate !== null ? `${formatMass(evidence.matchedDiversionKg)} of confirmed outcomes is linked to ${formatMass(flow.collectedKg)} of validated collection: ${data.impactMetrics.diversionRate}%. ${evidence.unlinkedOutcomeKg > 0 ? `${formatMass(evidence.unlinkedOutcomeKg)} of additional outcomes has no matching validated intake and is excluded from this percentage.` : 'Only matched outcomes enter this calculation.'}` : 'The recovery share cannot be established from the available evidence. It requires collected weight, a matched final outcome and no conflicting intake or outcome allocations; unavailable is not 0%.' },
-      { label: 'What remains unconfirmed', text: flow.collectedAvailable ? `${formatMass(evidence.unresolvedCollectedKg)} of collected material has no confirmed recovery outcome. It may include material awaiting processing, losses, rejects or incomplete records. It is not automatically landfill waste or Hub disposal.` : 'Without validated intake, the amount awaiting a confirmed outcome cannot be established.' },
+      { label: 'How the percentage works', text: data.impactMetrics.diversionRate !== null ? `${formatMass(evidence.matchedDiversionKg)} of confirmed outcomes is linked to ${formatMass(flow.collectedKg)} of physically received textiles: ${data.impactMetrics.diversionRate}%. ${evidence.unlinkedOutcomeKg > 0 ? `${formatMass(evidence.unlinkedOutcomeKg)} of additional outcomes has no matching supported receipt and is excluded from this percentage.` : 'Only matched outcomes enter this calculation.'}` : 'The recovery share cannot be established from the available evidence. It requires supported physically received weight, a matched final outcome and no conflicting intake or outcome allocations; unavailable is not 0%.' },
+      { label: 'What remains unconfirmed', text: flow.collectedAvailable ? `${formatMass(evidence.unresolvedCollectedKg)} of physically received material has no confirmed recovery outcome. It may include material awaiting processing, losses, rejects or incomplete records. It is not automatically landfill waste or Hub disposal.` : 'Without supported physical intake, the amount awaiting a confirmed outcome cannot be established.' },
       { label: 'Transfers are separate', text: evidence.completedWithWeight ? `${formatMass(evidence.completedKg)} is recorded across completed transfers with final weights. Transfers describe movement and may repeat the same material, so their mass must not be added to collection or recovery totals. ${count(evidence.completedMissingWeight)} completed transfers lack final weight and are excluded from transfer mass.` : `No completed-transfer mass with final-weight evidence is available. ${count(evidence.completedMissingWeight)} completed transfers lack final weight. Agreed quantities are not used as a substitute.` },
     ];
     const leadingRegion = data.regionalActivity.find(item => item.collectionAvailable && item.collectionKg > 0);
-    if (leadingRegion) report.interpretation.push({ label: 'Largest recorded collection', text: `Within these selected records, ${leadingRegion.region || 'the region not recorded group'} has the largest validated collection at ${formatMass(leadingRegion.collectionKg)}. This compares recorded activity, not national waste generation or actual service coverage.` });
+    if (leadingRegion) report.interpretation.push({ label: 'Largest recorded physical intake', text: `Within these selected records, ${leadingRegion.region || 'the region not recorded group'} has the largest supported physically received weight at ${formatMass(leadingRegion.collectionKg)}. This compares recorded activity, not national waste generation or actual service coverage.` });
     report.definitions = [
-      { label: 'Declared (t)', text: 'Reported material weights, counted once per batch. Not added to collection as a separate flow.' },
-      { label: 'Validated collection (t)', text: 'Intake supported by validated evidence. Missing evidence is shown as pending, not zero.' },
+      { label: `${MATERIAL_METRIC_LABELS.declared} (t)`, text: 'Reported textile weights entered into the platform, counted once per batch. Does not require physical receipt or transfer completion.' },
+      { label: `${MATERIAL_METRIC_LABELS.received} (t)`, text: 'Physical intake supported by validated evidence. Separate from declarations; missing evidence is shown as pending, not zero.' },
       { label: 'Confirmed reuse / recycling (t)', text: 'Validated final outcomes. An outcome may be known even when its intake evidence is missing.' },
-      { label: 'Collected outcome unconfirmed (t)', text: 'Collected mass minus its matched confirmed outcomes. It is not a measured stock balance or landfill-disposal amount.' },
-      { label: 'Confirmed recovery share (%)', text: 'Matched confirmed reuse and recycling / validated collection x 100. Outcomes without matching intake are excluded. Group percentages must not be summed or averaged.' },
+      { label: 'Received outcome unconfirmed (t)', text: 'Physically received mass minus its matched confirmed outcomes. It is not a measured stock balance or landfill-disposal amount.' },
+      { label: 'Confirmed recovery share (%)', text: 'Matched confirmed reuse and recycling / physically received weight x 100. Declared weight is not the denominator. Outcomes without matching intake are excluded. Group percentages must not be summed or averaged.' },
       { label: 'Completed transfer mass (t)', text: 'Final validated weight, otherwise reported receipt weight, for completed transfers. Material may move more than once; this is not unique recovery.' },
       { label: 'Pending evidence / Not available', text: 'Insufficient or conflicting evidence. These labels must not be interpreted as numerical zero.' },
     ];
@@ -110,7 +110,7 @@ export async function buildReport(store: Store, actor: UserRecord, id: string, q
       const linked = transfers.filter(item => users.get(item.providerId)?.organizationId === organizationId || users.get(item.recipientId)?.organizationId === organizationId);
       return { id: organizationId, name: organization?.name ?? 'Unregistered organization', type: organization?.type ?? 'Unknown', region: organization?.region ?? sourceBatches[0]?.region ?? 'Unknown', batches: sourceBatches.length, declared: sourceBatches.reduce((sum, item) => sum + (item.declaredWeightKg ?? 0), 0), received: linked.filter(item => isCompletedTransfer(item.status) && users.get(item.recipientId)?.organizationId === organizationId).reduce((sum, item) => sum + (item.verifiedWeightKg ?? 0), 0), transfers: linked.length };
     });
-    report.columns = [actor.scope.aggregateOnly ? 'Region / stakeholder group' : 'Organization', 'Region', 'Stakeholder type', 'Organizations', 'Source batches', 'Declared as source (t)', 'Verified received (t)', 'Transfer involvements'];
+    report.columns = [actor.scope.aggregateOnly ? 'Region / stakeholder group' : 'Organization', 'Region', 'Stakeholder type', 'Organizations', 'Source batches', 'Declared textiles as source (t)', 'Verified received (t)', 'Transfer involvements'];
     if (actor.scope.aggregateOnly) {
       const groups = [...new Set(records.map(item => JSON.stringify([item.region, item.type])))].sort();
       report.rows = groups.map(key => {

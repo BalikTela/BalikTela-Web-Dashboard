@@ -168,7 +168,7 @@ try {
     await navigate('Overview');
     const expected=await buildDashboardAnalytics(store,actor,{},undefined,now);
     assert.equal(expected.circularFlow.collectedKg,original.circularFlow.collectedKg+1080);
-    await active().locator('article').filter({has:page.getByText('Total Textiles Collected',{exact:true})}).getByText(expected.kpis[0].value,{exact:true}).waitFor();
+    await active().locator('article').filter({has:page.getByText('Total Textiles Declared',{exact:true})}).getByText(expected.kpis[0].value,{exact:true}).waitFor();
     const engagement=()=>active().locator('section').filter({has:page.getByText('Platform Engagement',{exact:true})}).last();
     const activityValue=(label:string,value:number)=>engagement().locator('article').filter({has:page.getByText(label,{exact:true})}).getByText(value.toLocaleString(),{exact:true}).waitFor();
     await activityValue('Material listings',expected.sharedActivity.listings);

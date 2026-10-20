@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BalikTelaPH Dashboard Computation Reference</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f5f7f8; color: #202b28; font: 15px/1.65 system-ui, sans-serif; letter-spacing: 0; }
+    main { max-width: 1100px; margin: auto; padding: 40px 24px 72px; background: white; }
+    h1 { font-size: 30px; line-height: 1.25; margin: 0 0 12px; }
+    h2 { font-size: 22px; line-height: 1.35; margin: 36px 0 14px; border-top: 2px solid #dce6e1; padding-top: 24px; }
+    h3 { font-size: 17px; margin: 24px 0 10px; }
+    p { margin: 10px 0; }
+    a { color: #176448; overflow-wrap: anywhere; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 18px 0; border-block: 1px solid #dae1e6; margin-top: 20px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 14px 0; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 12px; border: 1px solid #dfe5e8; overflow-wrap: anywhere; }
+    th { background: #edf3f1; }
+    th:first-child, td:first-child { width: 31%; }
+    code { font: 13px/1.6 ui-monospace, monospace; background: #f1f4f6; padding: 2px 4px; overflow-wrap: anywhere; }
+    .note { border-left: 3px solid #27775c; padding: 8px 16px; background: #f3f8f5; margin: 18px 0; }
+    .caution { border-left-color: #bd7a2f; background: #fff8ed; }
+    .meta, .source { color: #586871; font-size: 13px; }
+    li { margin-bottom: 8px; }
+    section { scroll-margin-top: 20px; }
+    @media (max-width: 600px) { main { padding: 24px 14px 48px; } h1 { font-size: 26px; } h2 { font-size: 20px; } th, td { padding: 8px; } table { font-size: 13px; } }
+    @media print { body { background: white; } main { max-width: none; padding: 0; } nav { display: none; } h2, h3 { break-after: avoid; } tr, .note { break-inside: avoid; } a { color: inherit; text-decoration: none; } }
+  </style>
+</head>
+<body><main>
+<header>
+  <h1>BalikTelaPH Dashboard Computation Reference</h1>
+  <p>What each figure counts, how it is calculated, which records support it, and what it does not prove.</p>
+  <p class="meta">Source audit: 20 October 2026. Base revision: <code>ddc41ab</code>, updated for the local Total Textiles Declared headline change. This documents the implemented web dashboard, not proposed blueprint formulas. No live database totals were queried for this document. Numerical examples are illustrative or explicitly taken from earlier screenshots.</p>
+</header>
+<nav aria-label="Contents">
+  <a href="#rules">Reporting rules</a><a href="#sources">Data sources</a><a href="#overview">Overview</a><a href="#evidence">Material evidence</a><a href="#waste">Waste analytics</a><a href="#registry">Listings &amp; registry</a><a href="#traceability">Traceability</a><a href="#recovery">Recovery monitoring</a><a href="#facilities">Hub facilities</a><a href="#stakeholders">Stakeholders</a><a href="#geography">Geographic insights</a><a href="#advanced">Advanced analytics</a><a href="#quality">Data quality</a><a href="#governance">Governance</a><a href="#reports">Reports</a><a href="#administration">Administration</a><a href="#imports">Bulk import</a><a href="#caveats">Important caveats</a>
+</nav>
+
+<section id="rules"><h2>1. Rules That Apply Across Pages</h2>
+  <ul>
+    <li><strong>Mass:</strong> stored/calculated in kilograms; displayed as metric tons: <code>t = kg / 1,000</code>. Most mass labels use up to three decimal places; values under 1 kg may use six decimals in tons. CSV details retain up to six decimal places in tons. Percentages generally use one decimal place; predictive evaluation commonly uses two. Calculate from unrounded weights, not displayed labels.</li>
+    <li><strong>Material cohort:</strong> most analytics select non-archived batches by their registration timestamp, then use linked evidence known through the current as-of time. August chart values mean August-registered batches, not necessarily collections physically performed in August. Selecting a historical period does not reconstruct the historical status of every batch.</li>
+    <li><strong>Timezone:</strong> reporting boundaries are Asia/Manila. Default Last 3 calendar months means current month to date plus the preceding two full calendar months. In October 2026, the window starts 1 August 2026.</li>
+    <li><strong>Comparison:</strong> normally the immediately preceding window of equal elapsed duration. Year to date compares with the same date/time in the previous year, with leap-day adjustment. All time/Pilot period has no preceding comparison.</li>
+    <li><strong>Access and filters:</strong> authorized account, organization, Hub and regional scope apply before aggregation. Material, pathway, transaction and evidence filters can further change the cohort. A card is not automatically a platform-wide total.</li>
+    <li><strong>Missing values:</strong> Pending evidence, Not available, Intake not recorded and Feed unavailable are not measured zeros. Zero may be displayed when a supported input/ledger exists and no qualifying quantity is present. Missing declared weights are omitted from the declared sum and counted separately.</li>
+    <li><strong>PoC scope:</strong> synthetic scenario lifecycle records and shared operational records are combined under the same material-evidence rules. They do not become independently measured real-world or national totals. The predictive training dataset is separate.</li>
+    <li><strong>Overlapping stages:</strong> declared, transferred, collected, sorted, reused and recycled weights are different views of the same material. Do not add all stages to calculate a larger total.</li>
+    <li><strong>Pagination:</strong> totals normally use the complete filtered record set, not only the ten rows currently shown. Search/filter behavior is noted below where summary cards use a different set from the table.</li>
+  </ul>
+  <p class="source">Sources: <a href="../shared/metrics.ts">shared/metrics.ts</a>, <a href="../shared/reporting.ts">shared/reporting.ts</a>, <a href="../server/dashboardAnalytics.ts">server/dashboardAnalytics.ts</a>.</p>
+</section>
+
+<section id="sources"><h2>2. Where the Data Comes From</h2>
+  <table><thead><tr><th>Record / source</th><th>What it supplies and how it links</th></tr></thead><tbody>
+    <tr><td>Material batches<br><code>material_batches</code></td><td>Unique material identity; declared/current weights, material category, condition, intended pathway, source user/organization, geography and registration date. Central join key: batch ID.</td></tr>
+    <tr><td>Listings<br><code>listings</code></td><td>Mobile/web posted textile, owner, stock, reservations, status and assigned Hub operator. Linked by batch ID. Listing quantity is not proof of physical intake.</td></tr>
+    <tr><td>Requests<br><code>match_requests</code></td><td>Requester, listing, requested quantity, terms and decision. A request is not a completed transaction.</td></tr>
+    <tr><td>Transfers<br><code>transfers</code></td><td>Provider/recipient, listing/request/batch references, agreed/handover/receipt/verified weights, lifecycle status and events. Statuses Completed and Processed both count as completed.</td></tr>
+    <tr><td>Measurements<br><code>measurements</code></td><td>Stage-specific weight, status, operator/verifier, timestamp, transfer/Hub reference and correction/supersession links. Historical listing-scale measurements remain separate from intake evidence.</td></tr>
+    <tr><td>Processing records<br><code>recovery_records</code></td><td>Collection, Sorting, Processing, Recovery and Rejection records with input, output, rejects, loss, outcome, validation and batch/transfer/Hub references.</td></tr>
+    <tr><td>Hub disposal ledger<br><code>hub_disposals</code></td><td>Disposal ID, listing ID, operator ID, disposed weight, reason and timestamp. The listing links disposal to a batch. Does not establish final recycling or landfill avoidance.</td></tr>
+    <tr><td>Users / organizations / Hubs<br><code>users</code>, <code>organizations</code>, <code>facilities</code></td><td>Account roles, identity, approval, scopes, source/recipient names and registered Hub monthly capacity. Facilities are registered physical Hubs; operator login accounts are not additional physical Hubs.</td></tr>
+    <tr><td>Rewards / audit / configuration<br><code>reward_ledger</code>, <code>activity_logs</code>, <code>configuration_versions</code></td><td>Signed credit entries; audited export actions; configured discrepancy threshold, reward rate and compatibility weights. These are not inferred from collected mass alone.</td></tr>
+    <tr><td>Bundled predictive dataset</td><td>Deterministic synthetic observations generated in <code>server/analytics/synthetic.ts</code>. It does not train automatically on newly imported or live mobile records.</td></tr>
+  </tbody></table>
+  <p>Mobile-to-web reconciliation uses the shared IDs above, not matching titles, names, amounts or screen labels. A new collection/outcome must reference the original batch and relevant transfer; repeated measurements are not additional material.</p>
+  <p class="source">Source mapping: <a href="../server/database/schema.ts">server/database/schema.ts</a>, <a href="../server/database/codecs.ts">server/database/codecs.ts</a>, <a href="../server/supabaseStore.ts">server/supabaseStore.ts</a>.</p>
+</section>
+
+<section id="overview"><h2>3. Overview: Main Tiles</h2>
+  <table><thead><tr><th>Figure</th><th>Implemented calculation and interpretation</th></tr></thead><tbody>
+    <tr><td>Total Textiles Declared</td><td><code>sum(declaredWeightKg once per selected registered batch) / 1,000</code>. Total material weight entered into the platform, including estimated or measured declarations. The evidence summary and Material Flow report use this same label and calculation under identical filters. No receipt or completed transfer is required; missing weights are excluded. The headline sparkline uses monthly declarations, not physical intake. This replaces the former Total Textiles Collected headline.</td></tr>
+    <tr><td>Batches with validated intake</td><td>Number of unique selected batches with an accepted collection weight. A missing receipt does not become a zero-weight collection.</td></tr>
+    <tr><td>Recyclable Textiles Received</td><td><code>sum(accepted intake of recyclable-eligible batches) / 1,000</code>. Eligible means recorded condition Recyclable, or a Consumer source with a posted non-Draft/non-Unknown own listing. The second is a workflow assumption, not technical certification. Only count it after intake qualifies; a declaration alone is not physical receipt.</td></tr>
+    <tr><td>Recyclable / assumed batch counts</td><td>Count collected batches passing that classification; the assumed subset counts those eligible via Consumer listing rather than an explicit Recyclable condition.</td></tr>
+    <tr><td>Completed Textile Transfers</td><td>For each unique Completed/Processed transfer, prefer its one current Verified Validation measurement with verifier; otherwise use its reported receipt weight. Sum known final weights and divide by 1,000. Never substitute agreed weight for a completed transfer. Repeated movements of the same textile can occur.</td></tr>
+    <tr><td>Weighted / missing final weight</td><td>Count completed transfers with a qualifying validation or receipt weight; missing = all completed transfers minus those with weight. Reported-receipt count identifies transfers using the fallback.</td></tr>
+    <tr><td>Recorded Hub Disposal</td><td><code>sum(valid distinct disposal-ledger weights) / 1,000</code>. Includes archived material in the selected Hub registration cohort. Partial disposals count once per ledger ID. Do not add listing cumulative disposal counters. Missing feed and invalid-only evidence are not published as a supported zero.</td></tr>
+    <tr><td>Confirmed Recovery Share</td><td><code>100 * matched final reuse-and-recycling output / validated collection</code>, rounded to one decimal. Numerator includes only outcomes linked to collected batches. Pending/unconfirmed collected material remains in the denominator; unlinked final outputs are excluded. Missing denominator, no matching outcome evidence or unresolved allocation conflicts makes the percentage unavailable.</td></tr>
+    <tr><td>Registered Accounts</td><td>Distinct valid Supabase-auth UUIDs attached to scoped profiles, joined by the as-of time; exclude SYN-prefixed profile IDs. Includes real test registrations and is not a count of recently active or logged-in users. Geography, role and organization filters apply; material category and cohort registration dates do not determine this account count.</td></tr>
+    <tr><td>Active Producers</td><td>Within each represented batch region, count distinct source user IDs currently assigned Producer role; add regional counts. This means participating source accounts, not sessions or all registered Producers. The same account in multiple regions can be counted more than once across the total.</td></tr>
+    <tr><td>Active Recyclers</td><td>Within each represented batch region, count distinct recipient IDs currently assigned Recycler role, excluding accounts recognized as Hub operators; add regional counts. Transfers do not have to be completed. Cross-region involvement can repeat one account. This is not the merged Consumer/Recycler directory count.</td></tr>
+    <tr><td>Completed Transactions</td><td>Count distinct selected transfers whose status is Completed or Processed, regardless of whether final weight is available.</td></tr>
+    <tr><td>Change versus previous period</td><td><code>100 * (current count - previous count) / previous count</code>, one decimal. If prior count is zero/non-positive, show No baseline activity or No change, not an invented percentage increase.</td></tr>
+  </tbody></table>
+  <div class="note"><strong>Example from earlier screenshots, not a fresh live read:</strong><br>105,727 kg / 1,000 = <strong>105.727 t collected</strong>.<br>(19,020 kg reuse + 48,319 kg recycling) / 1,000 = <strong>67.339 t total confirmed output</strong>.<br>Of that, 86 kg has no matching intake. Therefore <strong>(67,339 - 86) / 105,727 * 100 = 63.6%</strong>, not 67.339 / 105.727.<br>105,727 - 67,253 = <strong>38.474 t collected with recovery unconfirmed</strong>.</div>
+  <p class="source">Sources: <a href="../server/dashboardAnalytics.ts">kpis() and regions()</a>, <a href="../server/materialEvidence.ts">aggregateMaterialEvidence()</a>, <a href="../server/platformActivity.ts">registeredAccountCount()</a>, <a href="../server/hubDisposals.ts">hubDisposalEvidence()</a>.</p>
+</section>
+
+<section id="evidence"><h2>4. Material Evidence Summary and Acceptance Rules</h2>
+  <table><thead><tr><th>Figure</th><th>Computation</th></tr></thead><tbody>
+    <tr><td>Total Textiles Declared</td><td><code>sum(declaredWeightKg for unique selected batches)</code>. Missing values omitted, not evidence of physically received zero. Original material reported to the platform, not national textile generation. Same total as the Overview headline.</td></tr>
+    <tr><td>Textiles Physically Received</td><td>Accepted physical intake once per batch from validated Collection output, otherwise one qualifying current Verified receipt with a verifier and matching transfer. Separate from Total Textiles Declared; retained for lifecycle recovery calculations. Internal <code>collectedKg</code> field names remain compatible with the shared integration.</td></tr>
+    <tr><td>Sorted output</td><td>Sum the output weight of one accepted validated Sorting record per batch. Input and output must be valid non-negative masses and output cannot exceed input by more than 0.001 kg. Multiple Sorting records make that batch's sorted amount unsupported.</td></tr>
+    <tr><td>Confirmed reuse</td><td>Sum accepted final output for Reuse, Repair, Redistribution and Upcycling outcomes. These are grouped under reuse in the current implementation.</td></tr>
+    <tr><td>Confirmed recycling</td><td>Sum accepted final output explicitly marked Recycling. This is different from recyclable intake.</td></tr>
+    <tr><td>Received: recovery unconfirmed</td><td>For each accepted intake batch: <code>intake - matching accepted final output</code>; sum the batch remainders. Withhold conflicting outcomes and retain their intake as unresolved. May include pending stock, rejects, process losses and missing records; not measured disposal or warehouse inventory.</td></tr>
+    <tr><td>Missing intake</td><td><code>selected unique batches - batches with accepted intake</code>.</td></tr>
+    <tr><td>Unlinked outcome</td><td>Accepted final output for batches without accepted intake. Included in total final output, excluded from recovery-share numerator.</td></tr>
+    <tr><td>Collection/outcome conflicts</td><td>Counts of detected ambiguous allocations: repeated collection evidence, unsupported remainder accounting, duplicate final portions, conflicting final records, or outcome input above accepted intake. Not a sum of disputed kilograms.</td></tr>
+  </tbody></table>
+  <h3>When Final Output Is Accepted</h3>
+  <p>The Processing/Recovery record must be Validated with a validator; reference a Completed/Processed transfer for the same batch; have valid input/output/reject/loss quantities; and balance within <strong>0.001 kg</strong>. Its input cannot exceed a known verified transfer allocation. A final Recovery record supersedes a Processing record for the same transfer/outcome rather than being added again. Multiple separate transfer/outcome portions on one batch are conservatively withheld until a valid root-lot allocation contract exists.</p>
+  <p>Collection acceptance is not identical to final-outcome mass balancing: it checks an unambiguous Collection input/output pair or a qualifying verified receipt. Hub handling also accepts certain Measured receipts, so its supported scope is not identical to platform-wide validated collection.</p>
+  <p class="source">Source: <a href="../server/materialEvidence.ts">server/materialEvidence.ts</a>, <a href="../shared/recovery.ts">shared/recovery.ts</a>, <a href="../server/hubEvidence.ts">server/hubEvidence.ts</a>.</p>
+</section>
+
+<section id="waste"><h2>5. Waste Analytics and Shared Charts</h2>
+  <table><thead><tr><th>Figure / chart</th><th>Computation</th></tr></thead><tbody>
+    <tr><td>Total Textiles Declared / Textiles Physically Received / Confirmed outcomes</td><td>Reuse the central declared, physical-intake and final reuse + recycling aggregates. The confirmed-output headline can include unlinked outcomes; its recovery percentage uses only linked outcomes and physically received weight, not declarations.</td></tr>
+    <tr><td>Lowest confirmed share</td><td>Recalculate recovery share separately for each material category; discard unavailable rates; show the smallest supported percentage. It is not the smallest category volume.</td></tr>
+    <tr><td>Confirmed recovery share</td><td>The same matched-output / intake formula as Overview. No separate environmental calculation.</td></tr>
+    <tr><td>Recovery yield from sorted textiles</td><td><code>100 * sum(final output on matched eligible sorted batches) / sum(sorted output for those same batches)</code>. Requires accepted intake, positive sorted output, eligible final outcome, and final input not exceeding sorted mass by more than 0.001 kg. Batches without matching final evidence are excluded from both yield numerator and denominator. This is a conditional yield, not recovery share or a simple sum of every sorted record.</td></tr>
+    <tr><td>Textile Evidence Trend</td><td>Group selected batches by Manila registration month; rerun the evidence aggregate for each group. Four lines show declared, collected, recycling and reuse mass in tons. Missing supported stage evidence is a chart gap, not an observed zero. Line smoothing is visual only.</td></tr>
+    <tr><td>Received Textile Categories / Textile Category Mix</td><td>Each donut slice is the supported physical receipt mass for that category. Implied category share = category received / all category received * 100. It is not the share of listed items or recyclable stock. Display rounding may prevent percentages adding to exactly 100%.</td></tr>
+    <tr><td>Category Recovery Rates</td><td><code>100 * category matched final output / category validated intake</code>. Use the same acceptance/conflict rules within the category. Do not average these percentages to obtain platform recovery share.</td></tr>
+    <tr><td>Regional Receipts and Recycling</td><td>Group batches by their recorded region, then independently compute supported physical receipts and final recycling. Region follows batch/source geography, not automatically the receiving Hub's physical location.</td></tr>
+  </tbody></table>
+  <p>Environmental diversion, emissions avoided and water savings tiles have been removed. Their backend equivalents remain unavailable, not zero.</p>
+  <p class="source">Sources: <a href="../src/pages/WasteAnalytics.tsx">WasteAnalytics.tsx</a>, <a href="../src/components/ImpactSummary.tsx">ImpactSummary.tsx</a>, <a href="../src/components/Charts.tsx">Charts.tsx</a>, <a href="../server/dashboardAnalytics.ts">dashboardAnalytics.ts</a>.</p>
+</section>
+
+<section id="registry"><h2>6. Listing Oversight and Material Registry</h2>
+  <table><thead><tr><th>Figure</th><th>Computation / scope</th></tr></thead><tbody>
+    <tr><td>Matching listings</td><td>Number of authorized listings remaining after this page's search and local filters. This page uses its own listing filters, not the analytics batch-cohort totals.</td></tr>
+    <tr><td>Available / In progress / Completed</td><td>Counts within matching rows using mobile-aligned status groups: available = Available; matched/reserved = In progress; completed = Completed. Draft, Closed and Unknown are separate groups and explain why these three counts may not add to all matching listings.</td></tr>
+    <tr><td>Available stock</td><td><code>max(0, stored availableWeightKg - reservedKg)</code>; use original listing quantity if availableWeightKg is absent. If stock is unknown, show Awaiting weighing. Stored available stock already reflects lifecycle adjustments; do not subtract disposal twice.</td></tr>
+    <tr><td>Reserved / Recorded / Disposed</td><td>Display the listing's reservedKg, original quantityKg and disposedWeightKg fields. These are recorded fields, not independent KPI additions.</td></tr>
+    <tr><td>Material batches</td><td>Count non-archived batches from the authorized, globally filtered registry response.</td></tr>
+    <tr><td>Total Textiles Declared</td><td>Sum declaredWeightKg across active registry batches. The small awaiting-weighing count is active batches with null declared weight. Match the same active batch scope when comparing to reports.</td></tr>
+    <tr><td>Measured mass</td><td>Sum <strong>currentWeightKg</strong> across active batches whose canonical status is Measured or Verified. This is current recorded material weight, not cumulative collection or the sum of measurement history.</td></tr>
+    <tr><td>Archived batches</td><td>Count Archived batch records returned within the authorized/filter scope, retained for traceability.</td></tr>
+    <tr><td>Weight Status</td><td>Estimated remains Estimated; canonical Measured and Verified are both displayed as Measured. The original verification provenance remains stored and still supports stricter analytical checks.</td></tr>
+    <tr><td>Declared / Current / History</td><td>Declared and Current show their stored batch fields. History rows show individual stage measurements; do not add the history to calculate collected mass.</td></tr>
+  </tbody></table>
+  <p>The registry summary uses all loaded active batches; changing table search/visibility does not redefine those summary totals. Listing summary cards, by contrast, follow the locally filtered listing rows.</p>
+  <p class="source">Sources: <a href="../src/pages/ListingOversight.tsx">ListingOversight.tsx</a>, <a href="../shared/workflows.ts">shared/workflows.ts</a>, <a href="../src/pages/MaterialRegistry.tsx">MaterialRegistry.tsx</a>, <a href="../shared/registryWeights.ts">registryWeights.ts</a>.</p>
+</section>
+
+<section id="traceability"><h2>7. Traceability and Historical Listing Weights</h2>
+  <h3>Transfers / Offers</h3>
+  <table><thead><tr><th>Figure</th><th>Computation</th></tr></thead><tbody>
+    <tr><td>Requested / Agreed</td><td>Offer quantityKg / transfer agreedWeightKg: the quantity negotiated. Not proof of handover or physical receipt.</td></tr>
+    <tr><td>Reported handover / Reported receipt / Verified</td><td>The transfer's stored handoverWeightKg, receiptWeightKg and verifiedWeightKg. Display separately; do not add them. A status alone does not create a verified mass.</td></tr>
+    <tr><td>Discrepancy</td><td>In the web receipt workflow: <code>receipt - (handover, otherwise agreed)</code>, rounded to 0.001 kg. Positive means receipt is greater; negative means less. Data Quality uses the absolute discrepancy divided by the reference weight.</td></tr>
+    <tr><td>Event count</td><td>Number of lifecycle event records attached to that transfer. Four events do not mean four transfers.</td></tr>
+    <tr><td>Requester</td><td>Name resolved from the transfer/request recipient reference. Not inferred from a matching title or organization string.</td></tr>
+    <tr><td>Reward Issued</td><td>Transfer has rewardIssuedAt. It is a recorded state, not a new output-weight calculation.</td></tr>
+  </tbody></table>
+  <h3>Aggregate-Only Transfer View</h3>
+  <p>Transfer records = scoped transfer count; Completed transfer mass = central supported completed-transfer mass; Transfers completed = completed / all scoped transfers * 100; Active workflows = transfers not Completed, Processed, Cancelled, Rejected, Expired, Closed or Unknown. Disputed transfers remain active under this grouping.</p>
+  <p>Barter Activity uses: Listings = scoped listing count; Matches = linked request count across states (not just accepted); Validated = transfers with verifiedWeightKg and status Validated/Completed/Processed; Completed = completed-transfer count. Net reward credits sums signed transfer-linked non-Redeemed ledger entries, including reversals/adjustments; it is not a wallet balance after redemptions.</p>
+  <h3>Historical Listing Weights</h3>
+  <table><thead><tr><th>Figure</th><th>Computation</th></tr></thead><tbody>
+    <tr><td>Awaiting weighing</td><td>Count eligible via-Hub/assigned-Hub listings with null recorded quantity and no active transfer, disposal, reservation or pending remainder lock. Small unweighed-batch count = selected batches whose declared weight is missing; this is a different unit of counting.</td></tr>
+    <tr><td>Weighing records</td><td>Number of selected Hub declaration/listing-scale measurement records through the as-of time, including historical corrected records.</td></tr>
+    <tr><td>Latest weighed mass</td><td>For each batch, take its latest unsuperseded eligible Hub listing/declaration measurement; sum these weights. Do not sum every historical reading.</td></tr>
+    <tr><td>Verified at Hub</td><td>Number of those latest batch measurements with canonical Verified status. Not a count of final recycling outcomes.</td></tr>
+  </tbody></table>
+  <p class="source">Sources: <a href="../src/pages/OperationalTraceability.tsx">OperationalTraceability.tsx</a>, <a href="../src/pages/Transactions.tsx">Transactions.tsx</a>, <a href="../server/hubs.ts">buildWeighingMonitoring()</a>, <a href="../server/index.ts">receipt/reward routes</a>, <a href="../server/dashboardAnalytics.ts">barter() and transactionsView()</a>.</p>
+</section>
+
+<section id="recovery"><h2>8. Recovery Monitoring</h2>
+  <h3>Hub Collection &amp; Disposal / Hub Disposals</h3>
+  <table><thead><tr><th>Figure</th><th>Computation</th></tr></thead><tbody>
+    <tr><td>Linked/assigned listings</td><td>Count scoped listing rows linked by an assigned Hub, accepted Hub intake or valid Hub disposal history. A batch can have multiple listings; this is not automatically the unique-batch count.</td></tr>
+    <tr><td>Awaiting collection</td><td>Count linked rows whose derived state is Awaiting collection. Closed/transferred/disposed listings without intake are not automatically classified as awaiting collection.</td></tr>
+    <tr><td>Textiles Received by Hubs</td><td>Sum accepted physical Hub intake once per batch. Prefer one validated Collection recorded by a recognized Hub operator; otherwise accept one unsuperseded Measured/Verified collection-stage or qualifying Hub-recipient receipt. Historical listing weighing is excluded.</td></tr>
+    <tr><td>Intake-record coverage</td><td>Count batches with accepted Hub intake / count distinct represented Hub batches. A count may be shown as X of Y rather than as a percentage.</td></tr>
+    <tr><td>Recorded Hub Disposal</td><td>The deduplicated valid disposal-ledger total described in Overview. Searches in the ledger table do not change the already-computed handling summary.</td></tr>
+    <tr><td>Awaiting Disposal</td><td>Per batch: <code>accepted Hub intake - valid disposal - evidenced transfers out</code>. Sum only when the feed is available and every represented batch balance is known. Multiple operators, missing intake, uncertain handovers, invalid ledger records or disposal/outflow exceeding intake makes the balance unavailable, not zero.</td></tr>
+    <tr><td>Transferred out</td><td>For each evidenced outbound transfer after Hub intake, prefer one current Measured/Verified Hub handover measurement; otherwise one qualifying completed Hub handover event; otherwise a qualifying recorded Hub-provider handover weight. Count each transfer once. Agreed quantity or completion flag alone is not sufficient.</td></tr>
+    <tr><td>Reconciled balances</td><td>Count batch balances with supported receipt/disposal/outflow and non-negative remainder. Not a certification of final destination.</td></tr>
+    <tr><td>Remaining stock column</td><td>Listing availableWeightKg if recorded, not the stricter receipt-minus-movements Awaiting Disposal balance. These fields can differ.</td></tr>
+    <tr><td>Handling state</td><td>Disposed timestamp takes priority; otherwise positive disposal = Partially disposed; otherwise active transfer = Transfer active; otherwise intake = Collected; otherwise closed listing = Closed; otherwise Awaiting collection.</td></tr>
+    <tr><td>Disposal records / invalid / missing links</td><td>Valid unique ledger entry count; invalid/conflicting entries excluded from mass; missing listing links counted separately where administrator scope permits. Never add a listing cumulative counter as another disposal record.</td></tr>
+  </tbody></table>
+  <h3>Hub Management / Directory</h3>
+  <p>Hub accounts = recognized operator profiles; Approved = current approved active operators; Awaiting approval = Pending approval state; Accounts without a Hub = operators with no visible registered-Hub assignment. Operator collection/disposal figures use that operator's recorded history. Directory filtering uses profile geography, organization and Hub assignment, not the material date/category cohort. Its table search does not recompute summary cards.</p>
+  <h3>Processing Records</h3>
+  <p>Matching records = rows after stage/status/search filters; Awaiting validation = status Recorded; Validated records = status Validated, including intermediate stages; Flagged records = status Flagged. These count operations, not unique batches. The default excludes Reversed records.</p>
+  <p><code>Input = Output + Rejects + Processing loss</code>. The record-detail balance and final-outcome acceptance allow absolute difference up to <strong>0.001 kg</strong>. Output alone is not necessarily final recovery: Collection output is intake; Sorting output is sorted material; accepted Processing/Recovery output may contribute to final outcomes.</p>
+  <div class="note"><strong>Example:</strong> Hub receipt 100 kg, disposal 25 kg, supported transfer out 15 kg. Awaiting Disposal = 100 - 25 - 15 = <strong>60 kg (0.06 t)</strong>. Without the receipt or supported outflow, the system cannot safely publish that balance.</div>
+  <p class="source">Sources: <a href="../server/hubOperations.ts">hubOperations.ts</a>, <a href="../server/hubEvidence.ts">hubEvidence.ts</a>, <a href="../server/hubBalance.ts">hubBalance.ts</a>, <a href="../server/hubDisposals.ts">hubDisposals.ts</a>, <a href="../server/hubs.ts">hubs.ts</a>, <a href="../src/pages/RecoveryOperations.tsx">RecoveryOperations.tsx</a>.</p>
+</section>
+
+<section id="facilities"><h2>9. Hub Facilities: Capacity, Utilization and Status</h2>
+  <table><thead><tr><th>Figure</th><th>Computation</th></tr></thead><tbody>
+    <tr><td>Registered Hubs</td><td>Count matching non-Inactive Hub registry records. Aggregate-only users see regional Hub group count, not the number of individual Hubs.</td></tr>
+    <tr><td>Period capacity</td><td><code>monthlyCapacityKg * capacityMonths</code>. capacityMonths sums the actual elapsed fraction of every Manila calendar month in the selected window. Full August + full September + half October = 2.5 monthly-capacity units, not a fixed 90/30 approximation.</td></tr>
+    <tr><td>Recorded intake per Hub</td><td>For each selected batch at a Hub, use its earliest validated balanced operation: Collection output if Collection, otherwise operation input. An explicitly attributed physical Hub receipt replaces that batch's operation input, rather than adding to it. Sum once per batch per Hub.</td></tr>
+    <tr><td>Hub utilization</td><td><code>100 * recorded Hub intake / prorated Hub period capacity</code>, one decimal. This measures handling workload, not current storage occupancy. No configured capacity means no meaningful published utilization.</td></tr>
+    <tr><td>Remaining / over capacity</td><td><code>period capacity - recorded intake</code>. Display positive remainder as remaining and negative remainder's magnitude as over capacity. This is not vacant warehouse storage.</td></tr>
+    <tr><td>Capacity status</td><td>Uses the displayed one-decimal utilization: below 85% Available; 85% to below 100% Near capacity; exactly 100% At capacity; above 100% Over capacity. Maintenance, Inactive and Pilot onboarding are operating conditions and take priority. Non-positive capacity = Capacity not configured.</td></tr>
+    <tr><td>Network utilization</td><td><code>100 * sum(Hub intake) / sum(Hub period capacity)</code>, not average of Hub percentages. The page requires every displayed row to have positive finite capacity; otherwise Not available.</td></tr>
+    <tr><td>Confirmed output</td><td>Sum centrally accepted final reuse/recycling outputs attributed to that Hub's facility ID. This preserves historical processing records; it is not newly counted Hub disposal.</td></tr>
+    <tr><td>Processing time</td><td>Currently no supported duration calculation; displayed Not reported. Backend zero is a placeholder, not zero-day processing evidence.</td></tr>
+    <tr><td>Overview Hub Utilization chart / capacity note</td><td>Uses the same performance rows and percentages. Spare percentage = 100 - displayed utilization for the chosen lowest-utilization operational Hub; over-100 rows prompt capacity review instead.</td></tr>
+  </tbody></table>
+  <div class="note"><strong>Example:</strong> monthly capacity 10 t and a 2.5-month selected window gives 25 t period capacity. Recorded intake 20 t gives <strong>80% utilization, 5 t remaining, Available</strong>. Intake 24 t gives <strong>96%, 1 t remaining, Near capacity</strong>. Intake 27 t gives <strong>108%, 2 t over capacity, Over capacity</strong>.</div>
+  <p>Hub handling statistics and Hub performance intake can differ: the performance table accepts earliest validated balanced historical operation input; Recovery Monitoring requires a physical Hub intake receipt. Hub totals may also count a batch once at each Hub if it is handled at multiple Hubs; this is not platform unique material.</p>
+  <p class="source">Sources: <a href="../server/dashboardAnalytics.ts">facilityView() and aggregateFacilities()</a>, <a href="../shared/facilityCapacity.ts">facilityCapacityStatus()</a>, <a href="../shared/reporting.ts">proratedMonths()</a>, <a href="../server/hubFacilities.ts">Hub attribution rules</a>, <a href="../src/pages/Facilities.tsx">Facilities.tsx</a>.</p>
+</section>
+
+<section id="stakeholders"><h2>10. Stakeholders</h2>
+  <table><thead><tr><th>Figure</th><th>Computation</th></tr></thead><tbody>
+    <tr><td>Stakeholder profiles</td><td>Count displayed Producer, combined Consumer/Recycler, and Hub directory profiles linked to selected batch activity; registered Hubs may also appear with no material activity when no restrictive material filters apply. This is not all registered accounts or only active sessions.</td></tr>
+    <tr><td>Confirmed outcome output</td><td>Central total final reuse + recycling, including accepted outcomes without matching intake. Same base mass as Waste Analytics Confirmed outcomes.</td></tr>
+    <tr><td>Transfer completion</td><td><code>completed scoped transfer records / all scoped transfer records * 100</code>. Unavailable when there are no visible transfer records. Aggregate-restricted identities must not be interpreted as zero participation.</td></tr>
+    <tr><td>Profile activity</td><td><code>sum(related transfer count for each displayed profile)</code>. A transfer can involve source, recipient and Hub, so it can count more than once. It is intentionally role involvement, not unique transactions.</td></tr>
+    <tr><td>Generated per profile</td><td>Sum declared batch weights where sourceUserId is that profile's ID. It does not follow later custodians. UI currently shows Not reported for zero, which should not be interpreted as a supported missing/zero distinction.</td></tr>
+    <tr><td>Confirmed output per profile</td><td>Sum accepted final outputs linked to transfers where that profile is the recipient. No eligible outputs means Pending evidence, not a confirmed zero.</td></tr>
+    <tr><td>Transactions / Completion rate</td><td>Related transfers include provider/recipient participation and, for Hubs, linked batch handling. Rate = completed related transfers / all related transfers * 100. Zero related transfers displays Not available.</td></tr>
+    <tr><td>Utilization per profile</td><td>For a Hub profile with assigned registered Hubs: sum those Hubs' performance intake / sum their period capacity * 100, only when all assigned rows have positive capacity. No appropriate capacity = Not applicable.</td></tr>
+    <tr><td>Hub profile figures</td><td>Assigned listings = listing assignments to that account; Collected batches and Recorded collection = its accepted unique-batch Hub intake; Recorded disposal = its valid disposal-ledger entries. These use linked account evidence, not a name-based facility match.</td></tr>
+  </tbody></table>
+  <p class="source">Sources: <a href="../server/stakeholders.ts">buildStakeholderView()</a>, <a href="../src/pages/Stakeholders.tsx">Stakeholders.tsx</a>, <a href="../src/lib/stakeholderGroups.ts">stakeholderGroups.ts</a>.</p>
+</section>
+
+<section id="geography"><h2>11. Geographic Insights</h2>
+  <table><thead><tr><th>Figure</th><th>Computation</th></tr></thead><tbody>
+    <tr><td>Collected material / Confirmed recycling</td><td>Sum the respective region evidence totals. Each region uses the central material aggregator on batches whose recorded source region matches it.</td></tr>
+    <tr><td>Declared outcome gap / Recovery gap</td><td>For each region: <code>max(0, declared mass - confirmed reuse - confirmed recycling)</code>. Sum region gaps for the headline. Different denominator from collected recovery-unconfirmed mass; not measured landfill waste.</td></tr>
+    <tr><td>Represented regions</td><td>Number of distinct batch-region values in the selected cohort. Not all Philippine regions or proof of service coverage. Missing region remains an unattributed data issue, not a guessed map location.</td></tr>
+    <tr><td>Registered Hubs / Regional network</td><td>Count matching registered Hub records in represented batch regions. Hubs in regions with no selected batch activity do not appear in that map total.</td></tr>
+    <tr><td>Recycler involvements</td><td>Sum per-region unique Recycler recipient counts. A Recycler active in multiple regions appears multiple times across the network total.</td></tr>
+    <tr><td>Share of selected metric</td><td><code>100 * region metric / sum(same metric across represented regions)</code>. Metric is Collected, Recycled or Recovery gap. No positive denominator = Not available. This is a share of platform records, not national waste market share.</td></tr>
+    <tr><td>Rank / largest gap / marker size</td><td>Sort descending by selected metric; largest gap is the region with maximum declared outcome gap. Marker diameter is a visual scale: positive mass = <code>16 + 12 * sqrt(min(value / maximum, 1))</code> pixels; zero/default = 14 pixels. It is not a second mass calculation.</td></tr>
+  </tbody></table>
+  <p class="source">Sources: <a href="../server/dashboardAnalytics.ts">regions()</a>, <a href="../src/pages/Geographic.tsx">Geographic.tsx</a>, <a href="../src/lib/geography.ts">geography.ts</a>.</p>
+</section>
+
+<section id="advanced"><h2>12. Advanced Analytics</h2>
+  <h3>Diagnostic</h3>
+  <p>Intake evidence pending = selected batches without accepted intake. Transactions completed = completed / all scoped transfers * 100. Highest utilization = maximum displayed Hub utilization where the selected top row has capacity. Lowest confirmed share = smallest available category recovery share. Collected stock without confirmed recovery and Confirmed recovery share reuse the central evidence figures; they are not independent datasets.</p>
+  <h3>Predictive: Data Basis</h3>
+  <p><strong>9,600 synthetic event records = 120 weeks * 4 regions * 20 records per region-week.</strong> They aggregate to 120 weekly time points, not 9,600 independent weeks. Training = 84 weeks / 6,720 records (70%); validation = 18 / 1,440 (15%); test = 18 / 1,440 (15%). Snapshot cutoff is 12 October 2026 exclusive, so history is through 11 October. Region/material/access filters select rows; history view 13/26/52/120 changes displayed history only, not the training window.</p>
+  <p>Scoped forecasts require at least 600 records and 104 active weeks (positive declared weekly mass). This threshold is a PoC gate, not real-world validation. New operational CSV imports do not retrain this fixed model.</p>
+  <table><thead><tr><th>Predictive figure</th><th>Implemented calculation</th></tr></thead><tbody>
+    <tr><td>Weekly historical declared / collected</td><td>Sum the corresponding synthetic event mass within each week after scope filters; round to 0.01 kg. Declared waste means declared platform material, not total Philippine waste.</td></tr>
+    <tr><td>Candidate forecast methods</td><td>Last-value: repeat latest weekly value. Trailing-mean: mean of last 8 weeks. Linear-trend: ordinary least squares on last 26 weeks, extrapolated 1-4 weeks. Seasonal-naive: corresponding week 52 weeks earlier. All predictions floored at zero.</td></tr>
+    <tr><td>Selected model</td><td>Choose the method with lowest rolling-origin validation MAE, separately for declared and collected targets. Every origin sees earlier observations only. Final four-week forecasts refit the chosen method on all 120 observed weeks.</td></tr>
+    <tr><td>Projected collection / declared waste</td><td>Four weekly point forecasts summed before display rounding. Collection point forecast per week is constrained not to exceed that week's declared forecast. This does not prove future recycling or disposal.</td></tr>
+    <tr><td>Weekly range lower / upper</td><td>For each horizon, use the 80th percentile of absolute validation forecast errors as a symmetric error width: lower = max(0, point - width), upper = point + width. Collection upper is additionally bounded by the declared upper. These are empirical nominal-80% weekly ranges, not a guaranteed confidence level or interval for the four-week sum.</td></tr>
+    <tr><td>Test MAE</td><td><code>sum(abs(predicted - actual)) / prediction count</code>. Shown in tons. Test uses 15 rolling origins * 4 horizons = 60 overlapping predictions for each target; not 60 independent weeks.</td></tr>
+    <tr><td>Test WAPE</td><td><code>100 * sum(abs(predicted - actual)) / sum(actual)</code>. Zero actual total = unavailable. Lower indicates smaller mass-weighted error.</td></tr>
+    <tr><td>Test bias</td><td><code>mean(predicted - actual)</code> in kg, stored in evaluation even when not a headline. Positive overpredicts; negative underpredicts.</td></tr>
+    <tr><td>Test range coverage</td><td><code>100 * test predictions whose actual lies in the modeled weekly range / all test predictions</code>. Report observed coverage; do not assume it equals 80%.</td></tr>
+    <tr><td>Material selection likelihood</td><td><code>(selected offers + 1) / (offered records + 2)</code> for each category, displayed as a percentage. This is Beta(1,1) smoothing. Categories are independent conditional likelihoods and do not sum to 100%.</td></tr>
+    <tr><td>Selected / offered</td><td>Raw counts for each category in the recent model-selected window. Choose window from 8, 13, 26 or 52 weeks by lowest validation log loss.</td></tr>
+    <tr><td>Highest selection likelihood</td><td>Category with maximum smoothed probability in that recent window. It does not identify any particular real recycler's preference.</td></tr>
+    <tr><td>Observed selected share</td><td><code>100 * category selected / all category selections in recent window</code>. Unlike selection likelihood, this is a composition share.</td></tr>
+    <tr><td>Change versus prior window</td><td><code>100 * (recent selected / recent offered - previous selected / previous offered)</code>, in percentage points. Uses raw rates, not smoothed probabilities; unavailable if either category window lacks offers.</td></tr>
+    <tr><td>12-week trend</td><td>Observed selected / offered for that category in each of the last 12 weeks. Missing weekly offers = gap, not a zero preference.</td></tr>
+    <tr><td>Test Brier score</td><td><code>mean((predicted probability - observed 0-or-1 selection)^2)</code>. Lower is better, zero perfect. Pooled baseline Brier uses the category-blind smoothed historical selection rate for comparison.</td></tr>
+    <tr><td>Test log loss / held-out offers</td><td><code>-mean(y * ln(p) + (1-y) * ln(1-p))</code>; count evaluated event records in final 18 test weeks. Lower loss is better. Does not imply validated performance on real data.</td></tr>
+  </tbody></table>
+  <p class="source">Sources: <a href="../src/pages/AdvancedAnalytics.tsx">AdvancedAnalytics.tsx</a>, <a href="../server/analytics/predictive.ts">predictive.ts</a>, <a href="../server/analytics/synthetic.ts">synthetic.ts</a>, <a href="../src/components/PredictiveAnalytics.tsx">PredictiveAnalytics.tsx</a>.</p>
+</section>
+
+<section id="quality"><h2>13. Data Quality</h2>
+  <table><thead><tr><th>Figure / finding</th><th>Computation</th></tr></thead><tbody>
+    <tr><td>Quality findings</td><td>Number of triggered findings, including Open and Documented states. One batch/transfer can trigger several findings, so this is not a count of unique affected materials.</td></tr>
+    <tr><td>Critical / Warnings</td><td>Count findings whose severity is Critical / Warning. Their sum equals all current findings.</td></tr>
+    <tr><td>Weight verification coverage</td><td><code>100 * batches with canonical weightStatus Verified / selected batches</code>. No selected batches = Not available in the page. Not the same as Measured mass or intake-evidence coverage.</td></tr>
+    <tr><td>Awaiting weighing / incomplete evidence / estimated weight</td><td>Missing declared weight or missing weight status triggers readiness warning; Estimated status triggers a separate unverified-measurement warning. One record may trigger both.</td></tr>
+    <tr><td>Stale workflow</td><td>Batch status Reserved with last update more than 7 * 24 hours earlier than the evaluation time.</td></tr>
+    <tr><td>Mass discrepancy</td><td><code>abs(stored discrepancy) / (handover weight, otherwise agreed weight) * 100 &gt;= configured threshold</code>, with positive reference and nonzero discrepancy. Reason text changes finding to Documented, not deletion of the finding. Default threshold 5% only when configuration is absent.</td></tr>
+    <tr><td>Completion / location / invalid weight</td><td>Completed transfer with null verifiedWeightKg; batch with blank structured city or region; or non-null declared/current mass that is negative or non-finite.</td></tr>
+    <tr><td>Broken lifecycle reference</td><td>Selected transfer refers to a missing batch or original listing.</td></tr>
+    <tr><td>Stage mass imbalance</td><td>Non-Reversed recovery record has missing/negative/non-finite weights or <code>abs(input - output - rejects - loss) &gt; 0.01 kg</code>. <strong>Current discrepancy:</strong> this check is looser than the 0.001 kg acceptance rule used by final recovery and record detail.</td></tr>
+    <tr><td>Incomplete disposal evidence</td><td>Linked ledger entry has invalid/non-positive mass, missing reason, invalid timestamp or unknown operator. These rule findings are not a universal independent audit of all possible data errors.</td></tr>
+  </tbody></table>
+  <p class="source">Sources: <a href="../server/dataQuality.ts">buildDataQuality()</a>, <a href="../shared/metrics.ts">hasDiscrepancy()</a>, <a href="../src/pages/DataQuality.tsx">DataQuality.tsx</a>.</p>
+</section>
+
+<section id="governance"><h2>14. Governance &amp; Policy</h2>
+  <p>Total Textiles Declared, Textiles Physically Received, recyclable intake, reuse, recycling, recovery share, completed transfers, missing intake and unconfirmed recovery all reuse the central evidence aggregate; Governance does not maintain a second independently editable set of material totals.</p>
+  <table><thead><tr><th>Additional figure</th><th>Computation</th></tr></thead><tbody>
+    <tr><td>Intake evidence coverage</td><td><code>100 * batches with accepted collection / selected batches</code>. This checks intake records, whereas Data Quality verification coverage checks batch weight status.</td></tr>
+    <tr><td>Previous cohort</td><td>Rerun the same formulas on batches registered in the comparison window, with outcomes known as of now. It is not a historical frozen snapshot.</td></tr>
+    <tr><td>Regional collection change</td><td><code>100 * (selected regional collection - previous regional collection) / previous regional collection</code>, only when both are supported and prior is positive; otherwise No comparable baseline.</td></tr>
+    <tr><td>Conflicting allocations</td><td>Central collection conflict count + outcome conflict count. A batch can contribute a finding in both groups.</td></tr>
+    <tr><td>Participating source organizations</td><td>Distinct non-empty sourceOrganizationId values on selected batches. Does not include every registered organization or every recipient organization.</td></tr>
+    <tr><td>Sources / source accounts</td><td>Distinct sourceUserId values in each region or producer group. Producer groups are by source organization/account plus region; aggregate-only users receive regional de-identified groups.</td></tr>
+    <tr><td>Participating approved Hubs</td><td>Distinct recognized currently approved Hub operator IDs found in selected regional listing assignments or historical Hub weighings. This is account participation, not physical Hub count or proof of service coverage.</td></tr>
+    <tr><td>Historical listing-weighed batches</td><td>Distinct batch IDs with eligible historical Hub weighing measurements in the regional cohort. Not necessarily physical intake.</td></tr>
+    <tr><td>Registered Hubs by region</td><td>Count matching non-Inactive registered Hub records with that region. No operator assignment is needed to count a registered physical Hub.</td></tr>
+    <tr><td>Quality and evidence review</td><td>Uses Data Quality finding counts, configured threshold, receipt-fallback transfer count, missing transfer-weight count, unlinked output and missing-geography counts from the same scoped evidence.</td></tr>
+    <tr><td>Hub disposal oversight</td><td>Same valid Hub ledger mass/count, including archived cohort history. Any retained Not established landfill statement is a limitation, not a numeric impact KPI.</td></tr>
+  </tbody></table>
+  <p class="source">Sources: <a href="../server/governance.ts">buildGovernanceDashboard()</a>, <a href="../src/pages/Governance.tsx">Governance.tsx</a>.</p>
+</section>
+
+<section id="reports"><h2>15. Reports: Preview, CSV and Print/PDF</h2>
+  <table><thead><tr><th>Report</th><th>Computation and reconciliation</th></tr></thead><tbody>
+    <tr><td>Material Flow Summary</td><td>For each region/material group, rerun central evidence aggregation: unique batches; declared, collected, final reuse, final recycling, unresolved collected mass, supported recovery share, completed-transfer mass and missing final weights. TOTAL is recomputed on the entire cohort, not obtained by adding/averaging row percentages. Summary descriptions and interpretation explain matched vs unlinked outcomes.</td></tr>
+    <tr><td>Data Quality Summary</td><td>Unique batches; missing-declaration count; exact canonical Estimated/Measured/Verified batch counts; Verified / all batch coverage; configured discrepancy threshold; findings grouped by severity/category. Same quality rules as the monitoring page.</td></tr>
+    <tr><td>Organization Participation</td><td>Include organizations referenced by source batches or selected transfer participants. Source batches/mass follow sourceOrganizationId. Received mass = sum of verifiedWeightKg on completed transfers whose recipient currently belongs to that organization. Transfer involvements count each organization participating as provider or recipient, so sums can exceed unique transfers. Aggregate-only output groups by region/type and withholds names.</td></tr>
+  </tbody></table>
+  <p>Material-flow completed-transfer mass uses qualifying validation evidence then reported receipt fallback. Organization received mass uses stored verified transfer fields only; these totals are not interchangeable. Both differ from final recovered output.</p>
+  <p>CSV and Print/PDF use the report generator, not an image of the currently paginated table. Interpretations are deterministic explanations of the same totals. Export creation is audited; preview generation is not an export. Environmental report options and their preview/export generator were removed.</p>
+  <p class="source">Sources: <a href="../server/reports.ts">buildReport() and reportCsv()</a>, <a href="../src/pages/Reports.tsx">Reports.tsx</a>, <a href="../src/lib/printReport.ts">printReport.ts</a>.</p>
+</section>
+
+<section id="administration"><h2>16. Administration, Role-Specific Views and Recorded Values</h2>
+  <table><thead><tr><th>Figure</th><th>Implemented calculation / limitation</th></tr></thead><tbody>
+    <tr><td>Organizations / Inactive organizations</td><td>Count returned organization records with status not Inactive / equal Inactive. Active/prospective records are included. Local table search does not recalculate summary cards.</td></tr>
+    <tr><td>Registered Hubs / Monthly capacity in registry</td><td>Count non-Inactive facility records and sum their configured monthlyCapacityKg. This is a monthly configuration total, not date-prorated Hub Facilities period capacity.</td></tr>
+    <tr><td>User Accounts: Registered accounts</td><td>Length of returned user-profile records, before local search/role filtering. Unlike Overview, it does not itself deduplicate valid auth UUIDs or exclude SYN IDs; do not assume the figures are identical.</td></tr>
+    <tr><td>User Accounts: Verified accounts</td><td>Current UI counts profiles whose verification label is exactly <code>Demo verified</code>. This is not a robust count of every email-verified, approved or authenticated account and should not be interpreted as such.</td></tr>
+    <tr><td>Profiles at least 75% complete</td><td>Per user: round(100 * filled checks / 9). Checks are name, organization, city, region, age group, organization size, recycling practices, sustainability interests, and accepted textiles (automatically fulfilled for Consumer role). Count users with resulting percentage at least 75. Not a security or identity-validation score.</td></tr>
+    <tr><td>Restricted or pending</td><td>Count returned user profiles whose accountStatus is not Active. Does not independently test every role, organization approval, email or password prerequisite.</td></tr>
+    <tr><td>Profile trust indicator</td><td>Stored <code>trustPlaceholder</code>, not calculated from transactions. Web account creation initializes 50; other records may contain different stored values. No validated trust formula exists.</td></tr>
+    <tr><td>Production/handled volume</td><td>User-reported profile field, displayed kg / 1,000. No automatic connection to measured intake or recovery; changing it should not create material lifecycle evidence.</td></tr>
+    <tr><td>Role-scoped Declared / Handed over / Received / Verified completion</td><td>Declared = unique selected batch declarations. Handover/Received = sums of stored selected transfer handover/receipt fields. Verified completion = sum of stored verifiedWeightKg on Completed/Processed transfers. These are transfer-activity fields, not the stricter final-output evidence or collection aggregate.</td></tr>
+    <tr><td>Role-scoped discrepancy / data-quality flags</td><td>Discrepancy balance = signed sum of transfer discrepancyKg. Small role-snapshot flags count abs(discrepancy) &gt; 0.01 kg; this is different from Data Quality's configured percentage-threshold finding.</td></tr>
+    <tr><td>Operational transfer-activity ratio</td><td>Internal legacy operations ratio = stored verified completed-transfer mass / declared batch mass * 100. This is explicitly not landfill diversion and can include repeated movements. Main Confirmed Recovery Share uses the separate matched-final-output / collection formula.</td></tr>
+    <tr><td>Reward configuration / calculated credits</td><td>Configured display rate per ton = internal credits/kg * 1,000. Web estimated pending credits = round(agreed kg * credits/kg). At qualifying verified completion, issued credits = round(verified kg * credits/kg), gated against repeat issuance. Stored mobile reward entries follow their own recorded provenance; no automatic recalculation of old ledger entries.</td></tr>
+    <tr><td>Wallet / reward ledger</td><td>Balance = sum signed credit entries in account scope, including negative redemptions/adjustments where present. Not an environmental metric or necessarily the same as transfer-only net reward credits.</td></tr>
+    <tr><td>Compatibility score, if exposed by an exchange workflow</td><td>Web matching endpoint: start 20 points; add configured category/pathway/region/condition matches, plus quantity weight when min(a,b)/max(a,b) &gt; 0.5; cap at 100; show candidates at least 35. This is a rule-based score, not a probability or the predictive material-selection likelihood. Participant exchange pages are not routed as the management dashboard.</td></tr>
+    <tr><td>Sessions, audit entries and pagination</td><td>Session rows and audit events are records, not active-user analytics. Pagination pages = max(1, ceiling(filtered rows / page size)); visible indices derive from the selected page. Counts refer to the returned/filtered set, not independently inferred events.</td></tr>
+  </tbody></table>
+  <p class="source">Sources: <a href="../src/pages/OrganizationAdmin.tsx">OrganizationAdmin.tsx</a>, <a href="../src/pages/UserAccounts.tsx">UserAccounts.tsx</a>, <a href="../src/pages/UserProfile.tsx">UserProfile.tsx</a>, <a href="../src/pages/Overview.tsx">role-specific Overview</a>, <a href="../server/domain.ts">calculateOperationalMass()</a>, <a href="../server/index.ts">web reward/matching routes</a>, <a href="../shared/pagination.ts">pagination.ts</a>.</p>
+</section>
+
+<section id="imports"><h2>17. Bulk Import: How It Moves the Figures</h2>
+  <table><thead><tr><th>Preview / result</th><th>Computation and downstream effect</th></tr></thead><tbody>
+    <tr><td>Rows / New / Already imported / Invalid</td><td>Total CSV data rows; rows eligible for new linked lifecycle creation; unchanged complete existing records identified by deterministic external ID; rows failing validation. Exact replay is skipped, not duplicated; changed/conflicting ID reuse is rejected.</td></tr>
+    <tr><td>Total Textiles Declared preview</td><td>Sum declared_kg for new accepted rows in the preview/request window. After successful import, selected batch declarations and registry counts can increase. CSV field names remain unchanged.</td></tr>
+    <tr><td>Textiles Physically Received preview</td><td>Sum nonblank collected_kg for new rows. Import creates linked synthetic intake, receipt, validation and transfer records so this can increase supported physical receipts when the new batch is in the selected scope/date range.</td></tr>
+    <tr><td>Confirmed reuse / Confirmed recycling preview totals</td><td>Sum outcome_kg for new rows whose outcome is Reuse / Recycling. They represent final synthetic outcome output, not recyclable classification. Reused mass does not automatically add to Recyclable Textiles Received because import classifies Reuse rows as Reusable.</td></tr>
+    <tr><td>Mass consistency</td><td><code>declared &gt;= collected &gt;= sorted &gt;= final</code> where the intermediate values are supplied; final must have supported collection and paired outcome. No collection should be left as a blank, not a fabricated physical receipt.</td></tr>
+    <tr><td>Completed-transfer and recovery effects</td><td>A row with final outcome creates a completed transfer; its transfer weight is collected mass, while its final recovered output is outcome_kg. A collection-only row is Received rather than Completed. Therefore these figures can move by different amounts.</td></tr>
+    <tr><td>Accounts / disposal / predictive effects</td><td>Import references existing participants and Hubs; it creates no new accounts, no reward credits and no Hub disposal ledger entries. It does not retrain the fixed predictive dataset. It can change handling utilization if attributed intake/capacity records support it.</td></tr>
+    <tr><td>Preview versus committed totals</td><td>Preview is not a database write. Totals cover only new rows for the bounded preview/request window, not skipped or invalid rows and not the entire database. After an interrupted import, preview again: already committed rows should be skipped. Actual card changes depend on commit success, current scope/date filters and evidence validity.</td></tr>
+  </tbody></table>
+  <div class="note"><strong>Example import:</strong> declared 1,000 kg; collected 900 kg; sorted 800 kg; final Recycling 600 kg. One qualifying new row can add <strong>1.000 t declared, 0.900 t collected, 0.900 t recyclable intake, 0.900 t completed-transfer activity, 0.600 t confirmed recycling, one batch and one completed transfer</strong>. Its standalone recovery share is 600 / 900 = <strong>66.7%</strong>; sorting yield 600 / 800 = <strong>75%</strong>. It adds <strong>no Hub disposal or registered account</strong>. Do not add these masses together.</div>
+  <p class="source">Sources: <a href="../server/imports.ts">planImport() and import routes</a>, <a href="../src/components/BulkImport.tsx">BulkImport.tsx</a>.</p>
+</section>
+
+<section id="caveats"><h2>18. Important Interpretation and Consistency Caveats</h2>
+  <div class="note caution"><strong>These are audit observations, not fixes made by this document.</strong> The core lifecycle totals share an aggregator, but not every displayed number has the same population, evidence standard or time basis.</div>
+  <ol>
+    <li><strong>Active Producers/Recyclers are regional involvements.</strong> Summing regional unique IDs can count the same account more than once across regions. Current Recycler KPI uses exact Recycler role, while directory presentation merges Consumers and Recyclers. It is not a globally unique merged-user KPI.</li>
+    <li><strong>Registered-account definitions differ.</strong> Overview deduplicates valid auth-linked profiles; User Accounts currently uses returned profile count and an exact legacy verification label. Do not use them interchangeably as security approval totals.</li>
+    <li><strong>There is a tolerance inconsistency.</strong> Data Quality's stage-balance warning uses 0.01 kg; final outcome acceptance and record-detail balance use 0.001 kg. A 0.005 kg mismatch can be rejected by the latter without the former raising its imbalance finding.</li>
+    <li><strong>There are multiple denominators.</strong> Declared outcome gap subtracts outputs from declarations; collected recovery-unconfirmed subtracts matched outputs from intake; awaiting Hub disposal subtracts disposal and evidenced outflow from physical Hub receipts. These answer different questions.</li>
+    <li><strong>Capacity is workload, not storage.</strong> Prorated capacity and current batch-cohort handling input are not a storage-occupancy model. A historical cohort filter is not physical throughput strictly occurring inside those dates; avoid presenting it as such.</li>
+    <li><strong>Confirmed total output can exceed the matched numerator.</strong> An accepted final record without matching intake contributes to output totals, not recovery share. Sorting yield further restricts its denominator to batches with matching sorted/final evidence.</li>
+    <li><strong>Current stock is not cumulative intake.</strong> Material Registry Current can be zero after transfer/closure while earlier collection remains valid. Historical measurement sums would double-count material.</li>
+    <li><strong>Account, audit and material dates differ.</strong> Accounts are an as-of count; material activity follows batch cohorts; exports follow audit event dates. Hub Directory uses recorded history. Filter differences can be intentional rather than arithmetic errors.</li>
+    <li><strong>Charts cannot establish causation.</strong> A rising registration-cohort line, a category correlation or a synthetic forecast does not prove real environmental savings. Removed environmental metrics are unavailable, not zero.</li>
+    <li><strong>Not every input is independently measured.</strong> Profile volume and trust are reported/placeholder fields. Synthetic records remain synthetic. Combined PoC totals and synthetic evaluation scores should not be described as independently measured national or real-world results.</li>
+  </ol>
+  <p><strong>Recommended reconciliation practice:</strong> compare the same actor scope, batch cohort, filters and as-of time; trace a number to its batch/transfer/measurement IDs; use raw kilograms; recompute the ratio from its own numerator and denominator; then apply display rounding.</p>
+</section>
+<footer class="meta"><p>This reference reflects the declared-headline and physical-receipt label updates. Receipt-based recovery calculations, mobile code and shared database records were not changed. Historical screenshot numbers are not a statement of current database totals.</p></footer>
+</main></body></html>

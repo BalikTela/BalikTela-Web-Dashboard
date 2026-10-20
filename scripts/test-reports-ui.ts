@@ -52,6 +52,8 @@ try {
     if (fail) { await page.getByRole('button', { name: 'Retry report', exact: true }).waitFor(); fail = false; await page.getByRole('button', { name: 'Retry report', exact: true }).click(); }
     const active = page.locator('main [aria-hidden="false"]');
     await active.getByRole('table', { name: 'Material Flow Summary preview', exact: true }).waitFor();
+    await active.getByRole('columnheader', { name: 'Total Textiles Declared (t)', exact: true }).waitFor();
+    await active.getByRole('columnheader', { name: 'Textiles Physically Received (t)', exact: true }).waitFor();
     const reportTypes = active.getByRole('combobox', { name: 'Report type', exact: true });
     assert.deepEqual(await reportTypes.locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value)), ['material-flow', 'data-quality', 'organizations']);
     assert.equal(await reportTypes.getByRole('option', { name: /environmental/i }).count(), 0);
@@ -75,11 +77,15 @@ try {
     assert.ok(csv.includes('0.815')); assert.ok(!csv.includes('0.815125'));
     assert.ok(csv.indexOf('SUMMARY') < csv.indexOf('DETAILED DATA'));
     assert.ok(csv.includes('INTERPRETATION'));assert.ok(csv.includes('DEFINITIONS'));assert.ok(!csv.includes('"",""'));
+    assert.ok(csv.includes('Total Textiles Declared (t)'));assert.ok(csv.includes('Textiles Physically Received (t)'));
+    assert.ok(!csv.includes('Validated collection'));
     if (viewport.width === 1440) {
       const popupPromise = context.waitForEvent('page');
       await active.getByRole('button', { name: 'Print / PDF', exact: true }).click();
       const popup = await popupPromise; await popup.getByRole('heading', { name: 'Material Flow Summary', exact: true }).waitFor();
       assert.equal(await popup.title(), 'Material Flow Summary | BalikTelaPH');
+      await popup.getByRole('columnheader', { name: 'Total Textiles Declared (t)', exact: true }).waitFor();
+      await popup.getByRole('columnheader', { name: 'Textiles Physically Received (t)', exact: true }).waitFor();
       await popup.getByRole('region', { name: 'Report interpretation', exact: true }).getByText('Report Interpretation', { exact: true }).waitFor();
       assert.equal(await popup.locator('tbody tr').count(), 25, 'Print must include all data rows, not the ten-row preview or catalog.');
       assert.equal(await popup.locator('aside, nav').count(), 0);

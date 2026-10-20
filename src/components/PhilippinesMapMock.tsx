@@ -15,8 +15,8 @@ export function PhilippinesMapMock({ regions }: { regions: RegionActivity[] }) {
             key={region.region}
             className="fade-enter absolute grid h-4 w-4 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-white shadow ring-1 ring-emerald-700"
             style={{ left: `${region.x}%`, top: `${region.y}%` }}
-            title={`${region.region}: ${formatMass(region.collectionKg)} collected`}
-            aria-label={`${region.region}: ${formatMass(region.collectionKg)} collected`}
+            title={`${region.region}: ${formatMass(region.collectionKg)} physically received`}
+            aria-label={`${region.region}: ${formatMass(region.collectionKg)} physically received`}
           >
             <span className="h-2 w-2 rounded-full bg-emerald-600" />
           </span>

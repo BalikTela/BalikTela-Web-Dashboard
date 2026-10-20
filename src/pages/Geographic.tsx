@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowUpRight, MapPin } from 'lucide-react';
-import { formatMass, percentage } from '../../shared/metrics';
+import { formatMass, MATERIAL_METRIC_LABELS, percentage } from '../../shared/metrics';
 import { GeographicMap } from '../components/GeographicMap';
 import { RegionalBarChart } from '../components/Charts';
 import { EmptyBlock } from '../components/StateBlock';
@@ -27,14 +27,14 @@ export function Geographic({ data }: { data: Data }) {
   return <div className="geo-page">
     <section aria-label="Geographic activity map" className="min-w-0">
       <header className="geo-section-header">
-        <div><h2>Regional material flows</h2><p>Collection, recycling, and recovery coverage</p></div>
+        <div><h2>Regional material flows</h2><p>Physical receipts, recycling, and recovery coverage</p></div>
         <div className="geo-period"><span>{data.metadata.periodLabel}</span></div>
       </header>
       <GeographicMap regions={regions} metric={metric} onMetricChange={setMetric} selectedRegion={selected} onSelectRegion={setSelection} />
     </section>
 
     <section className="geo-summary" aria-label="Geographic summary">
-      <article className="geo-summary-primary"><p>Collected material</p><strong>{data.circularFlow.collectedAvailable === false ? 'Pending evidence' : formatMass(collected)}</strong><span>Across {regions.length} represented regions</span></article>
+      <article className="geo-summary-primary"><p>{MATERIAL_METRIC_LABELS.received}</p><strong>{data.circularFlow.collectedAvailable === false ? 'Pending evidence' : formatMass(collected)}</strong><span>Across {regions.length} represented regions</span></article>
       <article><p>Confirmed recycling</p><strong>{data.circularFlow.recycledAvailable === false ? 'Pending evidence' : formatMass(recycled)}</strong><span>Validated final output only</span></article>
       <article><p>Declared outcome gap</p><strong>{formatMass(recoveryGap)}</strong><span>Not measured disposal or landfill waste</span></article>
       <article><p>Regional network</p><strong>{collectionPoints.toLocaleString()}<span> registered Hubs</span></strong><span>{recyclers} recycler involvements across regions</span></article>
@@ -44,7 +44,7 @@ export function Geographic({ data }: { data: Data }) {
       <section className="geo-analysis-section" aria-label="Regional breakdown">
         <header className="geo-section-header"><div><h2>Regional breakdown</h2><p>Ranked by {metricLabel.toLowerCase()} mass</p></div><span className="geo-count">{regions.length} regions</span></header>
         {ordered.length ? <div className="overflow-x-auto"><table className="geo-region-table">
-          <thead><tr><th>Region</th><th>Collected</th><th>Recycled</th><th>Recovery gap</th><th>Share of {metricLabel.toLowerCase()}</th></tr></thead>
+          <thead><tr><th>Region</th><th>Physically received</th><th>Recycled</th><th>Recovery gap</th><th>Share of {metricLabel.toLowerCase()}</th></tr></thead>
           <tbody>{ordered.map(region => <tr key={region.region} data-selected={selected === region.region}>
             <td><button type="button" className="geo-region-button" aria-pressed={selected === region.region} aria-label={`Locate ${region.region}`} onClick={() => setSelection(selected === region.region ? null : region.region)}><MapPin size={14} aria-hidden="true" /><span>{region.region}</span><ArrowUpRight size={13} aria-hidden="true" /></button><p>{region.collectionPoints} registered Hubs · {region.recyclers} recyclers</p></td>
             <td>{region.collectionAvailable === false ? 'Pending evidence' : formatMass(region.collectionKg)}</td><td>{region.recyclingAvailable === false ? 'Pending evidence' : formatMass(region.recyclingKg)}</td><td>{formatMass(region.wasteGapKg)}</td>
@@ -55,7 +55,7 @@ export function Geographic({ data }: { data: Data }) {
       </section>
 
       <section className="geo-analysis-section" aria-label="Regional comparison">
-        <header className="geo-section-header"><div><h2>Collection and recycling</h2><p>Matching regions · metric tons (t)</p></div></header>
+        <header className="geo-section-header"><div><h2>Physical receipts and recycling</h2><p>Matching regions · metric tons (t)</p></div></header>
         {regions.length ? <div className="geo-comparison-chart"><RegionalBarChart data={regions} /></div> : <EmptyBlock label="No regional activity to compare." />}
         {highestGap ? <div className="geo-priority"><span className="geo-priority-indicator" /><div><p>Largest recovery gap</p><strong>{highestGap.region}</strong></div><span className="tabular-nums">{formatMass(highestGap.wasteGapKg)}</span></div> : null}
       </section>

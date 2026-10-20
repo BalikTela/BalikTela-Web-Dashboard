@@ -92,6 +92,10 @@ test('all report types have distinct content and material exports reconcile exac
     const total = report.rows.at(-1)!;
     assert.equal(Number(total[2]), analytics.operations.metrics.batchCount);
     assert.equal(Number(total[3]), analytics.circularFlow.generatedKg / 1000);
+    assert.equal(analytics.kpis.find(item => item.label === 'Total Textiles Declared')?.value, report.summary.find(item => item.label === 'Total Textiles Declared')?.value);
+    assert.ok(report.columns.includes('Total Textiles Declared (t)'));
+    assert.ok(report.columns.includes('Textiles Physically Received (t)'));
+    assert.equal(report.summary.some(item => ['Declared mass', 'Validated collection'].includes(item.label)), false);
     assert.equal(total[4], analytics.circularFlow.collectedAvailable ? String(analytics.circularFlow.collectedKg / 1000) : 'Pending evidence');
     assert.equal(total[5], analytics.circularFlow.reusedAvailable ? String(analytics.circularFlow.reusedKg / 1000) : 'Pending evidence');
     assert.equal(total[6], analytics.circularFlow.recycledAvailable ? String(analytics.circularFlow.recycledKg / 1000) : 'Pending evidence');
@@ -136,7 +140,7 @@ test('Overview recyclable collection tile uses classified intake and recomputes 
     stage: 'Collection', status: 'Validated', validatedBy: seed.users[0].id, inputWeightKg: 100, outputWeightKg: 100,
     residualWeightKg: 0, lossWeightKg: 0, outcome: null }));
   const store = new MemoryStore(seed);
-  const tile = async (filters: Record<string, unknown>) => (await buildDashboardAnalytics(store, seed.users[0], { ...custom, ...filters }, undefined, now)).kpis.find(item => item.label === 'Recyclable Textiles Collected')!;
+  const tile = async (filters: Record<string, unknown>) => (await buildDashboardAnalytics(store, seed.users[0], { ...custom, ...filters }, undefined, now)).kpis.find(item => item.label === 'Recyclable Textiles Received')!;
   assert.equal((await tile({})).value, '0.1 t');
   assert.equal((await tile({})).delta, '1 recyclable batch · 0 assumed from consumer listings');
   assert.equal((await tile({ textileType: 'Cotton' })).value, '0.1 t');

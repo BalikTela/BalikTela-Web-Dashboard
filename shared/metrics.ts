@@ -1,3 +1,9 @@
+export const MATERIAL_METRIC_LABELS = {
+  declared: 'Total Textiles Declared',
+  received: 'Textiles Physically Received',
+  recyclableReceived: 'Recyclable Textiles Received',
+} as const;
+
 export function toTons(kilograms: number) { return kilograms / 1000; }
 export function toKilograms(tons: number) { return Number((tons * 1000).toFixed(6)); }
 

@@ -3,7 +3,9 @@ import { mkdir } from 'node:fs/promises';
 import express from 'express';
 import { chromium } from 'playwright-core';
 import { accessSummary } from '../server/access-control.js';
-import { buildDashboardAnalytics } from '../server/dashboardAnalytics.js';
+import { buildDashboardAnalytics, loadDashboardAnalyticsSnapshot, selectAnalyticsCohort } from '../server/dashboardAnalytics.js';
+import { buildReport, REPORT_DEFINITIONS, reportScope } from '../server/reports.js';
+import { buildGovernanceDashboard } from '../server/governance.js';
 import { createSeedData } from '../server/seed.js';
 import { MemoryStore } from '../server/store.js';
 import { serveWebApp } from '../server/webApp.js';
@@ -53,11 +55,21 @@ try {
       const request = route.request(), url = new URL(request.url());
       if (request.method() !== 'GET') { writes++; return route.fulfill({ status: 405, json: { message: 'Read-only fixture' } }); }
       if (url.pathname === '/api/auth/me') return route.fulfill({ json: { user: seed.users[0], access: accessSummary(seed.users[0]), storage: 'isolated' } });
+      const filters = Object.fromEntries(url.searchParams);
+      const data = mode === 'normal' ? seed : mode === 'missing' ? missing : mode === 'synthetic' ? synthetic : conflict;
+      const store = mode === 'normal' ? new DisposalFixtureStore(data) : new MemoryStore(data);
+      const selection = mode === 'synthetic' ? filters : { ...filters, ...query };
       if (url.pathname === '/api/analytics/dashboard') {
-        const filters = Object.fromEntries(url.searchParams);
-        const data = mode === 'normal' ? seed : mode === 'missing' ? missing : mode === 'synthetic' ? synthetic : conflict;
-        return route.fulfill({ json: await buildDashboardAnalytics(mode === 'normal' ? new DisposalFixtureStore(data) : new MemoryStore(data), seed.users[0], mode === 'synthetic' ? filters : { ...filters, ...query }, undefined, now) });
+        return route.fulfill({ json: await buildDashboardAnalytics(store, seed.users[0], selection, undefined, now) });
       }
+      if (url.pathname === '/api/material-batches') {
+        const snapshot = await loadDashboardAnalyticsSnapshot(store);
+        const cohort = selectAnalyticsCohort(snapshot, seed.users[0], selection, now);
+        return route.fulfill({ json: { batches: cohort.currentBatches.map(batch => ({ ...batch, measurements: [] })) } });
+      }
+      if (url.pathname === '/api/reports') return route.fulfill({ json: { reports: REPORT_DEFINITIONS, scope: reportScope(seed.users[0]) } });
+      if (url.pathname === '/api/reports/material-flow/preview') return route.fulfill({ json: await buildReport(store, seed.users[0], 'material-flow', selection, undefined, now) });
+      if (url.pathname === '/api/governance') return route.fulfill({ json: await buildGovernanceDashboard(store, seed.users[0], selection, undefined, now) });
       return route.fulfill({ status: 404, json: { message: `Unmocked ${url.pathname}` } });
     });
     const open = async () => {
@@ -101,7 +113,11 @@ try {
       assert.ok(!(await visible().innerText()).includes('null%'));
       await checkWidth();
     };
-    assert.match(await metric('Total Textiles Collected').innerText(), /0\.189 t/);
+    assert.match(await metric('Total Textiles Declared').innerText(), /0\.575 t/);
+    assert.match(await metric('Total Textiles Declared').innerText(), /Reported batch weights/);
+    assert.equal(await visible().getByText('Total Textiles Collected', { exact: true }).count(), 0);
+    const declaredSummary = () => visible().locator('.circular-flow-step').filter({ has: page.getByText('Total Textiles Declared', { exact: true }) });
+    assert.match(await declaredSummary().innerText(), /0\.575 t/);
     assert.match(await metric('Recorded Hub Disposal').innerText(), /0\.005 t/);
     assert.match(await metric('Recorded Hub Disposal').innerText(), /1 disposal record/);
     assert.equal(await page.getByText('Confirmed Reuse + Recycling', { exact: true }).count(), 0);
@@ -114,12 +130,13 @@ try {
       await entry.getByText('Not available', { exact: true }).waitFor();
     }
     assert.match(await metric('Confirmed Recovery Share').innerText(), /45\.5%/);
-    assert.match(await metric('Recyclable Textiles Collected').innerText(), /0\.1 t/);
-    assert.match(await metric('Recyclable Textiles Collected').innerText(), /1 recyclable batch/);
+    assert.match(await metric('Recyclable Textiles Received').innerText(), /0\.1 t/);
+    assert.match(await metric('Recyclable Textiles Received').innerText(), /1 recyclable batch/);
     assert.equal(await page.getByText('Confirmed Recycling Output', { exact: true }).count(), 0);
     assert.equal(await page.getByText('Definition', { exact: true }).count(), 0, 'KPI tiles must not render definition expanders.');
-    assert.equal(await metric('Total Textiles Collected').locator('polyline').getAttribute('points').then(value => value?.trim().split(' ').length), 1, 'Missing collection months must not become zero points in the sparkline.');
-    assert.equal(await metric('Total Textiles Collected').locator('details').count(), 0);
+    assert.equal(await metric('Total Textiles Declared').locator('polyline').getAttribute('points').then(value => value?.trim().split(' ').length), 3, 'Declared trend must include every registration month, independent of intake evidence.');
+    await metric('Total Textiles Declared').getByRole('img', { name: 'Total Textiles Declared trend from Jul 2026 to Sept 2026', exact: true }).waitFor();
+    assert.equal(await metric('Total Textiles Declared').locator('details').count(), 0);
     assert.equal(await page.getByText(/All physically collected textiles/).count(), 0);
     await page.locator('canvas').first().waitFor();
     await page.waitForTimeout(150);
@@ -132,7 +149,23 @@ try {
     assert.equal(await visible().locator('article p').evaluateAll(paragraphs => paragraphs.some(item => item.clientWidth > 0 && item.scrollWidth > item.clientWidth + 1)), false, 'Metric text must fit its container.');
     await page.screenshot({ path: `${output}/overview-${viewport.width}.png`, fullPage: true });
     await page.screenshot({ path: `${output}/overview-viewport-${viewport.width}.png` });
+    await navigate('Material Registry');
+    await metric('Total Textiles Declared').getByText('0.575 t', { exact: true }).waitFor();
+    await checkWidth();
+    await navigate('Reports');
+    await visible().getByRole('table', { name: 'Material Flow Summary preview', exact: true }).waitFor();
+    await visible().locator('dl > div').filter({ has: page.getByText('Total Textiles Declared', { exact: true }) }).getByText('0.575 t', { exact: true }).waitFor();
+    await visible().locator('dl > div').filter({ has: page.getByText('Textiles Physically Received', { exact: true }) }).getByText('0.189 t', { exact: true }).waitFor();
+    await checkWidth();
+    await navigate('Governance & Policy');
+    await metric('Textiles Physically Received').getByText('0.189 t', { exact: true }).waitFor();
+    const comparison = visible().getByRole('table', { name: 'Policy period comparison', exact: true });
+    await comparison.getByRole('row').filter({ has: page.getByRole('rowheader', { name: 'Total Textiles Declared', exact: true }) }).getByRole('cell', { name: '0.575 t', exact: true }).waitFor();
+    await checkWidth();
     await navigate('Waste Analytics');
+    await metric('Total Textiles Declared').getByText('0.575 t', { exact: true }).waitFor();
+    await metric('Textiles Physically Received').getByText('0.189 t', { exact: true }).waitFor();
+    assert.equal(await visible().getByText('Validated collection', { exact: true }).count(), 0);
     await checkCircularity();
     assert.match(await circularity().locator('article').first().innerText(), /45\.5%/);
     await page.screenshot({ path: `${output}/waste-${viewport.width}.png`, fullPage: true });
@@ -155,16 +188,21 @@ try {
     assert.ok(!(await visible().innerText()).includes('null%'));
     await checkWidth();
     await navigate('Overview');
-    // Global material filters must recompute the evidence denominator, not just the chart.
+    // Global filters recompute both declarations and the separate recovery denominator.
     const region = page.getByRole('combobox', { name: /^Region/ });
     await region.selectOption('Central Visayas');
-    await page.waitForFunction(() => [...document.querySelectorAll('main article')].some(item => item.textContent?.includes('Total Textiles Collected') && item.textContent.includes('Pending evidence')));
+    await declaredSummary().getByText('0 t', { exact: true }).waitFor();
+    await metric('Total Textiles Declared').getByText('0 t', { exact: true }).waitFor();
+    assert.match(await declaredSummary().innerText(), /0 t/);
     assert.match(await metric('Confirmed Recovery Share').innerText(), /Not available/);
     await region.selectOption('All regions');
-    await page.waitForFunction(() => [...document.querySelectorAll('main article')].some(item => item.textContent?.includes('Total Textiles Collected') && item.textContent.includes('0.189 t')));
+    await declaredSummary().getByText('0.575 t', { exact: true }).waitFor();
+    await metric('Total Textiles Declared').getByText('0.575 t', { exact: true }).waitFor();
     mode = 'missing'; await open();
-    assert.match(await metric('Total Textiles Collected').innerText(), /Pending evidence/);
-    assert.match(await metric('Recyclable Textiles Collected').innerText(), /Pending evidence/);
+    assert.match(await metric('Total Textiles Declared').innerText(), /0\.575 t/);
+    assert.match(await declaredSummary().innerText(), /0\.575 t/);
+    assert.equal(await metric('Total Textiles Declared').locator('polyline').count(), 1, 'Declarations retain their sparkline even without any intake records.');
+    assert.match(await metric('Recyclable Textiles Received').innerText(), /Pending evidence/);
     assert.match(await metric('Confirmed Recovery Share').innerText(), /Not available/);
     await checkWidth();
     await page.screenshot({ path: `${output}/pending-${viewport.width}.png`, fullPage: true });
@@ -173,6 +211,7 @@ try {
     assert.equal(await circularity().getByText('Not available', { exact: true }).count(), 2, 'Missing evidence must not become zero percentages.');
     await page.screenshot({ path: `${output}/waste-pending-${viewport.width}.png`, fullPage: true });
     mode = 'conflict'; await open();
+    assert.match(await metric('Total Textiles Declared').innerText(), /0\.575 t/);
     await page.getByText(/collection and .* outcome batch allocations need review/).waitFor();
     assert.match(await metric('Confirmed Recovery Share').innerText(), /Not available/);
     await checkWidth();
@@ -188,6 +227,8 @@ try {
       if (expected.label === 'Recorded Hub Disposal') assert.equal(expected.value, 'Not available');
       else assert.ok(!['Pending evidence', 'Not available'].includes(expected.value));
     }
+    const declaredValue = syntheticAnalytics.kpis[0].value;
+    assert.ok((await declaredSummary().innerText()).includes(declaredValue), 'Featured declaration total must match Material Evidence Summary.');
     assert.equal(await page.getByText('Shared Platform Activity', { exact: true }).count(), 0);
     assert.equal(await page.getByText(/synthetic demo batches and .* operational batches/).count(), 0);
     await page.getByText('Registered Accounts', { exact: true }).waitFor();
@@ -199,7 +240,7 @@ try {
     await checkWidth();
     await page.screenshot({ path: `${output}/completed-demo-${viewport.width}.png` });
     assert.deepEqual(errors, []); assert.equal(writes, 0);
-    results.push({ ...viewport, pages: ['Overview', 'Waste Analytics', 'Geographic Insights', 'Stakeholders', 'Hub Facilities', 'Advanced Analytics'], states: ['validated', 'filtered', 'missing', 'conflicting', 'completed-synthetic-lifecycle'], chartPixels: pixels, writes, pageErrors: errors.length });
+    results.push({ ...viewport, pages: ['Overview', 'Material Registry', 'Reports', 'Governance & Policy', 'Waste Analytics', 'Geographic Insights', 'Stakeholders', 'Hub Facilities', 'Advanced Analytics'], states: ['validated', 'filtered', 'missing', 'conflicting', 'completed-synthetic-lifecycle'], chartPixels: pixels, writes, pageErrors: errors.length });
     await context.close();
   }
   process.stdout.write(JSON.stringify({ output, results }, null, 2) + '\n');

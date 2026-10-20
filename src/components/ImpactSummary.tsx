@@ -3,7 +3,7 @@ import { SectionHeader } from './SectionHeader';
 
 export function ImpactSummary({ data, periodLabel }: { data: ImpactMetrics; periodLabel: string }) {
   const metrics = [
-    ['Confirmed recovery share', data.diversionRate !== null ? `${data.diversionRate}%` : 'Not available', 'Linked final output / validated collection'],
+    ['Confirmed recovery share', data.diversionRate !== null ? `${data.diversionRate}%` : 'Not available', 'Linked final output / physically received weight'],
     ['Recovery yield from sorted textiles', data.sortingYield !== null ? `${data.sortingYield}%` : 'Not available', 'Final output / sorted mass on matching evidenced batches'],
   ];
   return (

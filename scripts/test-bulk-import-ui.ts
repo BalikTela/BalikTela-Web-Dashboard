@@ -51,6 +51,13 @@ try {
     await dialog.getByLabel('Dataset CSV').setInputFiles({name:'500-demo.csv',mimeType:'text/csv',buffer:Buffer.from(csv)});
     await dialog.getByRole('button',{name:'Preview file',exact:true}).click();
     await dialog.getByText(/500 new.*0 already imported/).waitFor();
+    for(const [label,value] of [['Total Textiles Declared','50 t'],['Textiles Physically Received','45 t'],['Confirmed reuse','0 t'],['Confirmed recycling','35 t']]){
+      const total=dialog.locator('dl > div').filter({has:page.getByText(label,{exact:true})});
+      await total.getByText(value,{exact:true}).waitFor();
+      assert.equal(await total.locator('dt').evaluate(element=>element.scrollWidth>element.clientWidth+1),false,'Import metric labels must fit.');
+    }
+    assert.equal(await dialog.evaluate(element=>element.scrollWidth>element.clientWidth+1),false);
+    await page.screenshot({path:`${output}/import-preview-${width}.png`,fullPage:true});
     await dialog.getByLabel('Import reason',{exact:true}).fill('Isolated 500-row retry test');await dialog.getByRole('checkbox').check();
     await dialog.getByRole('button',{name:'Import 500 rows'}).click();
     await dialog.getByRole('alert').getByText(/Some rows may already be saved/).waitFor();

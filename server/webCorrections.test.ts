@@ -108,7 +108,7 @@ test('quality checks identify missing geography, dangling listing links and stag
 test('governance matches current recovery formula and actual export permission without prescriptive or compliance claims',async()=>{
   const seed=await createSeedData(),admin={...seed.users[0],scope:{...seed.users[0].scope,canExport:false}};
   const view=buildGovernance(admin,seed.configurations[0]);assert.equal(view.privacy.exportAllowed,true);
-  assert.match(view.methodology.massAccounting,/validated collection/);assert.ok(!('prescriptiveAnalytics' in view.methodology));
+  assert.match(view.methodology.massAccounting,/physically received weight/);assert.ok(!('prescriptiveAnalytics' in view.methodology));
   assert.match(view.methodology.predictiveAnalytics,/synthetic/);assert.match(view.methodology.environmentalImpact,/not calculated/);
   const researcher=seed.users.find(user=>user.role==='Researcher')!;
   assert.equal(buildGovernance({...researcher,scope:{...researcher.scope,canExport:false}},null).privacy.exportAllowed,false);

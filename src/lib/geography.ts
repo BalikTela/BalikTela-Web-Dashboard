@@ -2,7 +2,7 @@ import type { RegionActivity } from '../types.js';
 
 export type GeographicMetric = 'collectionKg' | 'recyclingKg' | 'wasteGapKg';
 export const geographicMetrics: Array<{ key: GeographicMetric; label: string; description: string }> = [
-  { key: 'collectionKg', label: 'Collected', description: 'Collected material' },
+  { key: 'collectionKg', label: 'Received', description: 'Textiles physically received' },
   { key: 'recyclingKg', label: 'Recycled', description: 'Validated final recycling output' },
   { key: 'wasteGapKg', label: 'Recovery gap', description: 'Declared mass without confirmed outcomes; not measured landfill waste' },
 ];

@@ -1,4 +1,4 @@
-import { formatMass } from '../../shared/metrics';
+import { formatMass, MATERIAL_METRIC_LABELS } from '../../shared/metrics';
 import { FacilityUtilizationChart, CategoryDoughnut, WasteTrendChart } from '../components/Charts';
 import { CircularFlow } from '../components/CircularFlow';
 import { EmptyBlock } from '../components/StateBlock';
@@ -20,7 +20,7 @@ export function Overview({ data }: { data: Data }) {
   const spareFacility = hubFacilities.filter(item => item.utilization !== null && ['Available','Near capacity','At capacity','Over capacity'].includes(item.status)).sort((a, b) => a.utilization! - b.utilization!)[0];
   const insights = [
     highestGap ? [`${highestGap.region}: outcome evidence review`, `${formatMass(highestGap.wasteGapKg)} of declared mass has no confirmed reuse or recycling outcome. This is an evidence gap, not measured landfill waste.`] : null,
-    lowestRecovery ? [`${lowestRecovery.category}: confirmed recovery share`, `${lowestRecovery.recoveryRate}% of validated collection has a confirmed final outcome in this registration cohort.`] : null,
+    lowestRecovery ? [`${lowestRecovery.category}: confirmed recovery share`, `${lowestRecovery.recoveryRate}% of physically received textiles has a confirmed final outcome in this registration cohort.`] : null,
     spareFacility ? [`${spareFacility.name}: Hub capacity review`, spareFacility.utilization! > 100 ? `${spareFacility.utilization}% utilization exceeds prorated period capacity; review intake and capacity records.` : `${Number((100 - spareFacility.utilization!).toFixed(1))}% of prorated period handling capacity remains available.`] : null,
   ].filter((item): item is [string, string] => item !== null);
   if (!['Administrator', 'Government', 'Researcher'].includes(data.operations.scope.role)) return <div className="space-y-6"><OperationalSnapshot data={data} /><OperationalRoleDetail data={data} /></div>;
@@ -32,14 +32,14 @@ export function Overview({ data }: { data: Data }) {
           <p className="shrink-0 rounded-md border border-[#dfe5e2] bg-white px-2.5 py-1.5 text-[11px] font-medium text-[#53615c]">{data.metadata.periodLabel}</p>
         </div>
         <div className="stagger-grid grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:auto-rows-[minmax(132px,auto)] xl:grid-cols-4 2xl:grid-cols-6">
-          {data.kpis.map((metric, index) => <MetricCard key={metric.label} metric={metric} featured={index === 0} sparkline={index === 0 && data.circularFlow.collectedAvailable !== false ? data.wasteTrend.map((point) => point.hasCollectionEvidence === false ? null : point.collected) : undefined} sparklineStart={data.wasteTrend[0]?.month ?? 'Start'} sparklineEnd={data.wasteTrend[data.wasteTrend.length - 1]?.month ?? 'Current'} />)}
+          {data.kpis.map((metric, index) => <MetricCard key={metric.label} metric={metric} featured={index === 0} sparkline={index === 0 ? data.wasteTrend.map((point) => point.recorded) : undefined} sparklineStart={data.wasteTrend[0]?.month ?? 'Start'} sparklineEnd={data.wasteTrend[data.wasteTrend.length - 1]?.month ?? 'Current'} />)}
         </div>
         {data.materialEvidence ? <div className="mt-4 border-l-2 border-slate-300 pl-4 text-xs leading-5 text-slate-600">
           <p className="font-semibold text-slate-800">Evidence coverage</p>
-          <p>{data.materialEvidence.missingCollectionBatches} batches await validated intake evidence. {data.materialEvidence.completedReportedWeight} completed transfers use reported receipt weights; {data.materialEvidence.completedMissingWeight} have no final weight and are excluded from transfer mass.</p>
+          <p>{data.materialEvidence.missingCollectionBatches} declared batches have no supported physical receipt yet. {data.materialEvidence.completedReportedWeight} completed transfers use reported receipt weights; {data.materialEvidence.completedMissingWeight} have no final weight and are excluded from transfer mass.</p>
           <p>Recorded Hub Disposal includes archived materials in the selected batch cohort. It is separate from final reuse/recycling output and is excluded from the recovery-share numerator. Landfill avoidance remains uncalculated.</p>
           {data.materialEvidence.collectionConflicts + data.materialEvidence.outcomeConflicts > 0 ? <p className="mt-1 text-amber-800">{data.materialEvidence.collectionConflicts} collection and {data.materialEvidence.outcomeConflicts} outcome batch allocations need review. Ambiguous mass is withheld, not capped.</p> : null}
-          {data.materialEvidence.unlinkedOutcomeKg > 0 ? <p>{formatMass(data.materialEvidence.unlinkedOutcomeKg)} of confirmed outcomes has no matching validated intake and is excluded from the recovery-share numerator.</p> : null}
+          {data.materialEvidence.unlinkedOutcomeKg > 0 ? <p>{formatMass(data.materialEvidence.unlinkedOutcomeKg)} of confirmed outcomes has no matching supported physical receipt and is excluded from the recovery-share numerator.</p> : null}
           <p className="mt-1">Dates select batch registration; charts group that cohort by registration month, with outcomes known as of {new Date(data.metadata.period.asOf).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })}.</p>
         </div> : null}
       </section>
@@ -54,7 +54,7 @@ export function Overview({ data }: { data: Data }) {
           <div className="h-64 sm:h-72"><WasteTrendChart data={data.wasteTrend} /></div>
         </Panel>
         <Panel>
-          <SectionHeader title="Collected Textile Categories" eyebrow="Validated intake only" />
+          <SectionHeader title="Received Textile Categories" eyebrow="Supported physical intake only" />
           <div className="h-64 sm:h-72"><CategoryDoughnut data={data.categoryShares} /></div>
         </Panel>
       </section>
@@ -141,7 +141,7 @@ function OperationalSnapshot({ data, supporting = false }: { data: Data; support
   };
   const [title, description] = copy[role] ?? ['Authorized workspace', 'Role-scoped BalikTela operational indicators.'];
   const metrics = [
-    ['Declared material', `${formatMass(operations.metrics.declaredKg)}`, `${operations.metrics.batchCount} unique material batches`],
+    [MATERIAL_METRIC_LABELS.declared, `${formatMass(operations.metrics.declaredKg)}`, `${operations.metrics.batchCount} unique material batches`],
     ['Verified completion', `${formatMass(operations.metrics.verifiedKg)}`, `${operations.metrics.completedTransfers} completed transfers`],
     ['Active transfers', operations.metrics.activeTransfers.toLocaleString(), 'Reserved through validation'],
     ['Data quality flags', operations.quality.discrepancyFlags.toLocaleString(), `${operations.quality.estimatedBatches} estimated batches`],

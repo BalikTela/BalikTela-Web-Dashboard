@@ -6,6 +6,8 @@ import type { Store } from './store.js';
 import type { RecordMutation } from './database/mutations.js';
 import type { FacilityRecord, MaterialBatchRecord, OrganizationRecord, RecoveryRecord, UserRecord } from './types.js';
 import { canModerateListing, CIRCULAR_PATHWAYS, MATERIAL_CONDITIONS } from '../shared/workflows.js';
+import { REGISTRY_WEIGHT_STATUSES } from '../shared/registryWeights.js';
+import { recoveryMassBalance } from '../shared/recovery.js';
 
 export class ManagementError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -83,7 +85,7 @@ export function registerManagementRoutes(app: Express, store: Store) {
       materialCategory: text(req.body.materialCategory, 'Material category'), wasteSource: choice(req.body.wasteSource, wasteSources, 'Waste source'),
       wasteForm: choice(req.body.wasteForm, wasteForms, 'Waste form'), condition: choice(req.body.condition, conditions, 'Condition'),
       circularPathway: choice(req.body.circularPathway, pathways, 'Circular pathway'), declaredWeightKg: number(req.body.declaredWeightKg, 'Declared weight', 0.001),
-      currentWeightKg: number(req.body.declaredWeightKg, 'Declared weight', 0.001), weightStatus: choice(req.body.weightStatus, weights, 'Weight status'),
+      currentWeightKg: number(req.body.declaredWeightKg, 'Declared weight', 0.001), weightStatus: choice(req.body.weightStatus, REGISTRY_WEIGHT_STATUSES, 'Weight status'),
       secondaryQuantity: null, secondaryUnit: null, city: text(req.body.city ?? source.city, 'City'), region: text(req.body.region ?? source.region, 'Region'),
       currentStatus: 'Recorded', currentCustodianId: source.id, archivedAt: null, createdAt: at, updatedAt: at, isDemo: req.body.isDemo === true };
     await saveManagement(store, req.actor!, [{ name:'materialBatches', record:batch }, { name:'measurements', record:{ id:newId('MSR'), batchId:batch.id, transferId:null, stage:'Declaration',
@@ -116,10 +118,14 @@ export function registerManagementRoutes(app: Express, store: Store) {
     } else {
       if (batch.currentStatus === 'Archived') throw new ManagementError('Restore this batch before editing.',409);
       const input = { ...batch, ...req.body };
+      const declaredWeightKg = number(input.declaredWeightKg,'Declared weight',0.001);
+      const weightStatus = req.body.weightStatus === undefined
+        ? batch.weightStatus === 'Verified' && declaredWeightKg !== batch.declaredWeightKg ? 'Measured' : choice(batch.weightStatus,weights,'Weight status')
+        : choice(req.body.weightStatus,REGISTRY_WEIGHT_STATUSES,'Weight status');
       next = { ...batch, materialCategory:text(input.materialCategory,'Material category'), wasteSource:choice(input.wasteSource,wasteSources,'Waste source'),
         wasteForm:choice(input.wasteForm,wasteForms,'Waste form'), condition:choice(input.condition,conditions,'Condition'), circularPathway:choice(input.circularPathway,pathways,'Pathway'),
-        city:text(input.city,'City'), region:text(input.region,'Region'), declaredWeightKg:number(input.declaredWeightKg,'Declared weight',0.001),
-        currentWeightKg:number(input.declaredWeightKg,'Declared weight',0.001), weightStatus:choice(input.weightStatus,weights,'Weight status'), updatedAt:at };
+        city:text(input.city,'City'), region:text(input.region,'Region'), declaredWeightKg,
+        currentWeightKg:declaredWeightKg === batch.declaredWeightKg && weightStatus === batch.weightStatus ? batch.currentWeightKg : declaredWeightKg, weightStatus, updatedAt:at };
       if (next.declaredWeightKg !== batch.declaredWeightKg || next.weightStatus !== batch.weightStatus) {
         writes.push({name:'measurements',record:{id:newId('MSR'),batchId:batch.id,transferId:null,stage:'Declaration',weightKg:number(next.declaredWeightKg,'Declared weight',0.001),status:choice(next.weightStatus,weights,'Weight status'),
           method:text(req.body.method,'Measurement method'),recordedBy:req.actor!.id,verifiedBy:next.weightStatus === 'Verified' ? req.actor!.id : null,timestamp:at,note:`Correction: ${reason}`}});
@@ -171,12 +177,12 @@ export function registerManagementRoutes(app: Express, store: Store) {
       next.outputWeightKg=number(input.outputWeightKg,'Output weight');
       next.lossWeightKg=number(input.lossWeightKg ?? current.lossWeightKg ?? 0,'Processing loss');
       next.residualWeightKg=number(input.residualWeightKg ?? next.inputWeightKg-next.outputWeightKg-next.lossWeightKg,'Reject weight');
-      if (Math.abs(next.inputWeightKg-next.outputWeightKg-next.residualWeightKg-next.lossWeightKg)>0.01) throw new ManagementError('Input must equal output plus rejects and processing loss.');
+      if (recoveryMassBalance(next)!=='Balanced') throw new ManagementError('Input must equal output plus rejects and processing loss (within 0.001 kg).');
       next.stage=choice(input.stage,['Collection','Sorting','Processing','Recovery','Rejection'],'Stage');
       next.outcome=next.stage==='Rejection'?'Rejected':choice(input.outcome,pathways.filter(item=>item!=='For assessment'),'Outcome');
       next.status='Recorded'; next.validatedBy=null;
     }
-    if (action==='validate' && (next.outputWeightKg===null || next.residualWeightKg===null || Math.abs(next.inputWeightKg-next.outputWeightKg-next.residualWeightKg-(next.lossWeightKg??0))>0.01)) throw new ManagementError('Validation requires balanced output, rejects and processing loss.');
+    if (action==='validate' && recoveryMassBalance(next)!=='Balanced') throw new ManagementError('Validation requires balanced output, rejects and processing loss (within 0.001 kg).');
     next.note=`${current.note}\n${action}: ${reason}`.trim();
     const writes: RecordMutation[] = [];
     if (action==='correct') {

@@ -29,14 +29,37 @@ export function matchesTransferStatus(status: string, selected: unknown) {
   return selected === status;
 }
 
-export function listingDisplayStatus(listing: { status: string; disposedAt?: string | null; disposedWeightKg?: number; remainderPending?: boolean }) {
+export const LISTING_DISPLAY_STATUSES = ['Draft', 'Available', 'In progress', 'Completed', 'Closed', 'Unknown'] as const;
+export const LISTING_HANDLING_STATUSES = ['Disposed', 'Partially disposed', 'Remainder pending', 'None'] as const;
+type ListingState = { status: string; canonicalStatus?: string; disposedAt?: string | null; disposedWeightKg?: number; remainderPending?: boolean };
+
+export function listingWorkflowStatus(listing: ListingState) {
+  if (listing.canonicalStatus !== undefined) return Object.prototype.hasOwnProperty.call(LISTING_STATUSES, listing.canonicalStatus) ? listing.canonicalStatus : undefined;
+  return Object.keys(LISTING_STATUSES).find(key => LISTING_STATUSES[key as keyof typeof LISTING_STATUSES] === listing.status);
+}
+
+export function listingDisplayStatus(listing: ListingState) {
+  // Match mobile My textiles categories; disposal and remainder handling are separate facts.
+  switch (listingWorkflowStatus(listing)) {
+    case 'draft': return 'Draft';
+    case 'available': return 'Available';
+    case 'matched': case 'reserved': return 'In progress';
+    case 'completed': return 'Completed';
+    case 'closed': case 'archived': return 'Closed';
+    default: return 'Unknown';
+  }
+}
+
+export function listingHandlingStatus(listing: ListingState) {
   if (listing.disposedAt) return 'Disposed';
   if (listing.remainderPending) return 'Remainder pending';
   if ((listing.disposedWeightKg ?? 0) > 0) return 'Partially disposed';
-  return listing.status;
+  return 'None';
 }
 export function canModerateListing(listing: Parameters<typeof listingDisplayStatus>[0] & { reservedKg?: number }) {
+  const workflow = listingWorkflowStatus(listing);
   return !listing.disposedAt && !(listing.disposedWeightKg ?? 0) && !listing.remainderPending && !(listing.reservedKg ?? 0)
+    && workflow !== undefined && LISTING_STATUSES[workflow as keyof typeof LISTING_STATUSES] === listing.status
     && ['Open', 'Matched', 'Closed', 'Draft', 'Archived'].includes(listing.status);
 }
 export function availableStockKg(listing: { quantityKg: number | null; availableWeightKg?: number | null; reservedKg?: number }) {

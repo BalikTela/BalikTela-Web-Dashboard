@@ -11,6 +11,59 @@ type Row = Record<string, unknown> & { id: string };
 const names = ['materialBatches','transfers','measurements','recoveryRecords','listings','offers','users',
   'organizations','facilities','walletEntries','systemInteractions'] as const;
 const seed = await createSeedData();
+
+test('export activity uses a bounded paged read of only report-export audit events in the selected dates', async () => {
+  const requests: URL[] = [], start = '2026-07-31T16:00:00Z', end = '2026-10-20T04:00:00Z';
+  const row = (id: string) => ({ id, actor_id: 'ADMIN', action: 'report.exported', entity_type: 'Report', entity_id: 'material-flow', details: {}, occurred_at: '2026-10-19T01:00:00Z' });
+  const store = new SupabaseStore('https://example.supabase.co', 'test-secret', async (input, options) => {
+    const url = new URL(String(input)); requests.push(url);
+    assert.equal(options?.method ?? 'GET', 'GET'); assert.equal(url.pathname.split('/').at(-1), 'activity_logs');
+    assert.equal(url.searchParams.get('action'), 'eq.report.exported'); assert.equal(url.searchParams.get('limit'), '500');
+    assert.deepEqual(url.searchParams.getAll('occurred_at'), [`gte.${start}`, `lt.${end}`]);
+    assert.ok(!url.searchParams.get('select')!.includes('*'));
+    return Response.json(requests.length === 1 ? [row('A'), row('B')] : requests.length === 2 ? [row('C')] : []);
+  });
+  assert.deepEqual((await store.loadReportExportEvents(start, end)).map(item => item.id), ['A', 'B', 'C']);
+  assert.equal(requests[1].searchParams.get('id'), 'gt.B'); assert.equal(requests[2].searchParams.get('id'), 'gt.C');
+});
+
+test('a failed export-audit page cannot masquerade as a complete partial total', async () => {
+  const store = new SupabaseStore('https://example.supabase.co', 'test-secret', async () => Response.json({ code: '42501', message: 'Denied' }, { status: 403 }));
+  await assert.rejects(store.loadReportExportEvents('2026-08-01T00:00:00Z', '2026-10-20T00:00:00Z'), DatabaseOperationError);
+});
+
+test('legacy Hub authorization uses bounded read-only evidence queries, not full dashboard reads', async () => {
+  for (const evidence of ['listings', 'measurements', 'hub_disposals', 'none']) {
+    const paths: string[] = [];
+    const store = new SupabaseStore('https://example.supabase.co', 'test-secret', async (input, options) => {
+      const url = new URL(String(input)), table = url.pathname.split('/').at(-1)!;
+      paths.push(table);
+      assert.equal(options?.method ?? 'GET', 'GET');
+      assert.equal(url.searchParams.get('select'), 'id'); assert.equal(url.searchParams.get('limit'), '1');
+      const key = table === 'listings' ? 'weighing_hub_id' : table === 'measurements' ? 'recorded_by' : 'operator_id';
+      assert.equal(url.searchParams.get(key), 'eq.LEGACY-HUB');
+      if (table === 'measurements') {
+        assert.equal(url.searchParams.get('transfer_id'), 'is.null');
+        assert.match(url.searchParams.get('or')!, /stage.eq.listing/);
+        assert.match(url.searchParams.get('measured_at')!, /^lte\./);
+      }
+      return Response.json(table === evidence ? [{ id: 'evidence' }] : []);
+    });
+    assert.equal(await store.hasHubActivity('LEGACY-HUB'), evidence !== 'none');
+    assert.ok(paths.length <= 3); assert.ok(paths.every(table => ['listings', 'measurements', 'hub_disposals'].includes(table)));
+  }
+});
+
+test('legacy Hub authorization tolerates an absent optional disposal table but fails closed on denied evidence', async () => {
+  for (const code of ['42P01', '42501']) {
+    const store = new SupabaseStore('https://example.supabase.co', 'test-secret', async input => {
+      const table = new URL(String(input)).pathname.split('/').at(-1)!;
+      return table === 'hub_disposals' ? Response.json({ code, message: 'private database details' }, { status: 403 }) : Response.json([]);
+    });
+    if (code === '42P01') assert.equal(await store.hasHubActivity('LEGACY-HUB'), false);
+    else await assert.rejects(store.hasHubActivity('LEGACY-HUB'), error => error instanceof DatabaseOperationError && error.code === '42501');
+  }
+});
 function fixture() {
   const tables = new Map<string, Row[]>();
   const row = (document: Record<string, unknown>) => {

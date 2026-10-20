@@ -1,6 +1,11 @@
 export const HUB_ROLE = 'BalikTela Hub' as const;
 export const COMPATIBLE_HUB_ROLE = 'Recycler' as const;
 
+export function isHubProfile(user: { role: string; stakeholder?: string; webHubOperator?: boolean }) {
+  return user.role === HUB_ROLE || user.role === COMPATIBLE_HUB_ROLE && (user.webHubOperator === true
+    || ['hub', 'baliktela hub', 'collecting hub', 'collection personnel'].includes((user.stakeholder ?? '').trim().toLowerCase()));
+}
+
 export function isHubCandidate(user: { role: string }) {
   return user.role === HUB_ROLE || user.role === COMPATIBLE_HUB_ROLE;
 }
@@ -19,7 +24,7 @@ export const MEASUREMENT_STAGES = ['declaration', 'listing', 'handover', 'collec
 export type CanonicalMeasurementStage = typeof MEASUREMENT_STAGES[number];
 
 export function measurementStageLabel(stage: string) {
-  return ({ listing: 'Hub weighing', declaration: 'Declaration', handover: 'Handover', collection: 'Collection', receipt: 'Receipt',
+  return ({ listing: 'Listing weighing (legacy Hub history)', declaration: 'Declaration', handover: 'Handover', collection: 'Collection', receipt: 'Receipt',
     processing_input: 'Processing input', recovery_output: 'Recovery output', rejection: 'Rejection', loss: 'Loss', validation: 'Transfer validation' } as Record<string, string>)[stage] ?? stage;
 }
 
@@ -28,6 +33,7 @@ export interface HubAccount {
   state: 'Approved' | 'Pending approval' | 'Suspended' | 'Rejected'; emailVerified: boolean; passwordInitialized: boolean;
   facilityIds: string[]; facilities: Array<{ id: string; name: string; status: string }>; assignedListings: number;
   awaitingWeighing: number; measurementCount: number; lastWeighedAt: string | null;
+  awaitingCollection?: number; collectedKg?: number | null; disposedKg?: number | null; disposalRecords?: number;
 }
 export interface HubDirectory {
   aggregateOnly: boolean; hubs: HubAccount[]; regions: Array<{ region: string; operators: number; approved: number; pending: number }>;
@@ -57,4 +63,20 @@ export interface HubDisposalMonitoring {
   summary: { records: number; disposedKg: number; listings: number; missingLinks: number; invalidRecords: number };
   records: Array<HubDisposalRecord & { batchId: string; operator: string; region: string; isDemo: boolean }>;
   landfillAvoidedKg: null;
+  handling?: HubOperationsMonitoring['summary'];
+}
+
+export type HubBalanceStatus = 'Reconciled' | 'Intake not recorded' | 'Disposal feed unavailable' | 'Incomplete disposal records' | 'Transfer evidence incomplete' | 'Conflicting movements' | 'Shown once per batch';
+
+export interface HubOperationsMonitoring {
+  aggregateOnly: boolean;
+  periodLabel: string;
+  disposalFeedAvailable: boolean;
+  summary: { assigned: number; awaitingCollection: number; collectedBatches: number; collectedKg: number | null; disposedKg: number | null; disposalRecords: number; legacyWeighings: number;
+    batches: number; missingIntakeBatches: number; balancedBatches: number; awaitingDisposalKg: number | null; invalidDisposalRecords: number };
+  records: Array<{ batchId: string; listingId: string; title: string; owner: string; hub: string; operatorId: string;
+    region: string; material: string; state: 'Awaiting collection' | 'Collected' | 'Partially disposed' | 'Disposed' | 'Transfer active' | 'Closed';
+    collectionKg: number | null; collectionEvidence: string; disposedKg: number; remainingKg: number | null; lastActivityAt: string;
+    awaitingDisposalKg: number | null; transferredOutKg: number | null; balanceStatus: HubBalanceStatus }>;
+  regions: Array<{ region: string; assigned: number; collectedBatches: number; collectedKg: number; disposedKg: number; awaitingDisposalKg: number | null }>;
 }

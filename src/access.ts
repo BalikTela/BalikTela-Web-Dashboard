@@ -5,7 +5,7 @@ const PAGE_PERMISSIONS: Record<PageKey, readonly Permission[]> = {
   overview: ['analytics.read'],
   listings: ['listings.read'],
   materials: ['batches.read'],
-  operations: ['recovery.read'],
+  operations: ['recovery.read', 'hubs.read'],
   waste: ['analytics.read'],
   transactions: ['analytics.read', 'transfers.read'],
   stakeholders: ['analytics.read'],
@@ -23,5 +23,6 @@ const PAGE_PERMISSIONS: Record<PageKey, readonly Permission[]> = {
 };
 
 export function canAccessPage(access: AccessSummary | null, page: PageKey) {
+  if (access?.hubOperator && !['overview', 'listings', 'materials', 'transactions', 'operations', 'facilities', 'profile'].includes(page)) return false;
   return Boolean(access && PAGE_PERMISSIONS[page].some((permission) => access.permissions.includes(permission)));
 }

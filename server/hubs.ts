@@ -1,13 +1,16 @@
 import type { Express } from 'express';
-import { authorize, scopeBatches } from './access-control.js';
+import { authorize } from './access-control.js';
 import { requireAuth, type AuthenticatedRequest } from './auth.js';
-import { filterBatches, selectAnalyticsCohort, loadDashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
-import { resolveReportingPeriod } from '../shared/reporting.js';
+import { selectHubCohort, selectAnalyticsCohort, loadDashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
 import { ManagementError, saveManagement, text } from './management.js';
-import type { Store } from './store.js';
+import type { DashboardSourceSnapshot, Store } from './store.js';
 import type { ListingRecord, MeasurementRecord, UserRecord } from './types.js';
 import { isCompletedTransfer, isTerminalTransfer } from '../shared/workflows.js';
-import { HUB_ROLE, isApprovedHub, isHubCandidate, isHubWeighingMeasurement, type HubDirectory, type WeighingMonitoring, type HubDisposalMonitoring } from '../shared/hubs.js';
+import { isApprovedHub, isHubCandidate, isHubWeighingMeasurement, type HubDirectory, type WeighingMonitoring, type HubDisposalMonitoring } from '../shared/hubs.js';
+import { identifyHubOperators } from './stakeholders.js';
+import { buildHubOperations } from './hubOperations.js';
+import { validateReportQuery } from './reports.js';
+import { aggregateHubDisposals } from './hubDisposals.js';
 
 const aggregateOnly = (actor: UserRecord) => actor.scope.aggregateOnly || actor.role === 'Government';
 const inRegionScope = (actor: UserRecord, region: string) => actor.role === 'Administrator' || !actor.scope.regions.length || actor.scope.regions.includes(region);
@@ -18,13 +21,15 @@ export function eligibleForWeighing(listing: ListingRecord) {
 function awaiting(listing: ListingRecord) { return listing.quantityKg === null; }
 
 export async function buildHubDirectory(store: Store, actor: UserRecord, query: Record<string, unknown> = {}): Promise<HubDirectory> {
-  const [users, allListings, allMeasurements, facilities, batches, transfers] = await Promise.all([store.all('users'), store.all('listings'), store.all('measurements'), store.all('facilities'), store.all('materialBatches'), store.all('transfers')]);
+  const snapshot = await loadDashboardAnalyticsSnapshot(store);
+  const { users, listings: allListings, measurements: allMeasurements, facilities, allBatches: batches, allTransfers: transfers } = snapshot;
   const locked = new Set(transfers.filter(item => !isTerminalTransfer(item.status)).map(item => item.listingId));
   const allowedBatches = new Set(batches.filter(item => inRegionScope(actor, item.region)).map(item => item.id));
   const listings = allListings.filter(item => allowedBatches.has(item.batchId));
   const measurements = allMeasurements.filter(item => allowedBatches.has(item.batchId));
   const selected = (key: string, all: string, actual: string | null) => !query[key] || query[key] === all || query[key] === actual;
-  const hubs = users.filter(isHubCandidate).filter(user => ['Administrator', 'Government', 'Researcher'].includes(actor.role) || user.id === actor.id).filter(user => inRegionScope(actor, user.region)
+  const hubIds = identifyHubOperators(snapshot);
+  const hubs = users.filter(user => hubIds.has(user.id)).filter(user => ['Administrator', 'Government', 'Researcher'].includes(actor.role) || user.id === actor.id).filter(user => inRegionScope(actor, user.region)
     && selected('region', 'All regions', user.region) && selected('city', 'All cities', user.city)
     && selected('organizationId', 'All organizations', user.organizationId)
     && (!query.facilityId || query.facilityId === 'All facilities' || user.scope.facilityIds.includes(String(query.facilityId)))).map(user => {
@@ -34,11 +39,14 @@ export async function buildHubDirectory(store: Store, actor: UserRecord, query: 
     const state = ['Suspended', 'Deactivated'].includes(user.accountStatus) || user.canonicalVerification === 'suspended' ? 'Suspended' as const
       : user.canonicalVerification === 'rejected' ? 'Rejected' as const
       : isApprovedHub(user) ? 'Approved' as const : 'Pending approval' as const;
+    const operations = buildHubOperations(snapshot, batches.filter(item => allowedBatches.has(item.id)), { ...user, webHubOperator: true }, 'Recorded history');
     return { id: user.id, name: user.fullName, email: user.email, role: user.role, organization: user.organization, organizationId: user.organizationId, city: user.city, region: user.region,
       location: user.location || [user.city, user.region].filter(Boolean).join(', '), state, emailVerified: Boolean(user.emailVerifiedAt), passwordInitialized: Boolean(user.passwordChangedAt),
       facilityIds: actor.role === 'Administrator' ? user.scope.facilityIds : assignedFacilities.map(item => item.id), facilities: assignedFacilities.map(item => ({ id: item.id, name: item.name, status: item.status })),
       assignedListings: assigned.length, awaitingWeighing: assigned.filter(item => awaiting(item) && eligibleForWeighing(item) && !locked.has(item.id)).length,
-      measurementCount: history.length, lastWeighedAt: history.map(item => item.timestamp).sort().at(-1) ?? null };
+      measurementCount: history.length, lastWeighedAt: history.map(item => item.timestamp).sort().at(-1) ?? null,
+      awaitingCollection: operations.summary.awaitingCollection, collectedKg: operations.summary.collectedKg,
+      disposedKg: operations.summary.disposedKg, disposalRecords: operations.summary.disposalRecords };
   }).sort((a, b) => a.name.localeCompare(b.name));
   const regions = [...new Set(hubs.map(item => item.region))].sort().map(region => {
     const rows = hubs.filter(item => item.region === region);
@@ -103,9 +111,16 @@ export function registerHubRoutes(app: Express, store: Store) {
   app.get('/api/hubs', requireAuth, authorize(store, 'hubs.read'), async (req: AuthenticatedRequest, res) => res.json(await buildHubDirectory(store, req.actor!, req.query)));
   app.get('/api/weighing', requireAuth, authorize(store, 'weighing.read'), async (req: AuthenticatedRequest, res) => res.json(await buildWeighingMonitoring(store, req.actor!, req.query)));
   app.get('/api/hub-disposals', requireAuth, authorize(store, 'hubs.read'), async (req: AuthenticatedRequest, res) => res.json(await buildHubDisposalMonitoring(store, req.actor!, req.query)));
+  app.get('/api/hub-operations', requireAuth, authorize(store, 'hubs.read'), async (req: AuthenticatedRequest, res) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    validateReportQuery(req.query);
+    const snapshot = await loadDashboardAnalyticsSnapshot(store), actor = req.actor!, now = new Date();
+    const { period, batches } = selectHubCohort(snapshot, actor, req.query, now);
+    res.json(buildHubOperations(snapshot, batches, actor, period.label, now));
+  });
   app.patch('/api/hubs/:id', requireAuth, authorize(store, 'hubs.manage'), async (req: AuthenticatedRequest, res) => {
     const target = await store.findById('users', String(req.params.id));
-    if (!target || !isHubCandidate(target)) throw new ManagementError('Hub operator not found.', 404);
+    if (!target || !isHubCandidate(target) || !identifyHubOperators(await loadDashboardAnalyticsSnapshot(store)).has(target.id)) throw new ManagementError('Hub collection/disposal operator not found.', 404);
     const action = String(req.body.action);
     if (!['approve', 'revoke', 'assign'].includes(action)) throw new ManagementError('Select a valid Hub action.');
     const reason = text(req.body.reason, 'Administrative reason');
@@ -128,31 +143,18 @@ export function registerHubRoutes(app: Express, store: Store) {
     if (action === 'revoke') { updated.verification = 'Pending demo review'; updated.canonicalVerification = 'pending'; updated.organizationVerified = false; }
     await saveManagement(store, req.actor!, [{ name: 'users', previous: target, record: updated }], `hub.${action}`, target.id, reason);
     const revokedSessions = await store.revokeUserSessions(target.id, new Date().toISOString());
-    res.json({ message: action === 'approve' ? 'Hub access approved.' : action === 'revoke' ? 'Hub weighing approval revoked.' : 'Hub facility assignment saved.', revokedSessions });
+    res.json({ message: action === 'approve' ? 'Hub collection and disposal access approved.' : action === 'revoke' ? 'Hub collection and disposal approval revoked.' : 'Hub facility assignment saved.', revokedSessions });
   });
 }
 
-export async function buildHubDisposalMonitoring(store: Store, actor: UserRecord, query: Record<string, unknown>, now = new Date()): Promise<HubDisposalMonitoring> {
-  const [source, snapshot] = await Promise.all([store.loadHubDisposals?.() ?? Promise.resolve({ available: false, records: [] }), loadDashboardAnalyticsSnapshot(store)]);
-  const privileged = ['Administrator', 'Government', 'Researcher'].includes(actor.role);
+export async function buildHubDisposalMonitoring(store: Store, actor: UserRecord, query: Record<string, unknown>, now = new Date(), suppliedSnapshot?: DashboardSourceSnapshot): Promise<HubDisposalMonitoring> {
+  const snapshot = suppliedSnapshot ?? await loadDashboardAnalyticsSnapshot(store);
+  const source = snapshot.hubDisposals ?? await store.loadHubDisposals?.() ?? { available: false, records: [] };
   // Archived/disposed batches remain in the disposal ledger; current availability is not a history filter.
-  const personallyDisposed = new Set(source.records.filter(item=>item.operatorId===actor.id).map(item=>snapshot.listings.find(listing=>listing.id===item.listingId)?.batchId));
-  const scoped = privileged ? snapshot.allBatches.filter(item => inRegionScope(actor, item.region)) : [...new Map([...scopeBatches(actor, snapshot.allBatches, snapshot),...snapshot.allBatches.filter(item=>personallyDisposed.has(item.id))].map(item=>[item.id,item])).values()];
-  const period = resolveReportingPeriod(query, now, scoped.map(item => item.createdAt).sort()[0]);
-  const batches = new Map(filterBatches(scoped, period, query, { transfers: snapshot.allTransfers, recoveryRecords: snapshot.recoveryRecords, users: snapshot.users, organizations: snapshot.organizations }).map(item => [item.id, item]));
-  const listings = new Map(snapshot.listings.map(item => [item.id, item]));
-  const users = new Map(snapshot.users.map(item => [item.id, item]));
-  const unique = [...new Map(source.records.map(item => [item.id, item])).values()];
-  const linked = unique.filter(item => batches.has(listings.get(item.listingId)?.batchId ?? '') && (!Number.isFinite(Date.parse(item.disposedAt)) || Date.parse(item.disposedAt) <= now.getTime()));
-  const valid = linked.filter(item => Number.isFinite(Date.parse(item.disposedAt)) && Number.isFinite(item.weightKg) && item.weightKg > 0 && item.reason.trim() && item.operatorId);
-  const records = valid.map(item => {
-    const listing = listings.get(item.listingId)!, batch = batches.get(listing.batchId)!;
-    return { ...item, batchId: batch.id, operator: users.get(item.operatorId)?.fullName ?? item.operatorId, region: batch.region || 'Not recorded', isDemo: batch.isDemo };
-  }).sort((a,b) => b.disposedAt.localeCompare(a.disposedAt));
-  return { available: source.available, aggregateOnly: aggregateOnly(actor), landfillAvoidedKg: null,
-    summary: { records: records.length, disposedKg: records.reduce((sum,item) => sum + item.weightKg,0), listings: new Set(records.map(item => item.listingId)).size,
-      missingLinks: actor.role === 'Administrator' ? unique.filter(item => !listings.has(item.listingId)).length : 0, invalidRecords: linked.length - valid.length },
-    records: aggregateOnly(actor) ? [] : records };
+  const cohort = selectHubCohort({ ...snapshot, hubDisposals: source }, actor, query, now);
+  const selected = { ...snapshot, hubDisposals: source };
+  return { ...aggregateHubDisposals(selected, cohort.batches, cohort.actor, now),
+    handling: buildHubOperations(selected, cohort.batches, cohort.actor, cohort.period.label, now).summary };
 }
 
 function isHubMeasurement(item: MeasurementRecord) {

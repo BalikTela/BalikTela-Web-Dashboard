@@ -60,9 +60,9 @@ export function Stakeholders({ data }: { data: Data }) {
                 <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-5 text-sm">
                   {item.hubActivity ? <>
                     <Metric label="Assigned listings" value={String(item.hubActivity.assignedListings)} />
-                    <Metric label="Awaiting weighing" value={String(item.hubActivity.awaitingWeighing)} />
-                    <Metric label="Weighing records" value={String(item.hubActivity.measurements)} />
-                    <Metric label="Latest weighed mass" value={formatMass(item.hubActivity.latestWeighedKg,'No weighing recorded')} />
+                    <Metric label="Collected batches" value={String(item.hubActivity.collectedBatches ?? 0)} />
+                    <Metric label="Recorded collection" value={formatMass(item.hubActivity.collectedKg,'Pending evidence')} />
+                    <Metric label="Recorded disposal" value={formatMass(item.hubActivity.disposedKg,'Feed unavailable')} />
                   </> : <>
                     <Metric label="Confirmed output" value={item.recoveredAvailable === false ? 'Pending evidence' : formatMass(item.recoveredKg)} />
                     <Metric label="Generated" value={item.generatedKg ? `${formatMass(item.generatedKg)}` : 'Not reported'} />

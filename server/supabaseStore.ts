@@ -57,6 +57,19 @@ export class SupabaseStore implements Store {
     return records;
   }
 
+  async hasHubActivity(userId: string) {
+    const assigned = await this.client.from('listings').select('id').eq('weighing_hub_id', userId).limit(1);
+    if (assigned.error) throw databaseError('read Hub assignment authority', assigned.error);
+    if (assigned.data?.length) return true;
+    const measured = await this.client.from('measurements').select('id').eq('recorded_by', userId).is('transfer_id', null)
+      .or('stage.eq.listing,and(stage.eq.declaration,method.ilike.*hub*scale*)').in('weight_status', ['Measured', 'Verified']).gt('weight_kg', 0).lte('measured_at', new Date().toISOString()).limit(1);
+    if (measured.error) throw databaseError('read Hub measurement authority', measured.error);
+    if (measured.data?.length) return true;
+    const disposed = await this.client.from('hub_disposals').select('id').eq('operator_id', userId).limit(1);
+    if (disposed.error && !['42P01', 'PGRST205'].includes(disposed.error.code)) throw databaseError('read Hub disposal authority', disposed.error);
+    return Boolean(disposed.data?.length);
+  }
+
   async loadHubDisposals() {
     const records: import('../shared/hubs.js').HubDisposalRecord[] = [];
     for (let offset = 0; ; offset += 1000) {
@@ -71,6 +84,25 @@ export class SupabaseStore implements Store {
       if ((data?.length ?? 0) < 1000) break;
     }
     return { available: true, records };
+  }
+
+  async loadReportExportEvents(start: string, endExclusive: string) {
+    const records: DatabaseShape['auditRecords'] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      let query = this.client.from('activity_logs').select('id,actor_id,action,entity_type,entity_id,details,occurred_at')
+        .eq('action', 'report.exported').gte('occurred_at', start).lt('occurred_at', endExclusive).order('id').limit(500);
+      if (cursor !== undefined) query = query.gt('id', cursor);
+      const { data, error } = await query;
+      if (error) throw databaseError('read report export activity', error);
+      const page = (data ?? []) as Row[];
+      if (!page.length) break;
+      records.push(...page.map(row => decodeRecord('auditRecords', toDocument(row))));
+      const last = page[page.length - 1].id;
+      if (last === cursor) throw databaseError('read report export activity', { message: 'Pagination did not advance.' });
+      cursor = last;
+    }
+    return records;
   }
 
   async all<K extends CollectionName>(name: K) {

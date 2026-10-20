@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import express, { type Response } from 'express';
 import { installSecurity, securityErrorHandler } from './security.js';
 import {
-  accessSummary, authorize, isWithinOperationalScope, scopeBatches, scopeFacilities,
+  accessSummary, authorize, resolveWebActor, isWithinOperationalScope, scopeBatches, scopeFacilities,
   scopeOrganizations, scopeRecoveryRecords, scopeTransfers, type Permission,
 } from './access-control.js';
 import {
@@ -14,14 +14,16 @@ import {
 import { createSeedData } from './seed.js';
 import { registerPredictiveRoutes } from './analytics/routes.js';
 import { registerHubRoutes } from './hubs.js';
-import { isHubCandidate } from '../shared/hubs.js';
+import { isHubCandidate, isHubProfile } from '../shared/hubs.js';
+import { textileRecyclability } from '../shared/materialClassification.js';
+import { recoveryMassBalance } from '../shared/recovery.js';
 import { availableStockKg, isTerminalTransfer } from '../shared/workflows.js';
 import { createStore } from './store.js';
 import { canIssueReward } from './domain.js';
 import { formatMass } from '../shared/metrics.js';
 import { resolveReportingPeriod, manilaDate } from '../shared/reporting.js';
 import { buildDataQuality } from './dataQuality.js';
-import { buildGovernance } from './governance.js';
+import { registerGovernanceRoutes } from './governance.js';
 import { registerImportRoutes } from './imports.js';
 import { canActOnTransfer } from './access-control.js';
 import { registerReportRoutes } from './reports.js';
@@ -90,12 +92,15 @@ app.use((req,_res,next)=>{
 app.use((req, res, next) => {
   const mutatesDashboardData = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
     && dashboardMutationPrefixes.some((prefix) => req.path.startsWith(prefix));
-  if (mutatesDashboardData) {
+  const exportsReport = req.method === 'GET' && /^\/api\/reports\/[^/]+\/export$/.test(req.path);
+  if (mutatesDashboardData || exportsReport) {
     res.on('finish', () => {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         dashboardAnalyticsCache.clear();
-        dashboardSnapshotCache.clear();
-        void warmDashboardSnapshot();
+        if (mutatesDashboardData) {
+          dashboardSnapshotCache.clear();
+          void warmDashboardSnapshot();
+        }
       }
     });
   }
@@ -141,7 +146,7 @@ app.post('/api/auth/login', async (req, res) => {
   const { session } = authentication;
   if (session.client === 'web') setRefreshCookie(res, authentication.refreshToken, session.expiresAt);
   await audit(user.id, 'auth.login', 'Session', session.id, `${session.client} session created.`);
-  res.json(authenticationPayload(user, authentication));
+  res.json(await authenticationPayload(user, authentication));
 });
 
 app.post('/api/auth/register', async (req, res) => {
@@ -178,7 +183,7 @@ app.post('/api/auth/register', async (req, res) => {
   const { session } = authentication;
   if (session.client === 'web') setRefreshCookie(res, authentication.refreshToken, session.expiresAt);
   await audit(user.id, 'auth.login', 'Session', session.id, `${session.client} session created after registration.`);
-  res.status(201).json({ ...authenticationPayload(user, authentication), demoEmailVerificationToken: demoDelivery ? verificationChallenge.token : undefined });
+  res.status(201).json({ ...await authenticationPayload(user, authentication), demoEmailVerificationToken: demoDelivery ? verificationChallenge.token : undefined });
 });
 
 app.post('/api/auth/password/forgot', async (req, res) => {
@@ -547,11 +552,12 @@ app.get('/api/barter/listings', requireAuth, permit('listings.read'), async (req
     .filter((item) => textileType === 'All textiles' || item.textileType === textileType)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   if (actor.scope.aggregateOnly) listings = [];
-  else if (actor.role === 'BalikTela Hub' || actor.role === 'Producer') {
+  else if (isHubProfile(actor) || actor.role === 'Producer') {
     const history = new Set((await store.all('measurements')).filter(item => item.recordedBy === actor.id).map(item => item.batchId));
-    listings = listings.filter(item => item.ownerId === actor.id || actor.role === 'BalikTela Hub' && (item.weighingHubId === actor.id || history.has(item.batchId)));
+    listings = listings.filter(item => item.ownerId === actor.id || isHubProfile(actor) && (item.weighingHubId === actor.id || history.has(item.batchId)));
   } else if (actor.role === 'Researcher' && actor.scope.regions.length) listings = listings.filter(item => actor.scope.regions.includes(item.region));
-  res.json({ listings });
+  const sources = await store.all('users');
+  res.json({ listings: listings.map(item => ({ ...item, recyclability: textileRecyclability({ id: item.batchId, condition: item.quality, sourceUserId: item.ownerId }, { users: sources, listings: [item] }) })) });
 });
 
 app.post('/api/barter/listings', requireAuth, permit('listings.create'), async (req: AuthenticatedRequest, res) => {
@@ -590,7 +596,7 @@ app.get('/api/material-batches', requireAuth, permit('batches.read'), async (req
   const period = resolveReportingPeriod({ ...req.query, dateRange: req.query.dateRange ?? 'All time' }, new Date(), scoped.map(item => item.createdAt).sort()[0]);
   const batches = filterBatches(scoped, period, req.query, { transfers: snapshot.allTransfers, recoveryRecords: snapshot.recoveryRecords.filter(item => item.status !== 'Reversed'), users: snapshot.users, organizations: snapshot.organizations });
   const measurements = snapshot.measurements;
-  res.json({ batches: batches.map((batch) => ({ ...batch, measurements: measurements.filter((measurement) => measurement.batchId === batch.id) })) });
+  res.json({ batches: batches.map((batch) => ({ ...batch, recyclability: textileRecyclability(batch, snapshot), measurements: measurements.filter((measurement) => measurement.batchId === batch.id) })) });
 });
 
 app.get('/api/facilities', requireAuth, permit('facilities.read'), async (req: AuthenticatedRequest, res) => {
@@ -799,7 +805,8 @@ app.get('/api/recovery-records', requireAuth, permit('recovery.read'), async (re
   const actor = await currentUser(req, res); if (!actor) return;
   const snapshot = await readDashboardSnapshot();
   const { currentBatchIds } = selectAnalyticsCohort(snapshot, actor, { ...req.query, dateRange: req.query.dateRange ?? 'All time' });
-  let records = (actor.role === 'Researcher' && !actor.scope.aggregateOnly ? snapshot.recoveryRecords : scopeRecoveryRecords(actor, snapshot.recoveryRecords, snapshot)).filter(item => currentBatchIds.has(item.batchId));
+  const now = Date.now();
+  let records = (actor.role === 'Researcher' && !actor.scope.aggregateOnly ? snapshot.recoveryRecords : scopeRecoveryRecords(actor, snapshot.recoveryRecords, snapshot)).filter(item => currentBatchIds.has(item.batchId) && Date.parse(item.timestamp) <= now);
   const facilityId = String(req.query.facilityId ?? 'All facilities');
   records = records.filter((item) => facilityId === 'All facilities' || item.facilityId === facilityId);
   res.json({ records: records.sort((a, b) => b.timestamp.localeCompare(a.timestamp)) });
@@ -818,7 +825,7 @@ app.post('/api/recovery-records', requireAuth, permit('recovery.create'), async 
   if (!isWithinOperationalScope(actor, { organizationIds: [facility.organizationId], facilityIds: [facility.id] })) return res.status(403).json({ message: 'This facility is outside your assigned scope.' });
   if (!isWithinOperationalScope(actor,{userIds:[transfer.providerId,transfer.recipientId]})) throw new ManagementError('This transfer is outside your assigned scope.',403);
   if (facility.status==='Inactive') throw new ManagementError('Select an active facility.');
-  if (Math.abs(inputWeightKg-outputWeightKg-residualWeightKg-lossWeightKg)>0.01) throw new ManagementError('Input must equal output plus rejects and processing loss.');
+  if (recoveryMassBalance({inputWeightKg,outputWeightKg,residualWeightKg,lossWeightKg})!=='Balanced') throw new ManagementError('Input must equal output plus rejects and processing loss (within 0.001 kg).');
   if (outputWeightKg !== null && outputWeightKg > inputWeightKg) return res.status(400).json({ message: 'Output weight cannot exceed input weight.' });
   const record: RecoveryRecord = { id: id('RCV'), transferId: transfer.id, batchId: transfer.batchId, facilityId: facility.id, organizationId: facility.organizationId, stage: ['Collection', 'Sorting', 'Processing', 'Recovery', 'Rejection'].includes(String(req.body.stage)) ? req.body.stage : 'Processing', inputWeightKg, outputWeightKg, residualWeightKg, lossWeightKg, outcome: req.body.stage === 'Rejection' ? 'Rejected' : req.body.outcome ? validPathway(req.body.outcome) : null, status: req.body.validate === true ? 'Validated' : 'Recorded', recordedBy: actor.id, validatedBy: req.body.validate === true ? actor.id : null, timestamp: new Date().toISOString(), note: String(req.body.note ?? ''), isDemo: store.mode === 'memory-demo' };
   if (record.outcome===null || record.outcome==='For assessment') throw new ManagementError('Select a confirmed recovery outcome.');
@@ -884,11 +891,7 @@ app.patch('/api/configuration', requireAuth, permit('configuration.manage'), asy
   res.json({configuration:updated});
 });
 
-app.get('/api/governance', requireAuth, permit('governance.read'), async (req: AuthenticatedRequest, res) => {
-  const actor = await currentUser(req, res); if (!actor) return;
-  const configuration = await store.findOne('configurations', (item) => item.id === 'platform');
-  res.json(buildGovernance(actor, configuration));
-});
+registerGovernanceRoutes(app, store, readDashboardSnapshot);
 
 registerReportRoutes(app, store);
 registerImportRoutes(app, store);
@@ -980,7 +983,8 @@ async function startSession(user: UserRecord, requestedClient: unknown) {
   return { accessToken, accessTokenExpiresAt: new Date(now.getTime() + AUTH_ACCESS_TTL_SECONDS * 1000).toISOString(), refreshToken, csrfToken, session };
 }
 type StartedSession = Awaited<ReturnType<typeof startSession>>;
-function authenticationPayload(user: UserRecord, authentication: StartedSession) {
+async function authenticationPayload(user: UserRecord, authentication: StartedSession) {
+  user = await resolveWebActor(store, user);
   const web = authentication.session.client === 'web';
   return {
     token: authentication.accessToken,

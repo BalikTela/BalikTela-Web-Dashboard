@@ -63,6 +63,7 @@ export function dashboardAnalyticsCacheKey(actor: UserRecord, query: Record<stri
   return JSON.stringify({
     actor: actor.id,
     role: actor.role,
+    hubOperator: actor.webHubOperator === true,
     organizationId: actor.organizationId,
     scope: {
       aggregateOnly: actor.scope.aggregateOnly,

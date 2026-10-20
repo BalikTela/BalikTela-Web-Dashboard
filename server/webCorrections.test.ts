@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canModerateListing, listingDisplayStatus, matchesTransferStatus } from '../shared/workflows.js';
+import { canModerateListing, listingDisplayStatus, listingHandlingStatus, matchesTransferStatus } from '../shared/workflows.js';
 import { filterListings, emptyListingFilters } from '../src/lib/listingFilters.js';
 import { canActOnTransfer, hasPermission, scopeRecoveryRecords } from './access-control.js';
 import { buildHubDirectory, buildHubDisposalMonitoring } from './hubs.js';
@@ -12,12 +12,12 @@ import { MemoryStore } from './store.js';
 import { canonicalMutations } from './database/mutations.js';
 
 const now=new Date('2026-10-19T04:00:00Z');
-test('displayed listing status, filters and moderation agree on disposal and remainder locks',async()=>{
+test('listing workflow stays separate from disposal and remainder filters while moderation remains locked',async()=>{
   const seed=await createSeedData(),base=seed.listings[0];
   for(const [patch,label] of [[{disposedAt:now.toISOString()},'Disposed'],[{disposedWeightKg:2},'Partially disposed'],[{remainderPending:true},'Remainder pending']] as const){
-    const listing={...base,...patch};assert.equal(listingDisplayStatus(listing),label);assert.equal(canModerateListing(listing),false);
-    assert.equal(filterListings([listing],'',{...emptyListingFilters,status:label}).length,1);
-    assert.equal(filterListings([listing],'',{...emptyListingFilters,status:'Open'}).length,0);
+    const listing={...base,...patch};assert.equal(listingDisplayStatus(listing),'Available');assert.equal(listingHandlingStatus(listing),label);assert.equal(canModerateListing(listing),false);
+    assert.equal(filterListings([listing],'',{...emptyListingFilters,status:'Available',handlingStatus:label}).length,1);
+    assert.equal(filterListings([listing],'',{...emptyListingFilters,status:'Closed',handlingStatus:label}).length,0);
   }
   assert.equal(canModerateListing({...base,reservedKg:1}),false);
   assert.equal(canModerateListing({...base,status:'Unknown'}),false);

@@ -60,7 +60,7 @@ test('pagination reaches every row and clamps short or empty result sets', () =>
 
 test('listing filters compose with trimmed search, evidence state, pathway, and record type', async () => {
   const { listings } = await createSeedData();
-  const result = filterListings(listings, '  cotton ', { ...emptyListingFilters, status: 'Open', region: 'Metro Manila', textileType: 'Cotton', circularPathway: 'Recycling', weightStatus: 'Measured', wasteSource: 'Pre-consumer', recordType: 'Demo' });
+  const result = filterListings(listings, '  cotton ', { ...emptyListingFilters, status: 'Available', region: 'Metro Manila', textileType: 'Cotton', circularPathway: 'Recycling', weightStatus: 'Measured', wasteSource: 'Pre-consumer', recordType: 'Demo' });
   assert.equal(result.length, 1);
   assert.equal(result[0].id, 'LST-2609-001');
   assert.equal(filterListings(listings, '', { ...emptyListingFilters, recordType: 'Operational' }).length, 0);

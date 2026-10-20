@@ -12,6 +12,7 @@ type RecordFor<K extends CollectionName> = DatabaseShape[K][number];
 interface CanonicalDocument extends Document { _id: string }
 
 export interface DashboardSourceSnapshot {
+  hubDisposals?: { available: boolean; records: import('../shared/hubs.js').HubDisposalRecord[] };
   allBatches: DatabaseShape['materialBatches'];
   allTransfers: DatabaseShape['transfers'];
   measurements: DatabaseShape['measurements'];
@@ -48,6 +49,8 @@ export interface Store {
   loadDashboardSnapshot?(): Promise<DashboardSourceSnapshot | null>;
   lookupImportRecords?(lookups: ImportRecordLookup[]): Promise<ImportExistingRecord[]>;
   loadHubDisposals?(): Promise<{ available: boolean; records: import('../shared/hubs.js').HubDisposalRecord[] }>;
+  loadReportExportEvents?(start: string, endExclusive: string): Promise<DatabaseShape['auditRecords']>;
+  hasHubActivity?(userId: string): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -187,6 +190,12 @@ export class MemoryStore implements Store {
 class MongoStore implements Store {
   mode = 'mongodb' as const;
   constructor(private db: Db, private client: MongoClient) {}
+
+  async loadReportExportEvents(start: string, endExclusive: string) {
+    const rows = await this.collection('auditRecords').find({ action: 'report.exported',
+      occurred_at: { $gte: new Date(start), $lt: new Date(endExclusive) } }).toArray();
+    return rows.map(row => decodeRecord('auditRecords', row));
+  }
 
   private collection<K extends CollectionName>(name: K) {
     return this.db.collection<CanonicalDocument>(WEB_PERSISTENCE_COLLECTION_MAP[name]);

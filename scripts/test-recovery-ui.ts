@@ -3,7 +3,8 @@ import { mkdir } from 'node:fs/promises';
 import express from 'express';
 import { chromium } from 'playwright-core';
 import { accessSummary } from '../server/access-control.js';
-import { buildDashboardAnalytics } from '../server/dashboardAnalytics.js';
+import { buildDashboardAnalytics, loadDashboardAnalyticsSnapshot } from '../server/dashboardAnalytics.js';
+import { buildHubOperations } from '../server/hubOperations.js';
 import { createSeedData } from '../server/seed.js';
 import { MemoryStore } from '../server/store.js';
 import { serveWebApp } from '../server/webApp.js';
@@ -13,6 +14,7 @@ const seed = await createSeedData();
 const record = { ...seed.recoveryRecords[0], id: 'RECOVERY-LOAD-TEST', facilityId: seed.facilities[0].id,
   inputWeightKg: 100, outputWeightKg: 80, residualWeightKg: 15, lossWeightKg: 5 };
 const analytics = await buildDashboardAnalytics(new MemoryStore(seed), seed.users[0], {});
+const source = await loadDashboardAnalyticsSnapshot(new MemoryStore(seed));
 const app = express(); serveWebApp(app);
 const server = app.listen(0, '127.0.0.1');
 await new Promise<void>(resolve => server.once('listening', resolve));
@@ -25,10 +27,11 @@ try {
     const page = await context.newPage();
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     let recoveryFails = false; let invalidRecovery = false; let facilityFails = false; let transferFails = true; let readOnly = false;
+    let emptyTransfers = false; let emptyFacilities = false;
     let releaseFacility: () => void = () => {};
     const facilityGate = width === 375 ? new Promise<void>(resolve => { releaseFacility = resolve; }) : Promise.resolve();
     let slowRegion = false; let latestRegion = '';
-    let transferRequests = 0; let facilityRequests = 0; let writes = 0;
+    let transferRequests = 0; let facilityRequests = 0; let recoveryRequests = 0; let writes = 0;
     await page.route('**/api/**', async route => {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '');
       if (request.method() !== 'GET') { writes++; return route.fulfill({ status: 405, json: { message: 'Read-only fixture' } }); }
@@ -39,7 +42,9 @@ try {
       }
       if (path === '/analytics/dashboard') return route.fulfill({ json: analytics });
       if (path === '/hub-disposals') return route.fulfill({json:{available:true,aggregateOnly:false,records:[],landfillAvoidedKg:null,summary:{records:0,disposedKg:0,listings:0,missingLinks:0,invalidRecords:0}}});
+      if (path === '/hub-operations') return route.fulfill({ json: buildHubOperations(source, [], seed.users[0], 'Fixture cohort') });
       if (path === '/recovery-records') {
+        recoveryRequests++;
         const region = url.searchParams.get('region') ?? '';
         if (slowRegion && region === 'Metro Manila') await new Promise(resolve => setTimeout(resolve, 600));
         if (recoveryFails) return route.fulfill({ status: 503, json: { message: 'Recovery service temporarily unavailable.' } });
@@ -48,23 +53,29 @@ try {
       }
       if (path === '/facilities') {
         facilityRequests++;
+        assert.equal(url.search, '', 'Scoped facility names must remain available for transfers between regions.');
         await facilityGate;
         return route.fulfill(facilityFails
           ? { status: 503, json: { message: 'Facility lookup temporarily unavailable.' } }
-          : { json: { facilities: seed.facilities } });
+          : { json: { facilities: emptyFacilities?[]:seed.facilities } });
       }
       if (path === '/transfers') {
         transferRequests++;
+        assert.equal(url.searchParams.get('dateRange'), 'Last 3 calendar months', 'New stage records must use transfers in the selected material cohort.');
         return route.fulfill(transferFails ? { status: 503, json: { message: 'Transfer lookup temporarily unavailable.' } }
-          : { json: { transfers: seed.transfers } });
+          : { json: { transfers: emptyTransfers?[]:seed.transfers } });
       }
       return route.fulfill({ status: 404, json: { message: `Unmocked ${path}` } });
     });
     const openRecovery = async () => {
+      const before = recoveryRequests;
       const menu = page.getByRole('button', { name: 'Open navigation', exact: true });
       if (await menu.isVisible()) await menu.click();
       await page.getByRole('button', { name: 'Recovery Monitoring', exact: true }).click();
-      await page.locator('main [aria-hidden="false"]').getByRole('heading', { name: 'Collection and Recovery Operations', exact: true }).waitFor();
+      await page.getByRole('region', { name: 'Hub collection and disposal', exact: true }).waitFor();
+      assert.equal(recoveryRequests, before, 'Hub monitoring must not eagerly request processing records.');
+      await page.locator('main [aria-hidden="false"]').getByRole('button', { name: 'Processing Records', exact: true }).click();
+      await page.locator('main [aria-hidden="false"]').getByRole('heading', { name: 'Recovery Stage Records', exact: true }).waitFor();
     };
     const active = page.locator('main [aria-hidden="false"]');
     await page.goto(`http://127.0.0.1:${address.port}/dashboard`);
@@ -75,6 +86,28 @@ try {
     assert.equal(transferRequests, 0, 'Transfer options should load only when recording a new operation.');
     releaseFacility();
     assert.match(await active.innerText(), /0\.1 t/);
+    await active.getByRole('textbox', { name: 'Search recovery records' }).fill('not-a-record');
+    await active.getByText('No recovery records match these filters.', { exact: true }).waitFor();
+    await active.getByRole('textbox', { name: 'Search recovery records' }).fill(record.batchId);
+    await active.getByRole('table', { name: 'Recovery stage records', exact: true }).waitFor();
+    await active.getByRole('combobox', { name: 'Recovery stage', exact: true }).selectOption(record.stage === 'Collection' ? 'Sorting' : 'Collection');
+    await active.getByText('No recovery records match these filters.', { exact: true }).waitFor();
+    await active.getByRole('combobox', { name: 'Recovery stage', exact: true }).selectOption('All stages');
+    await active.getByRole('combobox', { name: 'Recovery record status', exact: true }).selectOption(record.status === 'Recorded' ? 'Validated' : 'Recorded');
+    await active.getByText('No recovery records match these filters.', { exact: true }).waitFor();
+    await active.getByRole('combobox', { name: 'Recovery record status', exact: true }).selectOption('Active');
+    await active.getByRole('button', { name: `View ${record.id}`, exact: true }).click();
+    const detail = page.getByRole('dialog');
+    await detail.getByText('Balanced', { exact: true }).waitFor();
+    const box = await detail.boundingBox(); assert.ok(box && box.y >= 0 && box.y + box.height <= 901, 'Record details must fit the viewport without clipping.');
+    await detail.getByText(record.transferId, { exact: true }).waitFor();
+    assert.match(await detail.innerText(), /0\.08 t/);
+    assert.match(await detail.innerText(), /0\.015 t/);
+    assert.match(await detail.innerText(), /0\.005 t/);
+    await page.screenshot({ path: `/tmp/baliktela-recovery-ui/detail-${width}.png`, fullPage: true });
+    await page.keyboard.press('Escape');
+    await detail.waitFor({ state: 'hidden' });
+    await active.getByRole('textbox', { name: 'Search recovery records' }).fill('');
 
     await active.getByRole('button', { name: 'Record operation', exact: true }).click();
     await active.getByRole('alert').getByText(/Transfer lookup temporarily unavailable/).waitFor();
@@ -84,6 +117,15 @@ try {
     await page.getByRole('dialog').getByRole('heading', { name: 'Record operational event' }).waitFor();
     assert.ok(await page.getByRole('dialog').getByLabel('Transfer', { exact: true }).locator('option').count());
     await page.getByRole('button', { name: 'Close editor', exact: true }).click();
+    emptyTransfers = true;
+    await active.getByRole('button', { name: 'Record operation', exact: true }).click();
+    await active.getByRole('alert').getByText('No transfers are available in the selected cohort.', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('dialog').count(), 0);
+    emptyTransfers = false; emptyFacilities = true;
+    await active.getByRole('button', { name: 'Record operation', exact: true }).click();
+    await active.getByRole('alert').getByText('No active facilities are available in your scope.', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('dialog').count(), 0);
+    emptyFacilities = false;
 
     recoveryFails = true;
     await page.getByRole('combobox', { name: /^Region/ }).selectOption('Metro Manila');

@@ -52,6 +52,10 @@ try {
     if (fail) { await page.getByRole('button', { name: 'Retry report', exact: true }).waitFor(); fail = false; await page.getByRole('button', { name: 'Retry report', exact: true }).click(); }
     const active = page.locator('main [aria-hidden="false"]');
     await active.getByRole('table', { name: 'Material Flow Summary preview', exact: true }).waitFor();
+    const reportTypes = active.getByRole('combobox', { name: 'Report type', exact: true });
+    assert.deepEqual(await reportTypes.locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value)), ['material-flow', 'data-quality', 'organizations']);
+    assert.equal(await reportTypes.getByRole('option', { name: /environmental/i }).count(), 0);
+    await active.getByRole('region', { name: 'Report interpretation', exact: true }).getByText('How the percentage works', { exact: true }).waitFor();
     assert.equal(await active.getByRole('table').locator('tbody tr').count(), 10);
     await active.getByRole('button', { name: 'Last page', exact: true }).click();
     await active.getByRole('cell', { name: 'TOTAL', exact: true }).waitFor();
@@ -69,17 +73,20 @@ try {
     assert.equal(download.suggestedFilename(), 'baliktela-material-flow-2026-09-01-2026-09-21.csv');
     const csv = await readFile((await download.path())!, 'utf8');
     assert.ok(csv.includes('0.815')); assert.ok(!csv.includes('0.815125'));
+    assert.ok(csv.indexOf('SUMMARY') < csv.indexOf('DETAILED DATA'));
+    assert.ok(csv.includes('INTERPRETATION'));assert.ok(csv.includes('DEFINITIONS'));assert.ok(!csv.includes('"",""'));
     if (viewport.width === 1440) {
       const popupPromise = context.waitForEvent('page');
       await active.getByRole('button', { name: 'Print / PDF', exact: true }).click();
       const popup = await popupPromise; await popup.getByRole('heading', { name: 'Material Flow Summary', exact: true }).waitFor();
       assert.equal(await popup.title(), 'Material Flow Summary | BalikTelaPH');
+      await popup.getByRole('region', { name: 'Report interpretation', exact: true }).getByText('Report Interpretation', { exact: true }).waitFor();
       assert.equal(await popup.locator('tbody tr').count(), 25, 'Print must include all data rows, not the ten-row preview or catalog.');
       assert.equal(await popup.locator('aside, nav').count(), 0);
       await popup.pdf({ path: `${output}/material-flow.pdf`, format: 'A4', landscape: true, printBackground: true });
       await popup.close();
     }
-    for (const reportId of ['data-quality', 'organizations', 'environmental-impact']) {
+    for (const reportId of ['data-quality', 'organizations']) {
       await active.getByRole('combobox', { name: 'Report type', exact: true }).selectOption(reportId);
       await active.getByRole('table', { name: `${REPORT_DEFINITIONS.find(item => item.id === reportId)!.name} preview`, exact: true }).waitFor();
     }
@@ -124,6 +131,7 @@ try {
   await readOnly.getByRole('button', { name: 'Reports', exact: true }).click();
   const restricted = readOnly.locator('main [aria-hidden="false"]');
   await restricted.getByRole('table').waitFor();
+  assert.deepEqual(await restricted.getByRole('combobox', { name: 'Report type', exact: true }).locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value)), ['material-flow', 'data-quality', 'organizations']);
   assert.equal(await restricted.getByRole('button', { name: 'Export CSV', exact: true }).isDisabled(), true);
   assert.equal(await restricted.getByRole('button', { name: 'Print / PDF', exact: true }).isDisabled(), true);
   await restricted.getByRole('combobox', { name: 'Report type', exact: true }).selectOption('organizations');

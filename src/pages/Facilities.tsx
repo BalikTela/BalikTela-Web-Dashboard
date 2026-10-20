@@ -1,70 +1,47 @@
-import { PaginatedRecords } from '../components/PaginatedRecords';
-import { formatMass, percentage } from '../../shared/metrics';
 import { Activity, Factory, Gauge, PackageCheck } from 'lucide-react';
+import { formatMass, percentage } from '../../shared/metrics';
+import { PaginatedRecords } from '../components/PaginatedRecords';
 import { SectionHeader } from '../components/SectionHeader';
 import { EmptyBlock } from '../components/StateBlock';
 import { StatusBadge } from '../components/StatusBadge';
-import type { getDashboardData } from '../services/dashboardService';
 import { Panel } from '../components/Panel';
 import { Progress } from '../components/ui/progress';
 import { SummaryCard } from '../components/SummaryCard';
-import { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { HubManagement } from '../components/HubManagement';
-import { HubDisposalMonitoring } from '../components/HubDisposalMonitoring';
-import type { Filters } from '../types';
+import type { DashboardAnalytics } from '../platformTypes';
 
-type Data = Awaited<ReturnType<typeof getDashboardData>>;
-
-export function Facilities({ data, filters }: { data: Data; filters: Filters }) {
-  const { access } = useAuth();
-  const canReadHubs = Boolean(access?.permissions.includes('hubs.read'));
-  const [tab, setTab] = useState<'performance' | 'hubs' | 'disposals'>('performance');
+export function Facilities({ data }: { data: DashboardAnalytics }) {
+  const rows = data.facilities;
+  const capacity = rows.reduce((sum, item) => sum + item.capacityKg, 0);
+  const intake = rows.reduce((sum, item) => sum + item.intakeKg, 0);
+  const output = rows.reduce((sum, item) => sum + item.processedKg, 0);
+  const capacityConfigured = rows.length > 0 && rows.every(item => Number.isFinite(item.capacityKg) && item.capacityKg > 0);
+  const utilization = capacityConfigured ? percentage(intake, capacity) : null;
   return <div className="space-y-5">
-    {canReadHubs ? <div className="flex flex-wrap gap-x-5 border-b border-slate-200" role="group" aria-label="Facility sections">{(['performance', 'hubs', 'disposals'] as const).map(item => <button type="button" key={item} aria-pressed={tab === item} onClick={() => setTab(item)} className={`border-b-2 px-1 py-3 text-sm font-medium ${tab === item ? 'border-emerald-700 text-emerald-800' : 'border-transparent text-slate-500 hover:text-slate-900'}`}>{item === 'performance' ? 'Facility Performance' : item === 'disposals' ? 'Hub Disposals' : access?.permissions.includes('hubs.manage') ? 'Hub Management' : 'Hub Directory'}</button>)}</div> : null}
-    {tab === 'hubs' && canReadHubs ? <HubManagement filters={filters} /> : tab === 'disposals' && canReadHubs ? <HubDisposalMonitoring filters={filters} /> : <FacilityPerformance data={data} />}
+    <section className="stagger-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <SummaryCard label={data.metadata.aggregateOnly ? 'Regional Hub groups' : 'Registered Hubs'} value={String(rows.length)} detail="Matching regional and textile filters" icon={Factory} />
+      <SummaryCard label="Period capacity" value={capacity > 0 ? formatMass(capacity) : 'Not configured'} detail={data.metadata.periodLabel} icon={Gauge} tone="blue" />
+      <SummaryCard label="Network utilization" value={utilization === null ? 'Not available' : `${utilization}%`} detail="Recorded intake / prorated period capacity" icon={Activity} tone={utilization !== null && utilization >= 85 ? 'amber' : 'emerald'} />
+      <SummaryCard label="Confirmed outcome output" value={rows.some(item => item.processedAvailable !== false) ? formatMass(output) : 'Pending evidence'} detail="Historical validated reuse and recycling output" icon={PackageCheck} tone="emerald" />
+    </section>
+    <Panel>
+      <SectionHeader title="Hub Facilities" eyebrow="Capacity, utilization, and recorded performance" />
+      {rows.length ? <PaginatedRecords rows={rows} resetKey={data.metadata.periodLabel} label="Hub facilities">{pageRows => <div className="overflow-x-auto scrollbar-thin">
+        <table className="w-full min-w-[1050px] text-left text-sm" aria-label="Hub facility analytics">
+          <thead><tr><th>Hub</th><th>Location</th><th>Accepted textiles</th><th>Period capacity</th><th>Utilization</th><th>Recorded intake</th><th>Confirmed output</th><th>Processing time</th><th>Status</th></tr></thead>
+          <tbody className="divide-y divide-textile-thread">{pageRows.map(item => <tr key={item.id} className="data-row">
+            <td className="min-w-40 py-4 pr-4 font-semibold"><span>{item.name}</span></td>
+            <td className="pr-4">{item.location}</td><td className="max-w-44 pr-4">{item.acceptedTypes.join(', ') || 'Not configured'}</td>
+            <td className="whitespace-nowrap pr-4 tabular-nums">{item.capacityKg > 0 ? formatMass(item.capacityKg) : 'Not configured'}
+              {item.capacityKg > 0 ? <p className={`mt-1 text-xs ${item.intakeKg > item.capacityKg ? 'text-red-700' : 'text-slate-500'}`}>{formatMass(Math.abs(item.capacityKg - item.intakeKg))} {item.intakeKg > item.capacityKg ? 'over capacity' : 'remaining'}</p> : null}</td>
+            <td className="pr-4">{item.capacityKg > 0 ? <div className="flex items-center gap-2"><Progress value={Math.min(100, item.utilization)} className="w-24" indicatorClassName={item.utilization > 100 ? 'bg-red-600' : item.utilization >= 85 ? 'bg-amber-500' : undefined} /><span className="tabular-nums">{item.utilization}%</span></div> : 'Not available'}</td>
+            <td className="whitespace-nowrap pr-4 tabular-nums">{formatMass(item.intakeKg)}</td>
+            <td className="whitespace-nowrap pr-4 tabular-nums">{item.processedAvailable === false ? 'Pending evidence' : formatMass(item.processedKg)}</td>
+            <td className="whitespace-nowrap pr-4">{item.processingTimeDays > 0 && !data.metadata.aggregateOnly ? `${item.processingTimeDays} days` : 'Not reported'}</td>
+            <td><StatusBadge status={item.status} /></td>
+          </tr>)}</tbody>
+        </table>
+      </div>}</PaginatedRecords> : <EmptyBlock label="No Hubs match these filters." />}
+      <p className="mt-4 border-t border-slate-200 pt-3 text-xs leading-5 text-slate-500">Utilization = recorded intake / period capacity. Available: below 85%; near capacity: 85% to below 100%; at capacity: 100%; over capacity: above 100%. Maintenance and onboarding remain operating conditions. Intake counts each batch once per Hub from a collection receipt or its earliest validated operation; later stages are not added again. This is handling volume, not storage occupancy or proof of disposal. Confirmed output is historical recovery evidence, not Hub disposal.</p>
+    </Panel>
   </div>;
-}
-
-function FacilityPerformance({ data }: { data: Data }) {
-  const capacity = data.facilities.reduce((sum, item) => sum + item.capacityKg, 0);
-  const processed = data.facilities.reduce((sum, item) => sum + item.processedKg, 0);
-  const averageUtilization = percentage(data.facilities.reduce((sum, item) => sum + item.intakeKg, 0), capacity);
-  return (
-    <div className="space-y-5">
-      <section className="stagger-grid grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label={data.metadata.aggregateOnly ? 'Regional facility groups' : 'Registered facilities'} value={data.facilities.length.toString()} detail="Matching regional and textile filters" icon={Factory} />
-        <SummaryCard label="Period capacity" value={`${formatMass(capacity)}`} detail={data.metadata.periodLabel} icon={Gauge} tone="blue" />
-        <SummaryCard label="Network utilization" value={capacity ? `${averageUtilization}%` : 'Not available'} detail="Total intake / prorated period capacity" icon={Activity} tone={averageUtilization >= 85 ? 'amber' : 'emerald'} />
-        <SummaryCard label="Confirmed outcome output" value={data.facilities.some(item => item.processedAvailable !== false) ? formatMass(processed) : 'Pending evidence'} detail="Validated final reuse and recycling output" icon={PackageCheck} tone="emerald" />
-      </section>
-      <Panel>
-      <SectionHeader title="Recovery Facilities and Hubs" eyebrow="Registered period capacity, allocated intake, and confirmed final output" />
-      {data.facilities.length ? (
-        <PaginatedRecords rows={data.facilities} resetKey={JSON.stringify([data.metadata.periodLabel])}>{pageRows =><div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full min-w-[960px] text-left text-sm">
-            <thead className="text-xs uppercase tracking-[0.12em] text-textile-ink/45">
-              <tr><th className="py-2">Facility</th><th>Location</th><th>Accepted types</th><th>Capacity</th><th>Utilization</th><th>Intake</th><th>Confirmed output</th><th>Processing time</th><th>Status</th></tr>
-            </thead>
-            <tbody className="divide-y divide-textile-thread">
-              {pageRows.map((item) => (
-                <tr key={item.id} className="data-row">
-                  <td className="py-3 font-semibold text-textile-ink">{item.name}</td>
-                  <td>{item.location}</td>
-                  <td className="max-w-xs">{item.acceptedTypes.join(', ')}</td>
-                  <td>{formatMass(item.capacityKg)}</td>
-                  <td><div className="flex items-center gap-2"><Progress value={item.utilization} className="w-24" indicatorClassName={item.utilization >= 85 ? 'bg-amber-500' : undefined} />{item.capacityKg > 0 ? `${item.utilization}%` : 'Not available'}</div></td>
-                  <td>{formatMass(item.intakeKg)}</td>
-                  <td>{item.processedAvailable === false ? 'Pending evidence' : formatMass(item.processedKg)}</td>
-                  <td>{item.processingTimeDays > 0 && !data.metadata.aggregateOnly ? `${item.processingTimeDays} days` : 'Not reported'}</td>
-                  <td><StatusBadge status={item.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>}</PaginatedRecords>
-      ) : <EmptyBlock />}
-      </Panel>
-    </div>
-  );
 }

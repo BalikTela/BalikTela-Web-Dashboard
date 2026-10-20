@@ -6,6 +6,8 @@ import { createSeedData } from '../server/seed.js';
 import { MemoryStore } from '../server/store.js';
 import { buildDashboardAnalytics } from '../server/dashboardAnalytics.js';
 import { buildHubDirectory, buildWeighingMonitoring } from '../server/hubs.js';
+import { buildHubOperations } from '../server/hubOperations.js';
+import { loadDashboardAnalyticsSnapshot } from '../server/dashboardAnalytics.js';
 import { accessSummary } from '../server/access-control.js';
 import { serveWebApp } from '../server/webApp.js';
 import type { UserRecord } from '../server/types.js';
@@ -79,6 +81,10 @@ try {
         await store.update('users', id, { organizationVerified: lastDecision!.action === 'approve', scope: { ...user.scope, facilityIds: lastDecision!.facilityIds as string[] } });
         body = { message: 'Fixture approval saved.', revokedSessions: 1 };
       } else if (path === '/weighing') body = await buildWeighingMonitoring(store, actor, query);
+      else if (path === '/hub-operations') {
+        const source = await loadDashboardAnalyticsSnapshot(store);
+        body = buildHubOperations(source, source.allBatches, actor, 'Fixture cohort');
+      }
       else if (path === '/facilities') body = { facilities: data.facilities };
       else if (path === '/transfers') body = { transfers: [] };
       else if (path === '/material-batches') body = { batches: data.materialBatches.map(item => ({ ...item, measurements: [] })) };
@@ -88,7 +94,7 @@ try {
     await page.goto(`${base}/dashboard`);
     await page.getByText('Program Analytics', { exact: true }).waitFor();
     await page.getByRole('combobox', { name: /^Date range/ }).selectOption('All time');
-    await navigate(page, 'Facility Analytics');
+    await navigate(page, 'Recovery Monitoring');
     await page.getByRole('button', { name: 'Hub Management', exact: true }).click();
     if (failHubs) {
       await page.getByRole('alert').getByText('Fixture connection unavailable.').waitFor();
@@ -96,12 +102,12 @@ try {
       await page.getByRole('button', { name: 'Retry', exact: true }).click();
     }
     const active = page.locator('main [aria-hidden="false"]');
-    const pager = active.getByRole('navigation', { name: 'Hub operators pagination' });
+    const pager = active.getByRole('navigation', { name: 'Hub accounts pagination' });
     await pager.waitFor();
     assert.equal(await active.locator('tbody tr').count(), 10);
     await pager.getByRole('button', { name: 'Next page', exact: true }).click();
     await pager.getByText('Page 2 of 3', { exact: true }).waitFor();
-    await page.getByLabel('Search Hub operators').fill('Hub operator 00');
+    await page.getByLabel('Search Hub accounts').fill('Hub operator 00');
     await active.getByText('Hub operator 00 (demo)', { exact: true }).waitFor();
     assert.equal(await active.locator('tbody tr').count(), 1);
     await responsive(page);
@@ -114,16 +120,16 @@ try {
     await editor.waitFor({ state: 'hidden' });
     assert.equal(lastDecision?.action, 'approve');
     await active.locator('tbody').getByText('Approved', { exact: true }).waitFor();
-    await page.getByLabel('Search Hub operators').fill('');
+    await page.getByLabel('Search Hub accounts').fill('');
     await page.getByLabel('Hub approval filter').selectOption('Pending approval');
     assert.ok((await active.locator('tbody').innerText()).includes('Pending approval'));
     await screenshot(page, `hubs-${viewport.width}`);
     await page.getByRole('combobox', { name: /^Region/ }).selectOption('Davao Region');
-    await active.getByText('No Hub operators match these filters.', { exact: true }).waitFor();
+    await active.getByText('No Hub accounts match these filters.', { exact: true }).waitFor();
     await page.getByRole('combobox', { name: /^Region/ }).selectOption('All regions');
     await pager.waitFor();
     await navigate(page, 'Traceability');
-    await page.getByRole('button', { name: 'Weighing Monitoring', exact: true }).click();
+    await page.getByRole('button', { name: 'Historical Listing Weights', exact: true }).click();
     const taskPager = active.getByRole('navigation', { name: 'Weighing tasks pagination' });
     await taskPager.waitFor();
     assert.equal(await active.locator('tbody tr').count(), 10);
@@ -151,16 +157,16 @@ try {
       actor = { ...admin, id: `UI-${role}`, role, scope: { ...admin.scope, aggregateOnly: role === 'Government' } };
       await page.reload();
       await page.getByText('Program Analytics', { exact: true }).waitFor();
-      await navigate(page, 'Facility Analytics');
+      await navigate(page, 'Recovery Monitoring');
       await page.getByRole('button', { name: 'Hub Directory', exact: true }).click();
-      await active.getByText('Hub operators', { exact: true }).waitFor();
+      await active.getByText('Hub accounts', { exact: true }).waitFor();
       assert.equal(await active.getByRole('button', { name: /^Manage Hub/ }).count(), 0);
       if (role === 'Government') {
         await active.getByText('Aggregate regional access · operator identities and assignments withheld', { exact: true }).waitFor();
         assert.equal(await active.getByText('Hub operator 00 (demo)', { exact: true }).count(), 0);
       }
       await navigate(page, 'Traceability');
-      await page.getByRole('button', { name: 'Weighing Monitoring', exact: true }).click();
+      await page.getByRole('button', { name: 'Historical Listing Weights', exact: true }).click();
       if (role === 'Government') {
         await active.getByText('Aggregate access · material and operator identities withheld', { exact: true }).waitFor();
         assert.equal(await active.getByText('UI-HUB-MEASUREMENT', { exact: true }).count(), 0);

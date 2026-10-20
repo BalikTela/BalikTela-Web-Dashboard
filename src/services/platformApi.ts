@@ -105,7 +105,8 @@ async function request<T>(path: string, init: RequestInit = {}, allowRefresh = t
   const payload = responseType === 'text' ? await response.text() : await response.json().catch(() => ({}));
   if (epoch !== authenticationEpoch) throw new Error('The authentication state changed during this request.');
   const pendingImport = path === '/imports/commit' && responseType === 'json' && !(payload as ImportResult).complete;
-  if (init.method && init.method !== 'GET' && !path.startsWith('/auth/') && path !== '/imports/preview' && !pendingImport) window.dispatchEvent(new CustomEvent('baliktela:records-changed', {detail:path}));
+  const exportedReport = /^\/reports\/[^/]+\/export(?:\?|$)/.test(path);
+  if (exportedReport || init.method && init.method !== 'GET' && !path.startsWith('/auth/') && path !== '/imports/preview' && !pendingImport) window.dispatchEvent(new CustomEvent('baliktela:records-changed', {detail:path}));
   return payload as T;
 }
 
@@ -160,6 +161,7 @@ export const platformApi = {
   updateHub: (id: string, body: Record<string, unknown>) => request<{ message: string; revokedSessions: number }>(`/hubs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   weighing: (filters?: Record<string, unknown>) => request<WeighingMonitoring>(`/weighing${queryString(filters)}`),
   hubDisposals: (filters?: Record<string, unknown>) => request<HubDisposalMonitoring>(`/hub-disposals${queryString(filters)}`),
+  hubOperations: (filters?: Record<string, unknown>) => request<import('../../shared/hubs.js').HubOperationsMonitoring>(`/hub-operations${queryString(filters)}`),
   importOptions: () => request<ImportOptions>('/imports/options'),
   previewImport: (csvChunks: string[]) => request<ImportPreview>('/imports/preview', { method:'POST',body:JSON.stringify({csvChunks}) }),
   commitImport: (csvChunks: string[], previewHash: string, reason: string, startRow = 0) => request<ImportResult>('/imports/commit', {method:'POST',body:JSON.stringify({csvChunks,previewHash,reason,startRow})}),
@@ -181,7 +183,7 @@ export const platformApi = {
   auditRecords: (filters?: Record<string, unknown>) => request<{ records: AuditRecord[] }>(`/audit-records${queryString(filters)}`),
   configuration: () => request<{ configuration: PlatformConfiguration }>('/configuration'),
   updateConfiguration: (body: Partial<PlatformConfiguration>) => request<{ configuration: PlatformConfiguration }>('/configuration', { method: 'PATCH', body: JSON.stringify(body) }),
-  governance: () => request<GovernanceData>('/governance'),
+  governance: (filters?: Record<string, unknown>, signal?: AbortSignal) => request<GovernanceData>(`/governance${queryString(filters)}`, { signal }),
   reports: () => request<{ reports: ReportDefinition[]; scope: { role: string; canExport: boolean; aggregateOnly: boolean } }>('/reports'),
   reportPreview: (reportId: string, filters?: Record<string, unknown>, signal?: AbortSignal) => request<ReportDocument>(`/reports/${encodeURIComponent(reportId)}/preview${queryString(filters)}`, { signal }),
   printableReport: (reportId: string, filters?: Record<string, unknown>) => request<ReportDocument>(`/reports/${encodeURIComponent(reportId)}/export${queryString({ ...filters, format: 'print' })}`),

@@ -123,6 +123,7 @@ export interface Stakeholder {
   hubActivity?: {
     state: 'Approved' | 'Pending approval' | 'Suspended' | 'Rejected'; assignedListings: number; awaitingWeighing: number;
     measurements: number; latestWeighedKg: number | null; lastWeighedAt: string | null; facilities: Array<{ id: string; name: string }>;
+    collectedBatches?: number; collectedKg?: number | null; disposalRecords?: number; disposedKg?: number | null;
   };
   verification: 'Demo verified' | 'Pending demo review';
   reliabilityPlaceholder: number;
@@ -143,7 +144,7 @@ export interface Facility {
   processedKg: number;
   processedAvailable?: boolean;
   processingTimeDays: number;
-  status: 'Available' | 'Near capacity' | 'Maintenance' | 'Pilot onboarding';
+  status: import('../shared/facilityCapacity.js').FacilityCapacityStatus;
   isDemo: boolean;
 }
 
@@ -192,12 +193,4 @@ export interface BarterMetrics {
   rewardCredits: number;
 }
 
-export interface EngagementMetrics {
-  monthlyActiveUsers: number;
-  monthlyActiveUsersAvailable?: boolean;
-  sessions: number;
-  wasteSubmissions: number;
-  barterActions: number;
-  reportExports: number;
-  averageSessionMinutes: number;
-}
+export type EngagementMetrics = import('../shared/platformActivity.js').PlatformActivityMetrics;

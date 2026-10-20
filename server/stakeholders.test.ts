@@ -49,7 +49,7 @@ test('real legacy Hub profiles are classified by assignments and expose actual w
   assert.equal(result.stakeholders.filter(item=>item.id===hub.id).length,1);
   assert.equal(profile.type,'BalikTela Hub');assert.equal(profile.name,hub.fullName);assert.equal(profile.isDemo,false);
   assert.deepEqual(profile.hubActivity,{state:'Approved',assignedListings:1,awaitingWeighing:0,measurements:2,latestWeighedKg:95,
-    lastWeighedAt:'2026-10-16T02:00:00Z',facilities:[]});
+    lastWeighedAt:'2026-10-16T02:00:00Z',facilities:[],collectedBatches:0,collectedKg:null,disposalRecords:0,disposedKg:null});
   assert.deepEqual(profile.linkedTransferIds,['ACTUAL-HUB-TRANSFER']);assert.equal(profile.transactions,1);assert.equal(profile.participation,100);
   assert.equal(profile.recoveredKg,0);assert.equal(profile.recoveredAvailable,false,'Listing weighing must not manufacture final recovery.');
   assert.equal(result.stakeholders.find(item=>item.id===recycler.id)?.type,'Recycler');

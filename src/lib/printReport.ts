@@ -17,6 +17,12 @@ export function renderPrintableReport(popup: Window, report: ReportDocument) {
   const summary = element('dl');
   report.summary.forEach(item => { const group = element('div'); group.append(element('dt', item.label), element('dd', item.value)); summary.append(group); });
   document.body.append(summary);
+  if (report.interpretation?.length) {
+    const interpretation = element('section'); interpretation.setAttribute('aria-label', 'Report interpretation');
+    interpretation.append(element('h2', 'Report Interpretation'));
+    for (const item of report.interpretation) { const paragraph = element('p'); paragraph.append(element('strong', `${item.label}. `), document.createTextNode(item.text)); interpretation.append(paragraph); }
+    document.body.append(interpretation);
+  }
   if (report.filters.length) document.body.append(element('p', report.filters.map(item => `${item.label}: ${item.value}`).join(' / ')));
   const table = element('table'); const head = element('thead'); const headRow = element('tr');
   report.columns.forEach(column => { const th = element('th', column); th.scope = 'col'; headRow.append(th); }); head.append(headRow); table.append(head);
@@ -24,5 +30,7 @@ export function renderPrintableReport(popup: Window, report: ReportDocument) {
   report.rows.forEach(row => { const tr = element('tr'); row.forEach(value => tr.append(element('td', value))); body.append(tr); }); table.append(body);
   if (!report.rows.length) document.body.append(element('p', 'No records match this report scope and period.'));
   document.body.append(table);
-  const footer = element('footer'); footer.append(element('h2', 'Definitions & limitations')); const notes = element('ul'); report.notes.forEach(note => notes.append(element('li', note))); footer.append(notes); document.body.append(footer);
+  const footer = element('footer'); footer.append(element('h2', 'Definitions & limitations'));
+  for (const item of report.definitions ?? []) { const paragraph = element('p'); paragraph.append(element('strong', `${item.label}: `), document.createTextNode(item.text)); footer.append(paragraph); }
+  const notes = element('ul'); report.notes.forEach(note => notes.append(element('li', note))); footer.append(notes); document.body.append(footer);
 }

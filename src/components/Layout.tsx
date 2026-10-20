@@ -20,7 +20,7 @@ const navigation: Array<{ key: PageKey; label: string; icon: React.ComponentType
   { key: 'operations', label: 'Recovery Monitoring', icon: Activity, section: 'Workspace' },
   { key: 'waste', label: 'Waste Analytics', icon: BarChart3, section: 'Workspace' },
   { key: 'stakeholders', label: 'Stakeholders', icon: UsersRound, section: 'Workspace' },
-  { key: 'facilities', label: 'Facility Analytics', icon: Factory, section: 'Workspace' },
+  { key: 'facilities', label: 'Hub Facilities', icon: Factory, section: 'Workspace' },
   { key: 'geographic', label: 'Geographic Insights', icon: MapPinned, section: 'Workspace' },
   { key: 'advanced', label: 'Advanced Analytics', icon: LineChart, section: 'Workspace' },
   { key: 'quality', label: 'Data Quality', icon: ShieldAlert, section: 'Manage' },
@@ -37,18 +37,18 @@ const pageMeta: Record<PageKey, { title: string; description: string }> = {
   overview: { title: 'Overview', description: 'Textile recovery and circular economy performance' },
   listings: { title: 'Listing Oversight', description: 'Monitor mobile-originated material listings and availability' },
   materials: { title: 'Material Registry', description: 'Batch provenance, measurements, custody, and pathway' },
-  operations: { title: 'Recovery Monitoring', description: 'Collection, sorting, processing, and recovery outcomes' },
+  operations: { title: 'Recovery Monitoring', description: 'Hub collection and disposal, with separate recovery evidence' },
   waste: { title: 'Waste Analytics', description: 'Monitor waste streams, recovery rates, and category mix' },
   transactions: { title: 'Transactions', description: 'Trace textile movement through the circular network' },
   stakeholders: { title: 'Stakeholders', description: 'Participation and performance across the ecosystem' },
-  facilities: { title: 'Facilities & Hubs', description: 'Facility performance, Hub approvals, and weighing coverage' },
+  facilities: { title: 'Hub Facilities', description: 'Registered Hubs, handling capacity, utilization, and disposal analytics' },
   geographic: { title: 'Geographic Insights', description: 'Regional activity and collection coverage' },
   advanced: { title: 'Advanced Analytics', description: 'Diagnostic and predictive views' },
   quality: { title: 'Data Quality', description: 'Validation coverage, discrepancies, and integrity findings' },
-  governance: { title: 'Governance & Policy', description: 'Methodology, privacy, policy readiness, and constraints' },
+  governance: { title: 'Governance & Policy', description: 'Policy monitoring, regional performance, and accountable evidence' },
   reports: { title: 'Reports', description: 'Exportable summaries for program stakeholders' },
   users: { title: 'User Accounts', description: 'Role, consent, verification, and profile oversight' },
-  organizations: { title: 'Organizations', description: 'Organization and facility verification and capability' },
+  organizations: { title: 'Organizations', description: 'Organization and Hub registry' },
   audit: { title: 'Audit Trail', description: 'Sensitive changes, exports, and lifecycle actions' },
   profile: { title: 'My Profile', description: 'Institutional identity, organization scope, consent, and verification' },
   settings: { title: 'Settings', description: 'Governance, privacy, and data source controls' },
@@ -60,7 +60,7 @@ export function Layout({ activePage, onPageChange, children, dataContextLabel = 
   const meta = pageMeta[activePage];
   const heading = useContentTransition(activePage);
   const navigate = (page: PageKey) => { onPageChange(page); setMobileOpen(false); };
-  const availableNavigation = navigation.filter((item) => canAccessPage(access, item.key) && !(user?.scope.aggregateOnly && ['listings', 'materials', 'operations'].includes(item.key)));
+  const availableNavigation = navigation.filter((item) => canAccessPage(access, item.key) && !(user?.scope.aggregateOnly && ['listings', 'materials'].includes(item.key)));
 
   return (
     <div className="min-h-screen overflow-x-clip bg-[#f5f7f6] text-foreground">

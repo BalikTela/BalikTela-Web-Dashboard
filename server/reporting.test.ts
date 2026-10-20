@@ -99,15 +99,16 @@ test('all report types have distinct content and material exports reconcile exac
     assert.equal(total[9], analytics.materialEvidence.completedWithWeight ? String(analytics.materialEvidence.completedKg / 1000) : 'Pending evidence');
   }
   const reports = await Promise.all(REPORT_DEFINITIONS.map(def => buildReport(store, seed.users[0], def.id, custom, snapshot, now)));
-  assert.equal(new Set(reports.map(report => report.columns.join(','))).size, 4);
+  assert.deepEqual(REPORT_DEFINITIONS.map(report => report.id), ['material-flow', 'data-quality', 'organizations']);
+  assert.equal(new Set(reports.map(report => report.columns.join(','))).size, 3);
   assert.ok(reports[2].columns.includes('Organizations'));
   assert.ok(!reports[2].columns.includes('Batch ID'));
-  assert.ok(reports[3].rows.some(row => row[0] === 'CO2e avoided' && row[1] === 'Not calculated'));
+  await assert.rejects(buildReport(store, seed.users[0], 'environmental-impact', {}, snapshot, now), { status: 404, message: 'Report not found.' });
   await assert.rejects(buildReport(store, seed.users[0], 'invented', {}, snapshot, now), /not found/);
   await assert.rejects(buildReport(store, seed.users[0], 'material-flow', { limit: '50' }, snapshot, now), /filter/);
 });
 
-test('engagement uses timestamp years and Manila months, and missing monthly summaries are not fabricated zeros', async () => {
+test('synthetic interaction summaries never become measured active users or registered accounts', async () => {
   const seed = await createSeedData();
   const template: (typeof seed.systemInteractions)[number] = { id: 'ENGAGEMENT-FIXTURE', userId: null, organizationId: null, sessionId: null, client: 'web', eventName: 'active_users', privacyClassification: 'aggregate', occurredAt: now.toISOString(), properties: { count: 0, synthetic: true } };
   seed.systemInteractions = [
@@ -116,10 +117,12 @@ test('engagement uses timestamp years and Manila months, and missing monthly sum
   ];
   const store = new MemoryStore(seed);
   const january = await buildDashboardAnalytics(store, seed.users[0], { dateRange: 'Last 30 days' }, undefined, new Date('2026-01-14T04:00:00Z'));
-  assert.equal(january.engagementMetrics.monthlyActiveUsers, 3);
-  assert.equal(january.engagementMetrics.monthlyActiveUsersAvailable, true);
+  assert.equal(january.engagementMetrics.monthlyActiveUsers, null);
+  assert.equal(january.engagementMetrics.monthlyActiveUsersAvailable, false);
+  assert.equal(january.engagementMetrics.registeredAccounts, 0);
   const october = await buildDashboardAnalytics(store, seed.users[0], {}, undefined, now);
-  assert.equal(october.kpis.find(item => item.label === 'Reported Active Users')?.value, 'Not available');
+  assert.equal(october.kpis.find(item => item.label === 'Registered Accounts')?.value, '0');
+  assert.equal(october.kpis.some(item => item.label === 'Reported Active Users'), false);
 });
 
 test('Overview recyclable collection tile uses classified intake and recomputes under material and regional filters', async () => {
@@ -135,7 +138,7 @@ test('Overview recyclable collection tile uses classified intake and recomputes 
   const store = new MemoryStore(seed);
   const tile = async (filters: Record<string, unknown>) => (await buildDashboardAnalytics(store, seed.users[0], { ...custom, ...filters }, undefined, now)).kpis.find(item => item.label === 'Recyclable Textiles Collected')!;
   assert.equal((await tile({})).value, '0.1 t');
-  assert.equal((await tile({})).delta, '1 collected batch classified as recyclable');
+  assert.equal((await tile({})).delta, '1 recyclable batch · 0 assumed from consumer listings');
   assert.equal((await tile({ textileType: 'Cotton' })).value, '0.1 t');
   assert.equal((await tile({ region: 'Central Visayas' })).value, '0 t');
   assert.equal((await tile({ textileType: 'Polyester' })).value, 'Pending evidence');
@@ -167,10 +170,61 @@ test('CSV metadata, quoting, newlines and formula protection survive a structure
   const sheet = await workbook.csv.read(Readable.from([csv]));
   assert.equal(sheet.getRow(1).getCell(1).value, 'Report');
   assert.equal(sheet.getRow(1).getCell(2).value, report.title);
-  const last = sheet.getRow(sheet.rowCount);
+  const last = sheet.getRows(1,sheet.rowCount)!.find(row => row.getCell(1).value === '\'=HYPERLINK("https://invalid.test")')!;
+  assert.ok(last, 'Data rows remain intact before the trailing notes and definitions.');
   assert.equal(last.getCell(1).value, '\'=HYPERLINK("https://invalid.test")');
   assert.equal(last.getCell(2).value, 'Region, with comma');
   assert.equal(last.getCell(3).value, 'Line\nBreak');
   assert.equal(last.getCell(4).value, "'+cmd");
   assert.equal(last.getCell(7).value, "'\t=CMD()");
+});
+
+test('material report interpretation reconciles matched outcomes, unlinked output and the actual recovery denominator',async()=>{
+  const data=await createSeedData(),admin=data.users[0],base=data.materialBatches[0];
+  data.materialBatches=[{...base,id:'REPORT-COLLECTED',declaredWeightKg:148000,createdAt:'2026-09-01T01:00:00Z'},
+    {...base,id:'REPORT-UNLINKED',declaredWeightKg:100,region:'',createdAt:'2026-09-01T01:00:00Z'}];
+  data.measurements=[];data.listings=[];
+  data.transfers=data.materialBatches.map((batch,index)=>({...data.transfers[0],id:`REPORT-T${index}`,batchId:batch.id,
+    verifiedWeightKg:index===0?67253:86,receiptWeightKg:null,handoverWeightKg:null,agreedWeightKg:index===0?67253:86,
+    status:'Completed',events:[],updatedAt:'2026-09-04T01:00:00Z'}));
+  const baseRecord={...data.recoveryRecords[0],batchId:'REPORT-COLLECTED',transferId:'REPORT-T0',status:'Validated' as const,
+    validatedBy:admin.id,timestamp:'2026-09-03T01:00:00Z',lossWeightKg:0,residualWeightKg:0};
+  data.recoveryRecords=[{...baseRecord,id:'REPORT-INTAKE',stage:'Collection',inputWeightKg:105727,outputWeightKg:105727,outcome:null},
+    {...baseRecord,id:'REPORT-FINAL',stage:'Recovery',inputWeightKg:67253,outputWeightKg:67253,outcome:'Recycling'},
+    {...baseRecord,id:'REPORT-UNLINKED-FINAL',batchId:'REPORT-UNLINKED',transferId:'REPORT-T1',stage:'Recovery',inputWeightKg:86,outputWeightKg:86,outcome:'Recycling'}];
+  const report=await buildReport(new MemoryStore(data),admin,'material-flow',custom,undefined,now);
+  assert.match(report.interpretation!.find(item=>item.label==='How the percentage works')!.text,/67\.253 t.*105\.727 t.*63\.6%.*0\.086 t/);
+  assert.match(report.interpretation!.find(item=>item.label==='What remains unconfirmed')!.text,/38\.474 t/);
+  assert.equal(report.summary.find(item=>item.label==='Confirmed reuse + recycling')?.value,'67.339 t');
+  assert.ok(report.rows.some(row=>row[0]==='Not recorded'));
+});
+
+test('all report types explain their scoped results and withhold conclusions when evidence is unavailable',async()=>{
+  const seed=await createSeedData(),store=new MemoryStore(seed);
+  for(const definition of REPORT_DEFINITIONS){
+    const report=await buildReport(store,seed.users[0],definition.id,{...custom,textileType:'No matching material'},undefined,now);
+    assert.ok(report.interpretation!.length>=3);
+    assert.match(report.interpretation!.at(-1)!.text,/synthetic scenario records/);
+    const csv=reportCsv(report);
+    assert.ok(csv.indexOf('SUMMARY')<csv.indexOf('INTERPRETATION'));
+    assert.ok(csv.indexOf('INTERPRETATION')<csv.indexOf('DETAILED DATA'));
+    assert.ok(csv.indexOf('DETAILED DATA')<csv.indexOf('LIMITATIONS & TECHNICAL NOTES'));
+    assert.ok(!csv.includes('"",""'));
+    if(definition.id==='material-flow'){
+      assert.equal(report.summary.find(item=>item.label==='Confirmed recovery share')?.value,'Not available');
+      assert.match(report.interpretation!.find(item=>item.label==='How the percentage works')!.text,/unavailable is not 0%/);
+    }
+  }
+});
+
+test('CSV narrative cells retain formula-injection protection and rectangular spreadsheet columns',async()=>{
+  const seed=await createSeedData(),report=await buildReport(new MemoryStore(seed),seed.users[0],'material-flow',custom,undefined,now);
+  report.interpretation!.push({label:' =1+1',text:'@HYPERLINK("https://invalid.test")'});
+  report.definitions!.push({label:'+formula',text:'Multiline\nmeaning, with "quotes"'});
+  const csv=reportCsv(report),workbook=new ExcelJS.Workbook(),sheet=await workbook.csv.read(Readable.from([csv]));
+  const rows=sheet.getRows(1,sheet.rowCount)!;
+  const narrative=rows.find(row=>row.getCell(1).value==="' =1+1")!;
+  assert.ok(narrative);assert.equal(narrative.getCell(2).value,'\'@HYPERLINK("https://invalid.test")');
+  assert.equal(rows.find(row=>row.getCell(1).value==="'+formula")?.getCell(2).value,'Multiline\nmeaning, with "quotes"');
+  assert.equal(sheet.columnCount,report.columns.length);
 });

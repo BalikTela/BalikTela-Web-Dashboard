@@ -2,7 +2,7 @@ import type { NextFunction, Response } from 'express';
 import type { AuthenticatedRequest } from './auth.js';
 import type { Store } from './store.js';
 import type { FacilityRecord, ListingRecord, MaterialBatchRecord, MeasurementRecord, OrganizationRecord, RecoveryRecord, TransferRecord, UserRecord, UserRole } from './types.js';
-import { isApprovedHub } from '../shared/hubs.js';
+import { isApprovedHub, isHubProfile, isHubWeighingMeasurement } from '../shared/hubs.js';
 
 export const PERMISSIONS = [
   'profile.read', 'profile.update',
@@ -37,16 +37,34 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   'LGU/Collection Point': [...profile, ...discovery, 'organizations.read', 'facilities.manage', 'analytics.read', 'reports.read', 'recovery.read', 'recovery.create'],
   NGO: [...profile, ...discovery, 'organizations.read', 'analytics.read', 'reports.read', 'recovery.read'],
   Consumer: [...profile, ...discovery.filter(permission => !['listings.create', 'batches.read'].includes(permission))],
-  'BalikTela Hub': [...profile, 'analytics.read', 'listings.read', 'batches.read', 'facilities.read', 'transfers.read', 'recovery.read', 'hubs.read', 'weighing.read'],
+  'BalikTela Hub': [...profile, 'analytics.read', 'listings.read', 'batches.read', 'facilities.read', 'transfers.read', 'hubs.read'],
 };
 
 const pendingAccountPermissions = new Set<Permission>(profile);
+const hubPermissions = new Set<Permission>(['profile.read', 'profile.update', 'analytics.read', 'listings.read', 'batches.read', 'facilities.read', 'transfers.read', 'hubs.read']);
+
+export async function resolveWebActor(store: Store, user: UserRecord): Promise<UserRecord> {
+  if (user.role !== 'Recycler' || isHubProfile(user)) return user;
+  let hub: boolean;
+  if (store.hasHubActivity) hub = await store.hasHubActivity(user.id);
+  else {
+    const [listings, measurements, disposals] = await Promise.all([store.all('listings'), store.all('measurements'), store.loadHubDisposals?.()]);
+    const now = Date.now();
+    hub = listings.some(item => item.weighingHubId === user.id && Date.parse(item.createdAt) <= now) || measurements.some(item => item.recordedBy === user.id && isHubWeighingMeasurement(item) && Date.parse(item.timestamp) <= now)
+      || Boolean(disposals?.records.some(item => item.operatorId === user.id && Date.parse(item.disposedAt) <= now));
+  }
+  return hub ? { ...user, webHubOperator: true } : user;
+}
 
 export function hasPermission(user: UserRecord, permission: Permission) {
   if (['Suspended', 'Deactivated'].includes(user.accountStatus)) return false;
   if ((!user.emailVerifiedAt || !user.passwordChangedAt) && !pendingAccountPermissions.has(permission)) return false;
   if (user.accountStatus === 'Pending verification' && !pendingAccountPermissions.has(permission)) return false;
-  if (user.role === 'BalikTela Hub' && (user.organizationVerified !== true || ['rejected','suspended'].includes(user.canonicalVerification ?? '')) && !pendingAccountPermissions.has(permission)) return false;
+  if (isHubProfile(user)) {
+    if (!hubPermissions.has(permission)) return false;
+    if (!isApprovedHub(user) && !pendingAccountPermissions.has(permission)) return false;
+    return true;
+  }
   if (!Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, user.role) || !ROLE_PERMISSIONS[user.role].includes(permission)) return false;
   if (permission === 'reports.export') return user.role === 'Administrator' || user.scope.canExport;
   return true;
@@ -70,10 +88,11 @@ export function canActOnTransfer(user: UserRecord, transfer: Pick<TransferRecord
 export function authorize(store: Store, permission: Permission) {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.auth) return res.status(401).json({ message: 'Authentication required.' });
-    const [session, actor] = await Promise.all([
+    const [session, storedActor] = await Promise.all([
       store.findSession(req.auth.sessionId),
       store.findById('users', req.auth.userId),
     ]);
+    const actor = storedActor ? await resolveWebActor(store, storedActor) : null;
     if (!session || session.userId !== req.auth.userId) {
       return res.status(401).json({ code: 'SESSION_REVOKED', message: 'Your database session is invalid, revoked, or expired.' });
     }
@@ -104,6 +123,11 @@ export interface ResourceScope {
   facilityIds?: Array<string | null | undefined>;
 }
 
+function hasHubScope(user: UserRecord, evidence?: { listings: ListingRecord[]; measurements: MeasurementRecord[] }) {
+  return isApprovedHub(user) && (isHubProfile(user) || Boolean(evidence?.listings.some(item => item.weighingHubId === user.id))
+    || Boolean(evidence?.measurements.some(item => item.recordedBy === user.id && isHubWeighingMeasurement(item))));
+}
+
 export function isWithinOperationalScope(user: UserRecord, resource: ResourceScope) {
   if (user.role === 'Administrator') return true;
   if (user.scope.aggregateOnly) return false;
@@ -121,6 +145,7 @@ export function scopeOrganizations(user: UserRecord, organizations: Organization
 }
 
 export function scopeFacilities(user: UserRecord, facilities: FacilityRecord[]) {
+  if (isHubProfile(user)) return facilities.filter(facility => user.scope.facilityIds.includes(facility.id));
   if (['Administrator', 'Consumer', 'Government', 'Researcher'].includes(user.role)) {
     return user.scope.regions.length && ['Government', 'Researcher'].includes(user.role)
       ? facilities.filter((facility) => user.scope.regions.includes(facility.region))
@@ -131,15 +156,18 @@ export function scopeFacilities(user: UserRecord, facilities: FacilityRecord[]) 
   return facilities.filter((facility) => organizationIds.has(facility.organizationId) || facilityIds.has(facility.id));
 }
 
-export function scopeBatches(user: UserRecord, batches: MaterialBatchRecord[], evidence?: { listings: ListingRecord[]; measurements: MeasurementRecord[] }) {
+export function scopeBatches(user: UserRecord, batches: MaterialBatchRecord[], evidence?: { listings: ListingRecord[]; measurements: MeasurementRecord[]; hubDisposals?: { records: Array<{ listingId: string; operatorId: string }> } }) {
   if (user.role === 'Administrator') return batches;
   if (user.scope.aggregateOnly) return [];
   const organizationIds = new Set([user.organizationId, ...user.scope.organizationIds].filter(Boolean));
-  const hubIds = isApprovedHub(user) && evidence ? new Set([
+  const hubScoped = hasHubScope(user, evidence);
+  const hubIds = hubScoped && evidence ? new Set([
     ...evidence.listings.filter(item => item.weighingHubId === user.id).map(item => item.batchId),
     ...evidence.measurements.filter(item => item.recordedBy === user.id).map(item => item.batchId),
+    ...evidence.listings.filter(item => evidence.hubDisposals?.records.some(record => record.listingId === item.id && record.operatorId === user.id)).map(item => item.batchId),
   ]) : new Set<string>();
-  return batches.filter((batch) => batch.sourceUserId === user.id || batch.currentCustodianId === user.id || hubIds.has(batch.id) || Boolean(batch.sourceOrganizationId && organizationIds.has(batch.sourceOrganizationId)));
+  return batches.filter((batch) => batch.sourceUserId === user.id || batch.currentCustodianId === user.id || hubIds.has(batch.id)
+    || !hubScoped && Boolean(batch.sourceOrganizationId && organizationIds.has(batch.sourceOrganizationId)));
 }
 
 export function scopeAnalyticalBatches(user: UserRecord, batches: MaterialBatchRecord[], evidence?: { listings: ListingRecord[]; measurements: MeasurementRecord[] }) {
@@ -155,7 +183,7 @@ export function scopeAnalyticalBatches(user: UserRecord, batches: MaterialBatchR
 export function scopeTransfers(user: UserRecord, transfers: TransferRecord[], evidence?: { listings: ListingRecord[]; measurements: MeasurementRecord[] }) {
   if (user.role === 'Administrator') return transfers;
   if (user.scope.aggregateOnly) return [];
-  const hubBatchIds = isApprovedHub(user) && evidence ? new Set([
+  const hubBatchIds = hasHubScope(user, evidence) && evidence ? new Set([
     ...evidence.listings.filter(item => item.weighingHubId === user.id).map(item => item.batchId),
     ...evidence.measurements.filter(item => item.recordedBy === user.id).map(item => item.batchId),
   ]) : new Set<string>();
@@ -167,7 +195,7 @@ export function scopeRecoveryRecords(user: UserRecord, records: RecoveryRecord[]
   if (user.scope.aggregateOnly) return [];
   const organizationIds = new Set([user.organizationId, ...user.scope.organizationIds].filter(Boolean));
   const facilityIds = new Set(user.scope.facilityIds);
-  const hubBatchIds = isApprovedHub(user) && evidence ? new Set([
+  const hubBatchIds = hasHubScope(user, evidence) && evidence ? new Set([
     ...evidence.listings.filter(item => item.weighingHubId === user.id).map(item => item.batchId),
     ...evidence.measurements.filter(item => item.recordedBy === user.id).map(item => item.batchId),
   ]) : new Set<string>();
@@ -177,6 +205,7 @@ export function scopeRecoveryRecords(user: UserRecord, records: RecoveryRecord[]
 export function accessSummary(user: UserRecord) {
   return {
     role: user.role,
+    hubOperator: isHubProfile(user),
     permissions: permissionsFor(user),
     scope: user.scope,
   };

@@ -20,18 +20,18 @@ export function StakeholderDrawer({ stakeholder, transactions, onClose }: { stak
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <Metric label="Completion rate" value={stakeholder.transactions ? `${stakeholder.participation}%` : 'Not available'} detail="Completed linked transfers / all linked transfers" />
-          <Metric label="Confirmed outcome output" value={stakeholder.recoveredAvailable === false ? 'Pending evidence' : formatMass(stakeholder.recoveredKg)} detail="Validated final output linked to received transfers" />
-          <Metric label="Transactions" value={stakeholder.transactions.toLocaleString()} detail="Linked transfer activity count" />
+          {!stakeholder.hubActivity ? <><Metric label="Completion rate" value={stakeholder.transactions ? `${stakeholder.participation}%` : 'Not available'} detail="Completed linked transfers / all linked transfers" />
+          <Metric label="Confirmed outcome output" value={stakeholder.recoveredAvailable === false ? 'Pending evidence' : formatMass(stakeholder.recoveredKg)} detail="Validated final output linked to received transfers" /></> : null}
+          <Metric label={stakeholder.hubActivity ? 'Related transfer history' : 'Transactions'} value={stakeholder.transactions.toLocaleString()} detail={stakeholder.hubActivity ? 'Historical links, not a Hub processing role' : 'Linked transfer activity count'} />
           <Metric label="Traceable material" value={`${formatMass(tracedMaterialKg)}`} detail="Recorded transfer mass; repeated movements may overlap" />
         </div>
 
         {stakeholder.hubActivity ? <section className="mt-6 border-y border-slate-200 py-5"><h3 className="text-sm font-semibold">Hub operations</h3><div className="mt-4 grid gap-4 sm:grid-cols-2">
           <Metric label="Approval" value={stakeholder.hubActivity.state} detail="Current account approval status" />
-          <Metric label="Assigned listings" value={String(stakeholder.hubActivity.assignedListings)} detail={`${stakeholder.hubActivity.awaitingWeighing} awaiting weighing in the selected cohort`} />
-          <Metric label="Weighing records" value={String(stakeholder.hubActivity.measurements)} detail="Linked measurements recorded by this operator" />
-          <Metric label="Latest weighed mass" value={formatMass(stakeholder.hubActivity.latestWeighedKg,'No weighing recorded')} detail="Latest non-superseded reading per batch; not confirmed recovery" />
-        </div><p className="mt-4 text-xs leading-5 text-slate-500">Last weighing: {stakeholder.hubActivity.lastWeighedAt ? new Date(stakeholder.hubActivity.lastWeighedAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}) : 'Not recorded'}</p><p className="mt-2 text-xs leading-5 text-slate-500">Assigned facilities: {stakeholder.hubActivity.facilities.map(item=>item.name).join(', ') || 'No facility assigned'}</p></section> : null}
+          <Metric label="Assigned listings" value={String(stakeholder.hubActivity.assignedListings)} detail="Hub handling references in the selected cohort" />
+          <Metric label="Textiles received" value={formatMass(stakeholder.hubActivity.collectedKg,'Intake not recorded')} detail={`${stakeholder.hubActivity.collectedBatches ?? 0} batches with intake records`} />
+          <Metric label="Recorded disposal" value={formatMass(stakeholder.hubActivity.disposedKg,'Feed unavailable')} detail={`${stakeholder.hubActivity.disposalRecords ?? 0} records; not recycling or landfill diversion`} />
+        </div><p className="mt-4 text-xs leading-5 text-slate-500">Last weighing: {stakeholder.hubActivity.lastWeighedAt ? new Date(stakeholder.hubActivity.lastWeighedAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}) : 'Not recorded'}</p><p className="mt-2 text-xs leading-5 text-slate-500">Assigned Hubs: {stakeholder.hubActivity.facilities.map(item=>item.name).join(', ') || 'No Hub assigned'}</p></section> : null}
 
         <section className="mt-6"><h3 className="text-sm font-semibold text-slate-900">Sustainability activity</h3><div className="mt-3 space-y-2">{stakeholder.sustainabilityActivities.map((activity) => <div key={activity} className="flex items-center gap-2 text-sm text-slate-600"><Leaf size={15} className="text-emerald-700" />{activity}</div>)}</div></section>
 

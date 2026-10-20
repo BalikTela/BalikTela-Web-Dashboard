@@ -61,7 +61,7 @@ try {
         const toggle = page.getByRole('button', { name: 'Open navigation', exact: true });
         if (await toggle.isVisible()) await toggle.click();
         await page.getByRole('button', { name, exact: true }).click();
-        const title = name === 'Facility Analytics' ? 'Recycling Facilities' : name === 'Configuration' ? 'Settings' : name;
+        const title = name === 'Configuration' ? 'Settings' : name;
         await page.waitForFunction(value => document.querySelector('header h1')?.textContent === value, title);
       };
       await page.goto(new URL('/dashboard', base).href);
@@ -117,7 +117,7 @@ try {
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await page.waitForTimeout(100);
       const reducedEntries = await page.evaluate(() => window.__motionChecks.entries.length);
-      await navigate('Facility Analytics');
+      await navigate('Hub Facilities');
       await workspace().locator('.progress-fill').first().scrollIntoViewIfNeeded();
       await page.waitForTimeout(100);
       assert.equal(await page.evaluate(() => window.__motionChecks.entries.length), reducedEntries, 'Runtime reduced-motion changes must prevent further entrances.');

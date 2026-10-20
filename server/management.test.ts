@@ -92,7 +92,17 @@ test('batch CRUD and recovery corrections retain historical records and enforce 
   try {
     const created=await send('/api/material-batches',{sourceUserId:'USR-PROD-01',materialCategory:'Cotton',wasteSource:'Pre-consumer',wasteForm:'Offcuts',condition:'Recyclable',circularPathway:'Recycling',declaredWeightKg:10,weightStatus:'Measured',method:'Test scale',reason:'Test registration'},'Administrator','POST');
     assert.equal(created.status,201);const id=created.body.batch.id;
+    assert.equal((await send('/api/material-batches',{sourceUserId:'USR-PROD-01',materialCategory:'Cotton',wasteSource:'Pre-consumer',wasteForm:'Offcuts',condition:'Recyclable',circularPathway:'Recycling',declaredWeightKg:10,weightStatus:'Verified',method:'Cannot self-verify via registry',reason:'Rejected third status'},'Administrator','POST')).status,400);
+    const historyCount=(await store.all('measurements')).length;
+    await store.update('materialBatches',id,{weightStatus:'Verified',currentWeightKg:8});
+    const metadata=await send(`/api/material-batches/${id}`,{city:'Updated city',reason:'Metadata only'});
+    assert.equal(metadata.status,200);assert.equal(metadata.body.batch.weightStatus,'Verified');assert.equal(metadata.body.batch.currentWeightKg,8);
+    assert.equal((await store.all('measurements')).length,historyCount);
+    assert.equal((await send(`/api/material-batches/${id}`,{weightStatus:'Verified',reason:'Cannot assign third status'})).status,400);
     assert.equal((await send(`/api/material-batches/${id}`,{declaredWeightKg:12,method:'Reweighed',reason:'Correction'})).status,200);
+    assert.equal((await store.findById('materialBatches',id))?.weightStatus,'Measured');
+    const remeasurement=(await store.all('measurements')).filter(item=>item.batchId===id).at(-1)!;
+    assert.equal(remeasurement.status,'Measured');assert.equal(remeasurement.verifiedBy,null);
     assert.equal((await store.all('measurements')).filter(item=>item.batchId===id).length,2);
     assert.equal((await send(`/api/material-batches/${id}`,{action:'archive',reason:'Duplicate'})).body.batch.currentStatus,'Archived');
     assert.equal((await send(`/api/material-batches/${id}`,{declaredWeightKg:15,reason:'Blocked'})).status,409);
@@ -105,5 +115,10 @@ test('batch CRUD and recovery corrections retain historical records and enforce 
     assert.equal((await store.findById('recoveryRecords','RCV-001'))?.status,'Reversed');
     assert.equal((await send(`/api/recovery-records/${correction.body.record.id}`,{action:'validate',reason:'Checked'})).body.record.status,'Validated');
     assert.equal((await send(`/api/recovery-records/${correction.body.record.id}`,{action:'correct',inputWeightKg:1,outputWeightKg:2,residualWeightKg:0,outcome:'Recycling',reason:'Invalid'})).status,400);
+    assert.equal((await send(`/api/recovery-records/${correction.body.record.id}`,{action:'correct',inputWeightKg:89,outputWeightKg:85.005,residualWeightKg:4,lossWeightKg:0,outcome:'Recycling',reason:'Analytics would reject five grams of imbalance'})).status,400);
+    await store.update('recoveryRecords',correction.body.record.id,{status:'Recorded',inputWeightKg:89,outputWeightKg:85.005,residualWeightKg:4,lossWeightKg:0,validatedBy:null});
+    assert.equal((await send(`/api/recovery-records/${correction.body.record.id}`,{action:'validate',reason:'Reject legacy imbalanced data'})).status,400);
+    await store.update('recoveryRecords',correction.body.record.id,{inputWeightKg:-10,outputWeightKg:-10,residualWeightKg:0,lossWeightKg:0});
+    assert.equal((await send(`/api/recovery-records/${correction.body.record.id}`,{action:'validate',reason:'Reject balanced negative weights'})).status,400);
   } finally {await new Promise<void>(resolve=>server.close(()=>resolve()));}
 });

@@ -36,7 +36,7 @@ export function PhilippinesMapMock({ regions }: { regions: RegionActivity[] }) {
             </div>
             <Progress value={largestCollection > 0 ? (region.collectionKg / largestCollection) * 100 : 0} className="mt-3 h-1.5" />
             <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
-              <span className="flex items-center gap-1"><Factory size={12} />{region.collectionPoints} collection points</span>
+              <span className="flex items-center gap-1"><Factory size={12} />{region.collectionPoints} registered Hubs</span>
               <span className="flex items-center gap-1"><Recycle size={12} />{region.recyclers} recyclers</span>
             </div>
           </article>

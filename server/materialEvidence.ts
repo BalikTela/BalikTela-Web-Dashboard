@@ -1,13 +1,15 @@
 import { percentage } from '../shared/metrics.js';
 import { isCompletedTransfer, isTerminalTransfer } from '../shared/workflows.js';
 import type { ListingRecord, MaterialBatchRecord, MeasurementRecord, RecoveryRecord, TransferRecord } from './types.js';
+import { textileRecyclability } from '../shared/materialClassification.js';
+import { recoveryMassBalance } from '../shared/recovery.js';
 
 const validMass = (value: number | null | undefined): value is number => value != null && Number.isFinite(value) && value >= 0;
 const round = (value: number) => Number(value.toFixed(6));
 const unique = <T extends { id: string }>(items: T[]) => [...new Map(items.map(item => [item.id, item])).values()];
 const reuseOutcomes = new Set(['Reuse', 'Repair', 'Redistribution', 'Upcycling']);
 
-export interface EvidenceContext { measurements?: MeasurementRecord[]; listings?: ListingRecord[] }
+export interface EvidenceContext { measurements?: MeasurementRecord[]; listings?: ListingRecord[]; users?: Array<{ id: string; role: string }> }
 
 export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transfers: TransferRecord[], recovery: RecoveryRecord[], context: EvidenceContext = {}) {
   const selected = unique(batches);
@@ -22,6 +24,7 @@ export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transf
   const remainderBatches = new Set(listings.filter(item => item.remainderOfId).map(item => item.batchId));
   let generatedKg = 0, collectedKg = 0, sortedKg = 0, reusedKg = 0, recycledKg = 0;
   let recyclableCollectedKg = 0, recyclableCollectedBatches = 0;
+  let assumedRecyclableCollectedBatches = 0;
   let matchedDiversionKg = 0, matchedSortedKg = 0, matchedSortedOutcomeKg = 0;
   let collectedBatches = 0, sortedBatches = 0, reuseRecords = 0, recyclingRecords = 0, collectionConflicts = 0, outcomeConflicts = 0;
   let unlinkedOutcomeKg = 0, unresolvedCollectedKg = 0, outcomeEvidenceBatches = 0, matchedOutcomeBatches = 0;
@@ -51,7 +54,11 @@ export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transf
     }
     if (intake !== null) {
       collectedKg += intake; collectedBatches++;
-      if (batch.condition === 'Recyclable') { recyclableCollectedKg += intake; recyclableCollectedBatches++; }
+      const recyclability = textileRecyclability(batch, context);
+      if (recyclability.eligible) {
+        recyclableCollectedKg += intake; recyclableCollectedBatches++;
+        if (recyclability.basis === 'Consumer listing assumption') assumedRecyclableCollectedBatches++;
+      }
     }
     const sorting = batchRecords.filter(item => item.stage === 'Sorting');
     const sorted = sorting.length === 1 && validMass(sorting[0].inputWeightKg) && validMass(sorting[0].outputWeightKg)
@@ -79,7 +86,7 @@ export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transf
       if (!validMass(record.outputWeightKg)) { conflict = true; continue; }
       const loss = record.lossWeightKg ?? 0;
       if (!validMass(record.inputWeightKg) || !validMass(loss) || !validMass(record.residualWeightKg)
-        || Math.abs(record.inputWeightKg - record.outputWeightKg - record.residualWeightKg - loss) > 0.001
+        || recoveryMassBalance(record) !== 'Balanced'
         || validMass(transfer.verifiedWeightKg) && record.inputWeightKg > transfer.verifiedWeightKg + 0.001) {
         conflict = true; continue;
       }
@@ -120,7 +127,7 @@ export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transf
   const completedKg = knownCompleted.reduce((sum, item) => sum + item.value!, 0);
   return {
     generatedKg: round(generatedKg), collectedKg: round(collectedKg), sortedKg: round(sortedKg),
-    recyclableCollectedKg: round(recyclableCollectedKg), recyclableCollectedBatches,
+    recyclableCollectedKg: round(recyclableCollectedKg), recyclableCollectedBatches, assumedRecyclableCollectedBatches,
     reusedKg: round(reusedKg), recycledKg: round(recycledKg), transactionCount: completed.length,
     completedKg: round(completedKg), completedWithWeight: knownCompleted.length,
     completedMissingWeight: completed.length - knownCompleted.length,

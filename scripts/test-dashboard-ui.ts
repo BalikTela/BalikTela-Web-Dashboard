@@ -168,7 +168,7 @@ try {
     await table().getByText('UI-LIST-010 · Demo', { exact: true }).waitFor();
     await pager().getByRole('button', { name: 'Last page', exact: true }).click();
     assert.equal(await table().locator('tr').count(), 7);
-    await page.getByLabel('Listing status', { exact: true }).selectOption('Open');
+    await page.getByLabel('Listing status', { exact: true }).selectOption('Available');
     await pager().getByText('Page 1 of 2', { exact: true }).waitFor();
     await page.getByLabel('Listing region', { exact: true }).selectOption('Central Visayas');
     await page.getByLabel('Listing textile', { exact: true }).selectOption('Cotton');
@@ -183,7 +183,7 @@ try {
     assert.equal(await table().locator('tr').count(), 25);
     await page.evaluate(() => scrollTo(0, 0));
     await page.screenshot({ path: `${output}/listings-${viewport.width}.png`, fullPage: true });
-    for (const name of ['Material Registry', 'Traceability', 'Recovery Monitoring', 'Facility Analytics', 'Data Quality', 'Organizations', 'User Accounts']) {
+    for (const name of ['Material Registry', 'Traceability', 'Recovery Monitoring', 'Hub Facilities', 'Data Quality', 'Organizations', 'User Accounts']) {
       await navigate(name);
       await workspace().getByRole('navigation').first().waitFor();
       await page.waitForFunction(() => document.querySelector('main [aria-hidden="false"] tbody')?.children.length === 10);

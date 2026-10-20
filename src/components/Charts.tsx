@@ -12,7 +12,7 @@ import {
 } from 'chart.js';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import { toTons } from '../../shared/metrics';
-import type { CategoryShare, Facility, RegionActivity, WastePoint } from '../types';
+import type { CategoryShare, RegionActivity, WastePoint } from '../types';
 import { useChartMotion } from '../hooks/useChartMotion';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, Filler);
@@ -96,7 +96,7 @@ export function RegionalBarChart({ data }: { data: RegionActivity[] }) {
   );
 }
 
-export function FacilityUtilizationChart({ data }: { data: Facility[] }) {
+export function FacilityUtilizationChart({ data }: { data: Array<{ name: string; capacityKg: number; utilization: number | null }> }) {
   const motion = useChartMotion<'bar'>();
   return (
     <Bar

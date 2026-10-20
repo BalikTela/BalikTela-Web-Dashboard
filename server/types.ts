@@ -43,6 +43,7 @@ export interface UserRecord {
   canonicalVerification?: string;
   organizationVerified?: boolean;
   stakeholder?: string;
+  webHubOperator?: boolean;
   location?: string;
   accountStatus: 'Active' | 'Pending verification' | 'Suspended' | 'Deactivated';
   scope: AccessScope;

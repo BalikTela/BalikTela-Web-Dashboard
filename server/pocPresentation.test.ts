@@ -27,7 +27,7 @@ test('unified PoC reporting includes both sources without changing provenance or
   assert.ok(snapshot.batches.some(item=>item.isDemo)&&snapshot.batches.some(item=>!item.isDemo));
   assert.match(combined.metadata.sampleDisclosure,/combines synthetic scenario records and shared operational records/);
   assert.equal(combined.impactMetrics.landfillAvoidedKg,null);
-  assert.ok(combined.kpis.some(item=>item.label==='Reported Active Users'));
+  assert.ok(combined.kpis.some(item=>item.label==='Registered Accounts'));
   const governance=buildGovernance(admin,seed.configurations[0]);
   assert.match(governance.policyIndicators.find(item=>item.label==='PoC reporting scope')!.caveat,/Original source classifications remain/);
   assert.match(governance.methodology.predictiveAnalytics,/Bundled synthetic/);

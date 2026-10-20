@@ -8,6 +8,7 @@ import { SectionHeader } from '../components/SectionHeader';
 import { StatusBadge } from '../components/StatusBadge';
 import { PlatformEngagement } from '../components/PlatformEngagement';
 import { Panel } from '../components/Panel';
+import { HubHandlingSummary } from '../components/HubHandlingSummary';
 import type { getDashboardData } from '../services/dashboardService';
 
 type Data = Awaited<ReturnType<typeof getDashboardData>>;
@@ -15,11 +16,12 @@ type Data = Awaited<ReturnType<typeof getDashboardData>>;
 export function Overview({ data }: { data: Data }) {
   const highestGap = [...data.regionalActivity].sort((a, b) => b.wasteGapKg - a.wasteGapKg)[0];
   const lowestRecovery = data.categoryShares.filter(item => item.recoveryRateAvailable !== false).sort((a, b) => a.recoveryRate - b.recoveryRate)[0];
-  const spareFacility = [...data.facilities].sort((a, b) => a.utilization - b.utilization)[0];
+  const hubFacilities = data.facilities;
+  const spareFacility = hubFacilities.filter(item => item.utilization !== null && ['Available','Near capacity','At capacity','Over capacity'].includes(item.status)).sort((a, b) => a.utilization! - b.utilization!)[0];
   const insights = [
     highestGap ? [`${highestGap.region}: outcome evidence review`, `${formatMass(highestGap.wasteGapKg)} of declared mass has no confirmed reuse or recycling outcome. This is an evidence gap, not measured landfill waste.`] : null,
     lowestRecovery ? [`${lowestRecovery.category}: confirmed recovery share`, `${lowestRecovery.recoveryRate}% of validated collection has a confirmed final outcome in this registration cohort.`] : null,
-    spareFacility ? [`${spareFacility.name}: capacity review`, spareFacility.utilization > 100 ? `${spareFacility.utilization}% utilization exceeds prorated period capacity; review intake and capacity records.` : `${Number((100 - spareFacility.utilization).toFixed(1))}% of prorated period capacity remains available for compatible intake.`] : null,
+    spareFacility ? [`${spareFacility.name}: Hub capacity review`, spareFacility.utilization! > 100 ? `${spareFacility.utilization}% utilization exceeds prorated period capacity; review intake and capacity records.` : `${Number((100 - spareFacility.utilization!).toFixed(1))}% of prorated period handling capacity remains available.`] : null,
   ].filter((item): item is [string, string] => item !== null);
   if (!['Administrator', 'Government', 'Researcher'].includes(data.operations.scope.role)) return <div className="space-y-6"><OperationalSnapshot data={data} /><OperationalRoleDetail data={data} /></div>;
   return (
@@ -35,23 +37,16 @@ export function Overview({ data }: { data: Data }) {
         {data.materialEvidence ? <div className="mt-4 border-l-2 border-slate-300 pl-4 text-xs leading-5 text-slate-600">
           <p className="font-semibold text-slate-800">Evidence coverage</p>
           <p>{data.materialEvidence.missingCollectionBatches} batches await validated intake evidence. {data.materialEvidence.completedReportedWeight} completed transfers use reported receipt weights; {data.materialEvidence.completedMissingWeight} have no final weight and are excluded from transfer mass.</p>
-          <p>Hub intake establishes collection, not diversion. Only validated final outcomes establish reuse or recycling; landfill avoidance remains uncalculated.</p>
+          <p>Recorded Hub Disposal includes archived materials in the selected batch cohort. It is separate from final reuse/recycling output and is excluded from the recovery-share numerator. Landfill avoidance remains uncalculated.</p>
           {data.materialEvidence.collectionConflicts + data.materialEvidence.outcomeConflicts > 0 ? <p className="mt-1 text-amber-800">{data.materialEvidence.collectionConflicts} collection and {data.materialEvidence.outcomeConflicts} outcome batch allocations need review. Ambiguous mass is withheld, not capped.</p> : null}
           {data.materialEvidence.unlinkedOutcomeKg > 0 ? <p>{formatMass(data.materialEvidence.unlinkedOutcomeKg)} of confirmed outcomes has no matching validated intake and is excluded from the recovery-share numerator.</p> : null}
           <p className="mt-1">Dates select batch registration; charts group that cohort by registration month, with outcomes known as of {new Date(data.metadata.period.asOf).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })}.</p>
         </div> : null}
       </section>
 
-      <OperationalSnapshot data={data} supporting />
+      {data.operations.scope.role !== 'Administrator' ? <OperationalSnapshot data={data} supporting /> : null}
 
-      {data.sharedActivity ? <section className="border-y border-slate-200 py-5" aria-label="Shared platform activity">
-        <SectionHeader title="Shared Platform Activity" eyebrow={`${data.sharedActivity.operationalBatches + data.sharedActivity.demoBatches} material batches in the selected cohort`} />
-        <dl className="grid grid-cols-2 gap-5 lg:grid-cols-4">{[
-          ['Material listings', data.sharedActivity.listings], ['Pending / revised requests', data.sharedActivity.pendingRequests],
-          ['Hub-weighed batches', data.sharedActivity.hubWeighedBatches], ['Completed transfers', data.sharedActivity.completedTransfers],
-        ].map(([label, count]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-2 text-2xl font-semibold tabular-nums">{Number(count).toLocaleString()}</dd></div>)}</dl>
-        <p className="mt-4 text-xs leading-5 text-slate-500">{data.sharedActivity.completionAwaitingVerification} completed transfers have no independent validation weight. Transfer completion alone does not prove reuse, recycling or diversion. {data.sharedActivity.missingGeography ? `${data.sharedActivity.missingGeography} batches have incomplete structured location data.` : ''}</p>
-      </section> : null}
+      {data.hubOperations ? <section className="border-b border-slate-200 pb-5" aria-label="Hub handling overview"><SectionHeader title="Hub Collection & Disposal" eyebrow={`${data.hubOperations.assigned} linked listings · ${data.hubOperations.awaitingCollection} awaiting collection`}/><HubHandlingSummary summary={data.hubOperations}/><p className="mt-4 text-xs leading-5 text-slate-500">Hub intake requires a physical receipt, not a posted listing or a listing weight. Awaiting disposal subtracts recorded disposal and evidenced transfers out from received weight. Missing or conflicting records leave the balance unavailable. Hub handling is separate from recycling output; these stages overlap and must not be added together.</p></section> : null}
 
       <section className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
         <Panel>
@@ -78,8 +73,8 @@ export function Overview({ data }: { data: Data }) {
           <PhilippinesMapMock regions={data.regionalActivity} />
         </Panel>
         <Panel>
-          <SectionHeader title="Recycler Capacity and Utilization" eyebrow="Operational signal" />
-          <div className="h-80 sm:h-96"><FacilityUtilizationChart data={data.facilities} /></div>
+          <SectionHeader title="Hub Utilization" eyebrow="Recorded Hub intake / period handling capacity" />
+          {hubFacilities.some(item => item.utilization !== null) ? <div className="h-80 sm:h-96"><FacilityUtilizationChart data={hubFacilities} /></div> : <EmptyBlock label="Hub utilization needs linked intake and configured capacity." />}
         </Panel>
       </section>
 

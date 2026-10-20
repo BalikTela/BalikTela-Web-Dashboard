@@ -78,7 +78,8 @@ test('October fixture feeds the operational chart, regional totals and reports m
   assert.equal(october.regionalActivity.reduce((sum, row) => sum + row.collectionKg, 0), demo.summary.collectedKg);
   assert.equal(october.wasteTrend[0].month, 'Oct 2026');
   assert.equal(october.wasteTrend[0].collected, demo.summary.collectedKg);
-  assert.equal(october.engagementMetrics.monthlyActiveUsersAvailable, true);
+  assert.equal(october.engagementMetrics.monthlyActiveUsersAvailable, false);
+  assert.equal(october.engagementMetrics.sessions, null);
   assert.deepEqual(await store.findById('materialBatches', existing.id), existing);
   const report = await buildReport(store, actor, 'material-flow', { dateRange: 'Custom range', startDate: '2026-10-01', endDate: '2026-10-16' }, undefined, now);
   assert.equal(report.rows.at(-1)![3], '53.290999');

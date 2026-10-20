@@ -351,10 +351,10 @@ async function runJourney() {
     if(phase==='approve-hub') {
       const {context,page}=await webSession(browser);
       try {
-        await navigateWeb(page,'Facility Analytics');
+        await navigateWeb(page,'Recovery Monitoring');
         const active=page.locator('main [aria-hidden="false"]').first();
         await active.getByRole('button',{name:'Hub Management',exact:true}).click();
-        await active.getByRole('textbox',{name:'Search Hub operators',exact:true}).fill(journey.accounts.HUB.email);
+        await active.getByRole('textbox',{name:'Search Hub accounts',exact:true}).fill(journey.accounts.HUB.email);
         const row=active.locator('tbody tr').filter({hasText:journey.accounts.HUB.email});await row.waitFor();
         await page.screenshot({path:`${output}/web-hub-pending.png`,fullPage:true});
         if(!(await row.innerText()).includes('Approved')) {

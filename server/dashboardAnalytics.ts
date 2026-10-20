@@ -1,5 +1,5 @@
 import { calculateOperationalMass } from './domain.js';
-import { scopeAnalyticalBatches, scopeFacilities } from './access-control.js';
+import { scopeAnalyticalBatches, scopeBatches, scopeFacilities } from './access-control.js';
 import type { DashboardSourceSnapshot, Store } from './store.js';
 import type { MaterialBatchRecord, RecoveryRecord, TransferRecord, UserRecord } from './types.js';
 import { aggregateMaterialEvidence as aggregate } from './materialEvidence.js';
@@ -7,6 +7,12 @@ export { aggregateMaterialEvidence as aggregate } from './materialEvidence.js';
 import { isCompletedTransfer, isTerminalTransfer, matchesTransferStatus } from '../shared/workflows.js';
 import { buildStakeholderView, identifyHubOperators } from './stakeholders.js';
 import { isHubWeighingMeasurement } from '../shared/hubs.js';
+import { buildHubOperations } from './hubOperations.js';
+import { aggregateHubDisposals, hubDisposalEvidence } from './hubDisposals.js';
+import { buildPlatformActivity } from './platformActivity.js';
+import { facilityCapacityStatus } from '../shared/facilityCapacity.js';
+import { buildHubFacilityAnalytics, hubFacilityAttributions } from './hubFacilities.js';
+import { recoveryMassBalance } from '../shared/recovery.js';
 import { changeDescription, formatMass, percentage as percent } from '../shared/metrics.js';
 import { inReportingWindow, manilaDate, resolveReportingPeriod, type ReportingWindow } from '../shared/reporting.js';
 
@@ -14,26 +20,45 @@ const mapCoordinates: Record<string, [number, number]> = { 'Metro Manila': [51, 
 
 export async function loadDashboardAnalyticsSnapshot(store: Store): Promise<DashboardSourceSnapshot> {
   const optimizedSnapshot = await store.loadDashboardSnapshot?.();
-  if (optimizedSnapshot) return optimizedSnapshot;
+  if (optimizedSnapshot) return store.loadHubDisposals && !optimizedSnapshot.hubDisposals
+    ? { ...optimizedSnapshot, hubDisposals: await store.loadHubDisposals() } : optimizedSnapshot;
   const [allBatches, allTransfers, measurements, recoveryRecords, listings, offers, users, organizations, facilities, walletEntries, interactions] = await Promise.all([
     store.all('materialBatches'), store.all('transfers'), store.all('measurements'), store.all('recoveryRecords'), store.all('listings'), store.all('offers'),
     store.all('users'), store.all('organizations'), store.all('facilities'), store.all('walletEntries'), store.all('systemInteractions'),
   ]);
-  return { allBatches, allTransfers, measurements, recoveryRecords, listings, offers, users, organizations, facilities, walletEntries, interactions };
+  return { allBatches, allTransfers, measurements, recoveryRecords, listings, offers, users, organizations, facilities, walletEntries, interactions,
+    ...(store.loadHubDisposals ? { hubDisposals: await store.loadHubDisposals() } : {}) };
 }
 
 export type DashboardAnalyticsSnapshot = DashboardSourceSnapshot;
 
+export function selectHubCohort(snapshot: DashboardSourceSnapshot, actor: UserRecord, query: Record<string, unknown>, now = new Date()) {
+  const hubIds = identifyHubOperators(snapshot, now);
+  if (hubIds.has(actor.id)) actor = { ...actor, webHubOperator: true };
+  const scoped = ['Administrator', 'Government', 'Researcher'].includes(actor.role)
+    ? snapshot.allBatches.filter(item => actor.role === 'Administrator' || !actor.scope.regions.length || actor.scope.regions.includes(item.region))
+    : scopeBatches(actor, snapshot.allBatches, snapshot);
+  const period = resolveReportingPeriod(query, now, scoped.map(item => item.createdAt).sort()[0]);
+  const hubBatchIds = new Set([...snapshot.listings.filter(item => hubIds.has(item.weighingHubId ?? '')).map(item => item.batchId),
+    ...hubDisposalEvidence(snapshot, scoped, actor, now).records.map(item => item.batchId),
+    ...snapshot.measurements.filter(item => hubIds.has(item.recordedBy) && Date.parse(item.timestamp) <= now.getTime()).map(item => item.batchId)]);
+  return { period, actor, batches: filterBatches(scoped, period, query, { transfers: snapshot.allTransfers, recoveryRecords: snapshot.recoveryRecords,
+    users: snapshot.users, organizations: snapshot.organizations, hubBatchIds,
+    hubFacilityIdsByBatch: query.facilityId && query.facilityId !== 'All facilities' ? hubFacilityAttributions(snapshot, scoped, actor, now).batchSites : undefined }) };
+}
+
 export function selectAnalyticsCohort(snapshot: DashboardAnalyticsSnapshot, actor: UserRecord, query: Record<string, unknown>, now = new Date()) {
+  const hubIds = identifyHubOperators(snapshot, now);
+  if (hubIds.has(actor.id)) actor = { ...actor, webHubOperator: true };
   const scoped = scopeAnalyticalBatches(actor, snapshot.allBatches.filter(item => item.currentStatus !== 'Archived'), snapshot);
   const first = scoped.filter(item => Date.parse(item.createdAt) <= now.getTime()).map(item => item.createdAt).sort()[0];
   const period = resolveReportingPeriod(query, now, first);
   const allTransfers = snapshot.allTransfers.filter(item => Date.parse(item.updatedAt) <= now.getTime());
   const recoveryRecords = snapshot.recoveryRecords.filter(item => item.status !== 'Reversed' && Date.parse(item.timestamp) <= now.getTime());
-  const hubIds = identifyHubOperators(snapshot,now);
   const hubBatchIds = new Set([...snapshot.listings.filter(item => hubIds.has(item.weighingHubId ?? '')).map(item => item.batchId),
     ...snapshot.measurements.filter(item => hubIds.has(item.recordedBy) && isHubWeighingMeasurement(item) && Date.parse(item.timestamp) <= now.getTime()).map(item => item.batchId)]);
-  const related = { transfers: allTransfers, recoveryRecords, users: snapshot.users, organizations: snapshot.organizations, hubBatchIds };
+  const related = { transfers: allTransfers, recoveryRecords, users: snapshot.users, organizations: snapshot.organizations, hubBatchIds,
+    hubFacilityIdsByBatch: query.facilityId && query.facilityId !== 'All facilities' ? hubFacilityAttributions(snapshot, scoped, actor, now).batchSites : undefined };
   const currentBatches = filterBatches(scoped, period, query, related);
   const previousBatches = period.comparison ? filterBatches(scoped, period.comparison, query, related) : [];
   const currentBatchIds = new Set(currentBatches.map(item => item.id));
@@ -46,7 +71,9 @@ export function selectAnalyticsCohort(snapshot: DashboardAnalyticsSnapshot, acto
 
 export async function buildDashboardAnalytics(store: Store, actor: UserRecord, query: Record<string, unknown>, suppliedSnapshot?: DashboardAnalyticsSnapshot, now = new Date()) {
   const snapshot = suppliedSnapshot ?? await loadDashboardAnalyticsSnapshot(store);
-  const { listings, offers, users, walletEntries, interactions } = snapshot;
+  const hubIds = identifyHubOperators(snapshot, now);
+  if (hubIds.has(actor.id)) actor = { ...actor, webHubOperator: true };
+  const { listings, offers, users, walletEntries } = snapshot;
   const facilities=scopeFacilities(actor, snapshot.facilities).filter(item=>item.status!=='Inactive'
     && option(query.region,'All regions',item.region) && option(query.facilityId,'All facilities',item.id)
     && option(query.organizationId,'All organizations',item.organizationId)
@@ -54,31 +81,40 @@ export async function buildDashboardAnalytics(store: Store, actor: UserRecord, q
     && (!query.textileType || query.textileType==='All textiles' || item.acceptedMaterials.includes(String(query.textileType))));
   const { period, currentBatches, previousBatches, currentBatchIds, matchingTransfers, currentTransfers, currentRecovery, currentMeasurements, recoveryRecords } = selectAnalyticsCohort(snapshot, actor, query, now);
   const months = reportingMonths(period);
-  const evidenceContext = { measurements: snapshot.measurements.filter(item => Date.parse(item.timestamp) <= now.getTime()), listings };
+  const evidenceContext = { measurements: snapshot.measurements.filter(item => Date.parse(item.timestamp) <= now.getTime()), listings, users };
   const current = aggregate(currentBatches, matchingTransfers, recoveryRecords, evidenceContext);
   const previous = aggregate(previousBatches, matchingTransfers, recoveryRecords, evidenceContext);
-  const engagementMetrics = engagement(interactions, period, query, actor);
   const comparisonPeriod = period.comparison?.label ?? '';
-  const facilityMetrics = facilityView(currentBatches, currentRecovery, facilities, period.capacityMonths, current.confirmedOutputs);
-  const regionalActivity = regions(currentBatches, currentTransfers, currentRecovery, facilities, users, evidenceContext);
+  const facilityMetrics = facilityView(currentBatches, currentRecovery, facilities, period.capacityMonths, current.confirmedOutputs,
+    hubFacilityAttributions(snapshot, currentBatches, actor, now));
+  const regionalActivity = regions(currentBatches, currentTransfers, currentRecovery, facilities, users, evidenceContext, hubIds);
   const mass = calculateOperationalMass(currentBatches, currentTransfers);
-  const completed = currentTransfers.filter((item) => isCompletedTransfer(item.status));
-  const cohortListings = listings.filter(item => currentBatchIds.has(item.batchId));
+  const completed = [...new Map(currentTransfers.map(item => [item.id, item])).values()].filter((item) => isCompletedTransfer(item.status));
+  const cohortListings = [...new Map(listings.map(item => [item.id, item])).values()].filter(item => currentBatchIds.has(item.batchId) && Date.parse(item.createdAt) <= now.getTime());
   const cohortListingIds = new Set(cohortListings.map(item => item.id));
+  const cohortOffers = [...new Map(offers.map(item => [item.id, item])).values()].filter(item => cohortListingIds.has(item.listingId) && Date.parse(item.createdAt) <= now.getTime());
+  const engagementMetrics = await buildPlatformActivity(store, snapshot, actor, query, period, cohortListings, cohortOffers, completed, now);
   const activeHubBatchIds = new Set(currentMeasurements.filter(isHubWeighingMeasurement).map(item => item.batchId));
   const sum = (values: Array<number | null>) => values.reduce<number>((total, value) => total + (value ?? 0), 0);
+  const hubCohort = selectHubCohort(snapshot, actor, query, now);
+  const hubDisposal = aggregateHubDisposals(snapshot, hubCohort.batches, hubCohort.actor, now);
+  const hubFacilities = buildHubFacilityAnalytics(snapshot, facilities, hubCohort.batches, hubCohort.actor, hubCohort.period.capacityMonths, now);
 
   return {
+    hubFacilities,
+    hubOperations: buildHubOperations(snapshot, hubCohort.batches, hubCohort.actor, hubCohort.period.label, now).summary,
+    hubDisposal: { available: hubDisposal.available, summary: hubDisposal.summary },
     metadata: {
       periodLabel: period.label,
       reportingCutoff: period.endDate,
       period,
       aggregateOnly: actor.scope.aggregateOnly,
+      hubOperator: actor.webHubOperator === true || actor.role === 'BalikTela Hub',
       denominatorNote: `Confirmed recovery share = validated final reuse and recycling output linked to collected batches / validated collection mass for the same batch cohort. Pending stock stays in the denominator; transfers, sorting and recyclable classifications are not final outcomes. Missing or conflicting evidence makes the rate unavailable. ${currentBatches.filter(item => item.declaredWeightKg === null).length} batches have no declared weight; missing weights are not measured zeros. Asia/Manila batch-registration cohort; latest recorded outcomes through ${period.asOf}, not collection-month totals or historical status snapshots. Capacity is prorated by the actual fraction of each calendar month. Comparison: ${period.comparisonBasis}.`,
       sampleDisclosure: 'PoC reporting combines synthetic scenario records and shared operational records under the same metric rules. Source provenance is retained internally. Combined totals are illustrative, not independently measured real-world or national outcomes.',
       refreshedAt: now.toISOString(),
     },
-    kpis: kpis(current, previous, engagementMetrics, regionalActivity, comparisonPeriod),
+    kpis: kpis(current, previous, engagementMetrics, regionalActivity, comparisonPeriod, hubDisposal),
     materialEvidence: {
       collectedBatches: current.collectedBatches, missingCollectionBatches: current.missingCollectionBatches,
       reuseRecords: current.reuseRecords, recyclingRecords: current.recyclingRecords,
@@ -91,7 +127,7 @@ export async function buildDashboardAnalytics(store: Store, actor: UserRecord, q
     sharedActivity: {
       transferCount: currentTransfers.length,
       listings: cohortListings.length,
-      pendingRequests: offers.filter(item => cohortListingIds.has(item.listingId) && ['Pending', 'Revised'].includes(item.status)).length,
+      pendingRequests: cohortOffers.filter(item => ['Pending', 'Revised'].includes(item.status)).length,
       hubWeighedBatches: activeHubBatchIds.size,
       completedTransfers: completed.length,
       completionAwaitingVerification: completed.filter(item => item.verifiedWeightKg === null).length,
@@ -149,7 +185,7 @@ function reportingMonths(period: ReportingWindow) {
   return months;
 }
 
-export function filterBatches(batches: MaterialBatchRecord[], period: ReportingWindow, query: Record<string, unknown>, related: { transfers: TransferRecord[]; recoveryRecords: Array<{ batchId: string; facilityId: string }>; users: UserRecord[]; organizations: Array<{ id: string; name: string }>; hubBatchIds?: ReadonlySet<string> }) {
+export function filterBatches(batches: MaterialBatchRecord[], period: ReportingWindow, query: Record<string, unknown>, related: { transfers: TransferRecord[]; recoveryRecords: Array<{ batchId: string; facilityId: string }>; users: UserRecord[]; organizations: Array<{ id: string; name: string }>; hubBatchIds?: ReadonlySet<string>; hubFacilityIdsByBatch?: ReadonlyMap<string,string> }) {
   const users = new Map(related.users.map((item) => [item.id, item]));
   const organizations = new Map(related.organizations.map((item) => [item.id, item]));
   const city = String(query.city ?? '').trim().toLowerCase();
@@ -173,7 +209,7 @@ export function filterBatches(batches: MaterialBatchRecord[], period: ReportingW
       && (!recycler || recipientNames.includes(recycler))
       && (stakeholderType === 'All stakeholders' || stakeholderType === 'Administrator' || source?.role === stakeholderType || batchTransfers.some((item) => users.get(item.recipientId)?.role === stakeholderType)
         || stakeholderType === 'BalikTela Hub' && related.hubBatchIds?.has(batch.id))
-      && (String(query.facilityId ?? 'All facilities') === 'All facilities' || related.recoveryRecords.some((item) => item.batchId === batch.id && item.facilityId === query.facilityId))
+      && (String(query.facilityId ?? 'All facilities') === 'All facilities' || related.hubFacilityIdsByBatch?.get(batch.id) === query.facilityId || related.recoveryRecords.some((item) => item.batchId === batch.id && item.facilityId === query.facilityId))
       && (option(query.transactionType, 'All types', '') && option(query.transactionStatus, 'All statuses', batch.currentStatus) || batchTransfers.some((item) => transferMatches(item, query)));
   });
 }
@@ -181,35 +217,21 @@ function option(value: unknown, all: string, actual: string) { const selected = 
 function transferType(transfer: TransferRecord) { return transfer.circularOutcome === 'Recycling' ? 'Recycling' : transfer.circularOutcome === 'Redistribution' ? 'Redistribution' : 'Barter'; }
 function transferMatches(transfer: TransferRecord, query: Record<string, unknown>) { return option(query.transactionType, 'All types', transferType(transfer)) && matchesTransferStatus(transfer.status, query.transactionStatus); }
 
-function kpis(current: ReturnType<typeof aggregate>, previous: ReturnType<typeof aggregate>, currentEngagement: ReturnType<typeof engagement>, regional: ReturnType<typeof regions>, comparisonPeriod: string) {
-  const diverted = current.reusedKg + current.recycledKg;
+function kpis(current: ReturnType<typeof aggregate>, previous: ReturnType<typeof aggregate>, currentEngagement: Awaited<ReturnType<typeof buildPlatformActivity>>, regional: ReturnType<typeof regions>, comparisonPeriod: string, disposal: ReturnType<typeof aggregateHubDisposals>) {
   const comparison = (value: number, prior: number) => comparisonPeriod ? changeDescription(value, prior, comparisonPeriod) : 'No prior-period comparison';
   return [
     { label: 'Total Textiles Collected', value: current.collectedBatches ? formatMass(current.collectedKg) : 'Pending evidence', delta: `${current.collectedBatches} batches with validated intake`, description: 'All physically collected textiles, regardless of condition. Uses validated Collection output or an unambiguous verified receipt; excludes declarations and listing-only weighing.', tone: 'moss' as const },
-    { label: 'Recyclable Textiles Collected', value: current.collectedBatches ? formatMass(current.recyclableCollectedKg) : 'Pending evidence', delta: `${current.recyclableCollectedBatches} collected ${current.recyclableCollectedBatches === 1 ? 'batch' : 'batches'} classified as recyclable`, description: 'Validated collection weight of unique batches whose recorded condition is Recyclable. A recycling pathway, declaration or listing-only weighing is not enough; this is collected recyclable stock, not final recycling output.', tone: 'ocean' as const },
+    { label: 'Recyclable Textiles Collected', value: current.collectedBatches ? formatMass(current.recyclableCollectedKg) : 'Pending evidence', delta: `${current.recyclableCollectedBatches} recyclable ${current.recyclableCollectedBatches === 1 ? 'batch' : 'batches'} · ${current.assumedRecyclableCollectedBatches} assumed from consumer listings`, description: 'Validated collection weight of unique recyclable batches. Posted consumer listings are assumed recyclable under the workflow, not technically certified. Posting, estimates and legacy listing weighing alone do not prove collection or recycling output.', tone: 'ocean' as const },
     { label: 'Completed Textile Transfers', value: current.completedWithWeight ? formatMass(current.completedKg) : 'Pending evidence', delta: `${current.completedWithWeight} weighted · ${current.completedMissingWeight} missing final weight`, description: `${current.completedReportedWeight} completed transfers use reported receipt weight; others use approved validation weight. Transfer activity can include repeated custody movements and is not unique recovered material. Agreed quantities are never substituted.`, tone: 'clay' as const },
-    { label: 'Confirmed Reuse + Recycling', value: current.reuseRecords + current.recyclingRecords ? formatMass(diverted) : 'Pending evidence', delta: 'Documented outcomes; not a landfill claim', description: 'Non-overlapping validated final reuse/repair/redistribution/upcycling and recycling outputs. Ambiguous allocations, invalid mass balances and duplicate final records are withheld.', tone: 'denim' as const },
-    { label: 'Confirmed Recovery Share', value: current.diversionRate === null ? 'Not available' : `${current.diversionRate}%`, delta: current.diversionRate === null ? 'Matching collection + final outcome required' : `${formatMass(current.matchedDiversionKg)} / ${formatMass(current.collectedKg)} collected`, description: 'Uses only final outcomes linked to collected batches, divided by all validated collection in the selected batch cohort. Pending stock remains in the denominator; no denominator or unresolved conflicts means no published rate.', tone: 'moss' as const },
-    { label: 'Reported Active Users', value: currentEngagement.monthlyActiveUsersAvailable ? currentEngagement.monthlyActiveUsers.toLocaleString() : 'Not available', delta: currentEngagement.monthlyActiveUsersAvailable ? 'Latest-month engagement summary' : 'No active-user summary for final selected month', tone: 'ocean' as const },
+    { label: 'Recorded Hub Disposal', value: !disposal.available ? 'Not available' : !disposal.summary.records && disposal.summary.invalidRecords ? 'Pending evidence' : formatMass(disposal.summary.disposedKg),
+      delta: !disposal.available ? 'Disposal ledger unavailable' : `${disposal.summary.records} disposal ${disposal.summary.records === 1 ? 'record' : 'records'} · batch cohort${disposal.summary.invalidRecords ? ` · ${disposal.summary.invalidRecords} excluded` : ''}`,
+      description: 'Sum of unique Hub disposal ledger weights for the selected batch-registration cohort, including archived materials, through the current as-of time. Partial disposals are added once per record; listing stock and cumulative disposal counters are never added. Invalid or conflicting evidence is excluded. Recorded disposal does not establish recycling, independently verified final destination or landfill diversion.', tone: 'denim' as const },
+    { label: 'Confirmed Recovery Share', value: current.diversionRate === null ? 'Not available' : `${current.diversionRate}%`, delta: current.diversionRate === null ? 'Matching collection + final outcome required' : `Reuse + recycling: ${formatMass(current.matchedDiversionKg)} / ${formatMass(current.collectedKg)} collected`, description: 'Uses only final outcomes linked to collected batches, divided by all validated collection in the selected batch cohort. Hub disposal is excluded from this numerator. Pending stock remains in the denominator; no denominator or unresolved conflicts means no published rate.', tone: 'moss' as const },
+    { label: 'Registered Accounts', value: currentEngagement.registeredAccounts.toLocaleString(), delta: 'Auth-linked profiles in scope; not active users', tone: 'ocean' as const },
     { label: 'Active Producers', value: regional.reduce((sum, item) => sum + item.producers, 0).toString(), delta: 'Participants in selected cohort and scope', tone: 'clay' as const },
     { label: 'Active Recyclers', value: regional.reduce((sum, item) => sum + item.recyclers, 0).toString(), delta: 'Participants in selected cohort and scope', tone: 'denim' as const },
     { label: 'Completed Transactions', value: current.transactionCount.toLocaleString(), delta: comparison(current.transactionCount, previous.transactionCount), tone: 'moss' as const },
   ];
-}
-
-function engagement(records: DashboardSourceSnapshot['interactions'], period: ReportingWindow | null, query: Record<string, unknown>, actor: UserRecord) {
-  const region = String(query.region ?? 'All regions'); const city = String(query.city ?? '').trim().toLowerCase();
-  const selected = records.filter(item => period && inReportingWindow(item.occurredAt, period)
-    && (region === 'All regions' || item.properties.region === region) && (!city || item.properties.city?.toLowerCase().includes(city))
-    && (actor.role === 'Administrator' || (['Government', 'Researcher'].includes(actor.role)
-      ? !actor.scope.regions.length || actor.scope.regions.includes(item.properties.region ?? '')
-      : item.userId === actor.id || Boolean(item.organizationId && [actor.organizationId, ...actor.scope.organizationIds].includes(item.organizationId)))));
-  const count = (event: string) => selected.filter((item) => item.eventName === event).reduce((sum, item) => sum + Number(item.properties.count ?? 0), 0);
-  const latest = period ? manilaDate(new Date(Date.parse(period.endExclusive) - 1)).slice(0, 7) : '';
-  const sessions = selected.filter((item) => item.eventName === 'sessions');
-  const sessionCount = count('sessions');
-  const activeUsers = selected.filter(item => item.eventName === 'active_users' && manilaDate(new Date(item.occurredAt)).startsWith(latest));
-  return { monthlyActiveUsers: activeUsers.reduce((sum, item) => sum + Number(item.properties.count ?? 0), 0), monthlyActiveUsersAvailable: activeUsers.length > 0, sessions: sessionCount, wasteSubmissions: count('waste_submissions'), barterActions: count('barter_actions'), reportExports: count('report_exports'), averageSessionMinutes: sessionCount ? Number((sessions.reduce((sum, item) => sum + Number(item.properties.averageSessionMinutes ?? 0) * Number(item.properties.count ?? 0), 0) / sessionCount).toFixed(1)) : 0 };
 }
 
 function transactionsView(transfers: TransferRecord[], batches: MaterialBatchRecord[], users: UserRecord[]) {
@@ -222,25 +244,30 @@ function transactionsView(transfers: TransferRecord[], batches: MaterialBatchRec
   });
 }
 
-function facilityView(batches: MaterialBatchRecord[], recovery: RecoveryRecord[], facilities: Array<{ id: string; name: string; city: string; region: string; acceptedMaterials: string[]; monthlyCapacityKg: number; status: string }>, capacityMonths: number, outputs: ReturnType<typeof aggregate>['confirmedOutputs']) {
-  recovery = recovery.filter(item => item.status === 'Validated' && item.validatedBy);
+function facilityView(batches: MaterialBatchRecord[], recovery: RecoveryRecord[], facilities: Array<{ id: string; name: string; city: string; region: string; acceptedMaterials: string[]; monthlyCapacityKg: number; status: string }>, capacityMonths: number, outputs: ReturnType<typeof aggregate>['confirmedOutputs'], hubEvidence: ReturnType<typeof hubFacilityAttributions>) {
+  recovery = [...new Map(recovery.map(item => [item.id,item])).values()].filter(item => item.status === 'Validated' && item.validatedBy && recoveryMassBalance(item) === 'Balanced');
   const batchIds = new Set(batches.map((item) => item.id));
   return facilities.map((facility) => {
     const records = recovery.filter((item) => item.facilityId === facility.id && batchIds.has(item.batchId));
     const entries = [...new Set(records.map(item => item.batchId))].map(id => records.filter(item => item.batchId === id).sort((a,b) => a.timestamp.localeCompare(b.timestamp))[0]);
-    const intake = entries.reduce((sum, item) => sum + (item.stage === 'Collection' ? item.outputWeightKg ?? 0 : item.inputWeightKg), 0);
+    const intakeByBatch = new Map(entries.map(item => [item.batchId, item.stage === 'Collection' ? item.outputWeightKg! : item.inputWeightKg]));
+    // Receipt evidence replaces the operation's input for the same batch; it is never added twice.
+    for (const [batchId, item] of hubEvidence.relevant) if (item.receipt && hubEvidence.batchSites.get(batchId) === facility.id)
+      intakeByBatch.set(batchId, item.receipt.weightKg);
+    const intake = [...intakeByBatch.values()].reduce((sum, weight) => sum + weight, 0);
     const facilityOutputs = outputs.filter(item => item.facilityId === facility.id);
     const processed = facilityOutputs.reduce((sum, item) => sum + item.kilograms, 0);
     const capacityKg = round(facility.monthlyCapacityKg * capacityMonths);
-    return { id: facility.id, name: facility.name, location: facility.city, region: facility.region, acceptedTypes: facility.acceptedMaterials, capacityKg, utilization: percent(intake, capacityKg), intakeKg: round(intake), processedKg: round(processed), processedAvailable: facilityOutputs.length > 0, processingTimeDays: 0, status: facility.status, isDemo: 'isDemo' in facility && facility.isDemo === true };
+    const utilization = percent(intake, capacityKg);
+    return { id: facility.id, name: facility.name, location: facility.city, region: facility.region, acceptedTypes: facility.acceptedMaterials, capacityKg, utilization, intakeKg: round(intake), processedKg: round(processed), processedAvailable: facilityOutputs.length > 0, processingTimeDays: 0, status: facilityCapacityStatus(utilization, capacityKg, facility.status), isDemo: 'isDemo' in facility && facility.isDemo === true };
   });
 }
 
-function regions(batches: MaterialBatchRecord[], transfers: TransferRecord[], recovery: RecoveryRecord[], facilities: Array<{ region: string; type: string }>, users: UserRecord[], context: import('./materialEvidence.js').EvidenceContext) {
+function regions(batches: MaterialBatchRecord[], transfers: TransferRecord[], recovery: RecoveryRecord[], facilities: Array<{ region: string; type: string }>, users: UserRecord[], context: import('./materialEvidence.js').EvidenceContext, hubIds: ReadonlySet<string> = new Set()) {
   return [...new Set(batches.map((item) => item.region))].map((region) => {
     const regionBatches = batches.filter((item) => item.region === region); const ids = new Set(regionBatches.map((item) => item.id)); const regionTransfers = transfers.filter((item) => ids.has(item.batchId)); const regionRecovery = recovery.filter((item) => ids.has(item.batchId)); const value = aggregate(regionBatches, regionTransfers, regionRecovery, context); const [x, y] = mapCoordinates[region] ?? [50, 50];
-    const role = new Map(users.map(user => [user.id, user.role]));
-    return { region, city: regionBatches[0]?.city ?? '', collectionKg: value.collectedKg, recyclingKg: value.recycledKg, collectionAvailable: value.collectedBatches > 0, recyclingAvailable: value.recyclingRecords > 0, wasteGapKg: Math.max(0, value.generatedKg - value.reusedKg - value.recycledKg), producers: new Set(regionBatches.filter(item => role.get(item.sourceUserId) === 'Producer').map(item => item.sourceUserId)).size, collectionPoints: facilities.filter((item) => item.region === region && item.type === 'Collection point').length, recyclers: new Set(regionTransfers.filter(item => role.get(item.recipientId) === 'Recycler').map(item => item.recipientId)).size, x, y };
+    const role = new Map(users.map(user => [user.id, hubIds.has(user.id) ? 'BalikTela Hub' : user.role]));
+    return { region, city: regionBatches[0]?.city ?? '', collectionKg: value.collectedKg, recyclingKg: value.recycledKg, collectionAvailable: value.collectedBatches > 0, recyclingAvailable: value.recyclingRecords > 0, wasteGapKg: Math.max(0, value.generatedKg - value.reusedKg - value.recycledKg), producers: new Set(regionBatches.filter(item => role.get(item.sourceUserId) === 'Producer').map(item => item.sourceUserId)).size, collectionPoints: facilities.filter((item) => item.region === region).length, recyclers: new Set(regionTransfers.filter(item => role.get(item.recipientId) === 'Recycler').map(item => item.recipientId)).size, x, y };
   }).sort((a, b) => b.collectionKg - a.collectionKg);
 }
 

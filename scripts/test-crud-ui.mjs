@@ -52,7 +52,7 @@ try {
     await save();
     await row().getByText('Prospective sample',{exact:true}).waitFor();
     await page.getByRole('button',{name:'Facility',exact:true}).click();
-    await dialog().getByLabel('Facility name').fill(`CRUD Browser Facility ${width} (demo)`);
+    await dialog().getByLabel('Hub name').fill(`CRUD Browser Facility ${width} (demo)`);
     await dialog().getByLabel('City',{exact:true}).fill('Manila');
     await dialog().getByLabel('Monthly capacity (t)').fill('1');
     await dialog().getByLabel('Change reason').fill('Browser facility registration');

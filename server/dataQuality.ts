@@ -10,6 +10,7 @@ export const QUALITY_CHECKS = [
   { label: 'Weight discrepancies', source: 'transfers / configuration_versions', meaning: 'Absolute variance against handover weight, or agreed weight when handover is missing, using the configured threshold.' },
   { label: 'Completion evidence', source: 'transfers', meaning: 'Completed activity without independently verified weight; not a claim of final recycling.' },
   { label: 'Stage mass balance', source: 'recovery_records', meaning: 'Input must equal output plus rejects and processing loss; reversed records are excluded.' },
+  { label: 'Hub disposal evidence', source: 'hub_disposals / listings / users', meaning: 'Linked disposal records require a known operator, positive finite weight, reason and valid timestamp. Disposal and assumed recyclability do not establish collection or recycling output.' },
 ] as const;
 
 export function buildDataQuality(actor: UserRecord, batches: MaterialBatchRecord[], transfers: TransferRecord[], threshold: number, now = new Date(), snapshot?: DashboardSourceSnapshot) {
@@ -28,6 +29,14 @@ export function buildDataQuality(actor: UserRecord, batches: MaterialBatchRecord
     for (const record of snapshot.recoveryRecords.filter(item => batchIds.has(item.batchId) && item.status !== 'Reversed')) {
       const weights = [record.inputWeightKg,record.outputWeightKg,record.residualWeightKg,record.lossWeightKg ?? 0];
       if (weights.some(weight => weight === null || !Number.isFinite(weight) || weight < 0) || Math.abs(record.inputWeightKg - (record.outputWeightKg ?? 0) - (record.residualWeightKg ?? 0) - (record.lossWeightKg ?? 0)) > 0.01) issues.push({ id: `DQ-${record.id}-BALANCE`, severity: 'Critical', category: 'Stage mass imbalance', entityType: 'Recovery record', entityId: actor.scope.aggregateOnly ? 'De-identified recovery record' : record.id, description: 'Input, output, rejects and processing loss are missing, negative or do not balance within 0.01 kg.', status: 'Open' });
+    }
+    const scopedListings = new Set(snapshot.listings.filter(item => batchIds.has(item.batchId)).map(item => item.id));
+    const userIds = new Set(snapshot.users.map(item => item.id));
+    for (const record of new Map((snapshot.hubDisposals?.records ?? []).map(item => [item.id, item])).values()) {
+      if (!scopedListings.has(record.listingId) || Date.parse(record.disposedAt) > now.getTime()) continue;
+      if (!Number.isFinite(record.weightKg) || record.weightKg <= 0 || !record.reason.trim() || !userIds.has(record.operatorId) || !Number.isFinite(Date.parse(record.disposedAt)))
+        issues.push({ id: `DQ-${record.id}-DISPOSAL`, severity: 'Critical', category: 'Incomplete disposal evidence', entityType: 'Hub disposal', entityId: actor.scope.aggregateOnly ? 'De-identified disposal' : record.id,
+          description: 'A linked disposal record has invalid weight, date, reason or operator reference. It is not proof of recycling or landfill avoidance.', status: 'Open' });
     }
   }
   const visibleIssues = actor.scope.aggregateOnly ? issues.map((item, index) => ({ ...item,

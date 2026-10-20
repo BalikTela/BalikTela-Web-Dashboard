@@ -1,4 +1,116 @@
-# Hub Management and Weighing Monitoring
+# Hub Collection and Disposal Integration
+
+## Current Web Policy: Collection and Disposal (19 October 2026)
+
+This section supersedes the older weighing-oriented role description below.
+The older contracts remain documented to explain existing shared records.
+**This policy update changes web code only. It applies no shared migration,
+does not convert accounts, and does not edit mobile source or business records.**
+
+### Latest Mobile Source Review
+
+Reviewed `baliktelaprogressive-main (1).zip` supplied on 19 October, specifically
+`src/components/hub.tsx`, `src/components/hub-disposals.tsx`,
+`src/lib/domain.ts` and `supabase/022_hub_disposals.sql`.
+
+The supplied source still exposes **Textile weighing** and its `canWeigh`
+predicate for approved Recycler/Hub profiles. Its Hub home also exposes disposal.
+Disposal requires a weighed, unreserved listing, supports partial disposal and
+updates remaining stock. It does not create an independent physical collection
+receipt, establish a recycling output or record a landfill-avoidance destination.
+The ZIP alone does not establish which commit is currently deployed on mobile.
+
+### Role and Workflow
+
+1. A Consumer posts textiles. The web treats an own, published Consumer listing
+   as **assumed recyclable**, retaining the original recorded condition and pathway.
+   This is a business assumption, not technical certification or measured intake.
+2. Ordinary direct exchanges remain Consumer/Producer/recipient activity. They do
+   not become Hub assignments merely because a textile listing exists.
+3. A listing routed `via_hub` references a Hub operator via the existing
+   `weighing_hub_id` field. That legacy field name is preserved, not migrated.
+4. Physical collection is shown only with linked collection evidence. A validated
+   Collection record takes precedence; otherwise one unambiguous current measured
+   or verified collection/Hub receipt can establish **recorded Hub collection**.
+   It is counted once per batch. Legacy listing-scale readings do not qualify.
+5. Disposal is read from the existing `hub_disposals` ledger and linked through
+   `listing_id` and `operator_id`. Duplicate IDs count once; future/invalid records
+   are excluded. Archived listings retain their disposal history.
+6. Disposal, receipt, transfer completion and final reuse/recycling are separate,
+   overlapping evidence stages. **Disposal alone is not landfill diversion.**
+   Final destination and an approved diversion definition are still required.
+
+### Web Access and Affected Pages
+
+- Approved Hubs have scoped read access to their materials, collection/disposal,
+  related historical transfers and profile. They cannot create offers, administer
+  exchange transfers, manage processing facilities or record recycling outcomes.
+  These restrictions apply in the API, not just navigation.
+- Explicit Hub roles and legacy Recycler profiles with Hub metadata, assignment,
+  listing-weighing history or disposal activity are recognized without rewriting
+  stored roles. Generic `Recycler / Upcycler` metadata alone does not prove Hub
+  identity. An ordinary Recycler without Hub evidence retains its existing role.
+  A new mobile Recycler signup with no explicit Hub role or activity therefore
+  needs administrator clarification, not automatic Hub approval or conversion.
+- **Overview:** collection/disposal oversight is separate from the recovery KPIs;
+  Hub accounts open a dedicated handling workspace. Recyclable Textiles Collected
+  uses only validated intake, including Consumer assumptions with disclosed basis.
+- **Listings / Material Registry:** retain original mobile stock and statuses;
+  explain assumed recyclability without manufacturing collection evidence.
+- **Traceability:** retains exchange transfers and authorized historical weights;
+  Hub handling and management appear only in Recovery Monitoring.
+- **Recovery / Hub Facilities:** Recovery Monitoring hosts operational handling;
+  Hub Facilities reports registered Hub capacity, intake and disposal analytics,
+  not recycler processing capacity or final recycling output.
+- **Stakeholders:** shows actual linked collection/disposal, approval and assignments.
+- **Governance / Data Quality / Reports:** distinguish business assumptions,
+  collection, final output and disposal. Data Quality checks linked disposal
+  weights, operator references, timestamps and reasons.
+
+Hub monitoring uses the dashboard's **batch-registration cohort**, with known
+handling history through the current as-of time. This differs from mobile's
+disposal-date period selection; equal time filters need not produce equal totals.
+Hub recorded collection may include Measured evidence, whereas Overview's official
+collection KPI requires the stricter existing validated-intake rules. Unknown
+evidence stays unavailable rather than becoming a fabricated zero.
+
+### Hub Intake and Disposal Balances (20 October 2026)
+
+Overview summaries, Recovery Monitoring and attributed Hub Facilities analytics
+use the same collection/disposal evidence and balance rules:
+
+- **Textiles Received by Hubs:** recorded physical intake, once per batch, with
+  the number of batches covered. Neither listing weights nor disposal records
+  are substituted for a missing receipt.
+- **Recorded Hub Disposal:** the existing unique disposal-ledger weights,
+  including partial disposal and archived batch history.
+- **Awaiting Disposal:** intake minus recorded disposal and evidenced transfers
+  out. The total is published only when every linked batch has a reconciled
+  balance and the disposal feed is available. A known empty balance is zero;
+  missing intake, invalid disposal, ambiguous transfer evidence, multiple Hub
+  allocations or outflows exceeding intake leave the balance unavailable.
+
+Agreed transfer quantities, reservations and listing inventory are not physical
+outflows. Measured Hub handover evidence takes precedence over reported handover
+weight; superseded readings do not count. Repeated listings do not duplicate
+batch balances. Aggregate-only accounts retain totals without record identities.
+The disposal ledger no longer displays a landfill-diversion tile. No new intake
+receipts are backfilled, and this change adds no mobile or database write path.
+
+### Remaining Mobile Handoff
+
+The mobile developer must reconcile the still-active weighing UI and shared
+`mobile_can_weigh` / disposal authorization with the collect-and-dispose-only
+business contract, and establish an explicit collection receipt if desired.
+Web permission restrictions do **not** change direct Supabase mobile RPC/RLS
+authorization. Existing approval controls still use the shared organization flag;
+approving an operator can therefore retain older mobile weighing authority.
+No operator is automatically approved by this web update.
+
+Validation: isolated server fixtures, browser interception and production builds;
+no shared-account provisioning, collection/disposal writes or migrations.
+
+## Historical Weighing Contract
 
 Contract checked against the shared Supabase SQL definitions on 18 October 2026.
 This web change includes narrowly scoped shared-function compatibility updates;
@@ -9,7 +121,7 @@ Browser/unit tests use isolated fixtures.
 
 | Purpose | Shared contract | Web behavior |
 | --- | --- | --- |
-| Hub operator | `users.role = 'BalikTela Hub'` | Explicit mobile-compatible role, managed under Facility Analytics > Hub Management. Never grants administrator access. |
+| Hub account | `users.role = 'BalikTela Hub'` | Explicit mobile-compatible role, managed under Recovery Monitoring > Hub Management. Never grants administrator access. |
 | Compatible operator | `users.role = 'Recycler'` | Existing approved Recycler accounts continue to work. No bulk conversion or duplicate profiles. |
 | Weighing approval | `users.organization_verified = true` | Approval requires an active account, verified email and initialized private password. |
 | Directory availability | Active approved Hub or Recycler, account not suspended/deactivated | Pending operators remain visible to administrators for review. Approval preserves the existing role. |
@@ -102,6 +214,22 @@ Other listings are marked locked. The web does not execute weighing mutations.
 
 ### Overview Evidence Definitions (19 October 2026)
 
+- **Recorded Hub Disposal** replaces the former **Confirmed Reuse + Recycling**
+  main tile. It sums unique `hub_disposals.weight_kg` entries linked to the
+  selected batch-registration cohort, including archived materials, through the
+  current as-of time. The same helper supplies Hub monitoring and operation totals.
+  Partial disposal entries are additive; `listings.disposed_weight_kg` is a
+  cumulative stock counter and is never added to the ledger. Duplicate IDs count
+  once; conflicting duplicates, invalid/future weights or dates, missing reasons,
+  unknown operators and broken links cannot inflate the sum. Historical records
+  survive later role/approval changes. A missing feed displays Not available;
+  invalid-only evidence displays Pending evidence. An available empty ledger
+  reports zero recorded events. Values are converted from kilograms to metric tons.
+  Example: two entries of 2 kg and 3 kg equal 5 kg (0.005 t), not 10 kg after adding
+  the cumulative listing counter. The registration-date basis is not mobile's
+  disposal-event-date basis. Disposal does not enter the recovery-share numerator
+  or establish landfill diversion. Final reuse/recycling outputs remain available
+  in lifecycle charts, reports and governance calculations.
 - **Total Textiles Collected:** validated `Collection` recovery-record output,
   once per batch, regardless of textile condition. Where no collection record
   exists, a single unambiguous, non-superseded Verified receipt with verifier
@@ -165,6 +293,13 @@ check against the live Supabase snapshot, chart totals and regional totals.
 
 ## Mobile Evidence and Statuses
 
+- Material Registry offers only Estimated and Measured weight statuses. Historical
+  Verified weights display and filter as Measured, including the measured-mass
+  summary, without rewriting canonical records or verifier history. Missing status
+  remains unclassified. Registry registration/correction cannot assign Verified;
+  an unrelated metadata edit preserves existing verification and current stock,
+  while a changed weight requires a new Estimated/Measured reading. Other modules
+  retain canonical verification checks for collection and final-outcome analytics.
 - Native drafts, archives, revised/expired/withdrawn requests and transfer
   processing/closure states remain distinct and round-trip without rewriting
   the original state. Unknown states are explicitly labeled and not actionable.
@@ -183,7 +318,7 @@ check against the live Supabase snapshot, chart totals and regional totals.
 
 ## Web Corrections and Bulk Demo Import (19 October 2026)
 
-- Recovery Monitoring and Facility Analytics > Hub Disposals read the existing
+- Recovery Monitoring > Hub Disposals reads the existing
   `hub_disposals` fields: `id`, `listing_id`, `operator_id`, `listing_title`,
   `category`, `weight_kg`, `reason`, `disposed_at`. They join the original listing
   to the batch cohort, preserve archived disposal history, exclude incomplete
@@ -193,9 +328,17 @@ check against the live Supabase snapshot, chart totals and regional totals.
 - The ledger has no structured final destination or avoided-landfill baseline.
   **Recorded disposal mass is not diverted-from-landfill mass.** Disposal,
   collection, transfer activity and validated final recovery remain distinct.
-- Listing status filtering and displayed labels use the same disposal/remainder
-  rules. Reserved, partially/fully disposed and pending-remainder stock cannot
-  be reopened by administrative moderation.
+- Listing Oversight uses the mobile **My textiles** categories: `draft` -> Draft,
+  `available` -> Available, `matched` / `reserved` -> In progress,
+  `completed` -> Completed, `closed` / `archived` -> Closed. The original mobile
+  state remains visible beneath the category and is never rewritten by grouping.
+  Unknown source states remain Unknown, not available or completed.
+- Disposal and remainder flags have a separate Handling column and filter; they
+  do not replace the mobile listing status. Partially disposed stock can remain
+  Available, while a pending-remainder draft stays Draft. Reserved,
+  partially/fully disposed and pending-remainder stock cannot be reopened by
+  administrative moderation. Refresh reads current shared records; visible pages
+  also refresh on focus and every 30 seconds without changing mobile workflows.
 - Traceability uses one shared status grouping, including `processed`,
   `processing`, `collected` and closed states. Completed rows without a final
   weight no longer fall back to agreed quantities. Batch details show original
@@ -312,14 +455,131 @@ still requires acknowledgement of synthetic inputs and retains duplicate guards.
 This is a presentation policy, not a data conversion. Original `is_demo` flags,
 IDs, source names, lifecycle notes, audit records and mobile records are preserved.
 Governance and exported report caveats disclose the combined PoC boundary. The
-footer identifies the PoC workspace. Reported engagement summaries are labeled
-**Reported Active Users**, not measured distinct authenticated accounts. The
+footer identifies the PoC workspace. Platform Engagement reads source records,
+not synthetic interaction summaries (see below). The
 undefined stakeholder reliability score is omitted from the profile drawer.
 Forecasts retain their fixed synthetic training snapshot and methodology details;
 importing lifecycle records does not retrain them. No missing links, weights,
 physical outcomes or environmental evidence are manufactured by this policy.
 
+## Record-Based Platform Engagement
+
+- Registered Accounts counts unique Auth UUIDs on current profiles, excluding
+  unlinked/seeded profiles, invalid dates and registrations after the as-of time.
+  This includes real test registrations and disabled accounts; it is not distinct
+  people, active accounts or new registrations within the selected dates. Profile
+  geography, organization, stakeholder role and caller scope apply, not textile
+  category. The same count replaces the old active-user tile on Overview.
+- Material listings, match requests (all states) and completed/processed transfers
+  count unique IDs within the existing selected batch cohort. Synthetic lifecycle
+  records remain included under the disclosed PoC scope, not relabeled as actual
+  observed usage. Imports update these counts once; they do not create accounts.
+- Report exports count `report.exported` Report audit events within the selected
+  Philippine reporting dates. Admins see platform counts; other roles see only
+  their own events. CSV and print generation count, not previews or failed requests.
+  Material filters do not select export events. A failed audit feed is unavailable,
+  not zero. Supabase reads only matching events through bounded keyset pages.
+- Active users, sessions and average session duration remain null/unavailable.
+  Existing synthetic `system_interactions` rows are retained but ignored; the web
+  does not claim mobile/web telemetry coverage or manufacture sessions from logins.
+- Successful exports invalidate the web analytics cache so returning to Overview
+  reloads the audit-derived count. No mobile code, schema or real records are changed.
+
 ## Verification
+
+### Hub Workspace Location
+
+Recovery Monitoring is the only page hosting Hub Collection & Disposal, Hub
+Management (or the read-only Hub Directory), and Hub Disposals. Hub accounts open
+directly on Recovery Monitoring after sign-in. Existing `hubs.read` / `hubs.manage`
+permissions still control read access and administrative approval/assignment.
+Aggregate-only viewers may open the monitoring workspace, but receive regional
+summaries without operator/listing identities or processing-record actions.
+
+Traceability retains transfers and permission-gated historical listing weights;
+it does not host Hub handling or management. Hub Facilities provides the Hub
+analytics table and capacity/utilization calculations without operational Hub
+tabs. Overview retains summary analytics, not a second Hub operations workspace.
+This is a web navigation change, not a mobile workflow or database migration.
+
+### Hubs: One Registry
+
+All seven existing facility records are registered **Hubs**, not a separate
+category of sites. Their existing `facilities` records and IDs remain the same
+ones used by Hub Management assignments, receipt measurements and historical
+records. There is no extra site registry and no duplicate Hub creation. The
+registered-Hub count comes from these records, never from the number of login
+accounts. Two Hub accounts do not reduce the seven registered Hubs to two or
+increase them to nine. Accounts are authorized to operate assigned Hubs.
+
+The shared database keeps its `facilities` table/column names and historical type
+values for mobile compatibility. User-facing classifications are Hub. No new
+login accounts or permissions are created by this reconciliation, and missing
+account-to-Hub links remain explicit as **No operator assigned**.
+
+Hub Facilities retains the compact performance table: capacity, utilization,
+recorded intake, historical confirmed output, processing time and status. It uses
+the dashboard `facilities` performance view for all seven registered Hubs, as do
+Overview's Hub utilization chart and stakeholder Hub capacity. An account
+assignment is not required to recognize directly linked validated history.
+Assigned Hubs are not excluded from this view.
+
+Handling intake counts each batch once per Hub, using a measured collection
+receipt when available, otherwise its earliest balanced validated operation
+(collection output or another stage's input). Receipt evidence replaces that
+batch's operation intake rather than being added a second time. Later sorting,
+processing and recovery stages do not multiply handling volume. Missing
+processing time remains not reported; stored intake counters are not used.
+
+The separate `hubFacilities` operational-evidence payload retains canonical Hub
+collection/disposal attribution and balances for monitoring/reconciliation. Its
+account-link gaps do not disable the registered-Hub performance table. Intake
+from historical operation inputs is a handling-volume measure, not proof of a
+Hub collection receipt, disposal, or landfill diversion. Historical confirmed
+reuse/recycling output is never labeled Hub disposal.
+
+An explicit Hub ID (the legacy `facility_id`) on a collection receipt establishes
+its location. Otherwise a single current account-to-Hub assignment is used and
+disclosed as such, not as a proven historical assignment. Missing or multiple
+possible Hubs remain unattributed; weights are never divided among Hubs by
+guesswork. The page reports unattributed batch/weight totals separately. Accounts
+with no Hub assignment require an administrator's assignment in Recovery Monitoring.
+
+Capacity is configured monthly handling volume prorated across the reporting
+period, not storage occupancy. Utilization is attributed recorded Hub intake /
+period capacity, with the same percentage thresholds as the status badge. Missing
+intake or capacity makes utilization unavailable; stored intake counters, listing
+weights, processing output and disposal totals do not substitute for receipts.
+Awaiting disposal subtracts accepted disposal and evidenced Hub transfers out,
+and remains unavailable for missing/conflicting evidence. Aggregate-only viewers
+receive regional groups without Hub/account identifiers.
+
+### Governance and Policy Monitoring
+
+Governance uses the global reporting filters and the same registration cohort,
+validated intake, outcome allocation and recovery-share calculator as Overview.
+Its four sections map to blueprint GOV-01 through GOV-06:
+
+- Policy Summary: current/prior material evidence, intake coverage, source
+  organization participation and a separate Hub disposal summary.
+- Regional Performance: collection comparisons, final outcomes, missing intake,
+  participating source accounts, participating approved Hubs and matching sites.
+- Producer Evidence: original source-organization/region groups, not downstream
+  ownership. Government and aggregate-only viewers receive regional groups with
+  no organization names, account identifiers or individual records.
+- Accountability and Methodology: scoped quality counts, evidence limitations,
+  current privacy/export permissions and permission-aware links to existing
+  records, audit and report modules. Report exports retain their existing checks.
+
+The read-only governance endpoint does not create policy approvals, regulatory
+certifications or environmental conversions. Missing collection stays unknown;
+no collection baseline means no percentage change. Disposal includes archived
+history under the selected registration filters and never becomes diversion.
+Regional footprint counts are not a certification of geographic service coverage.
+Current and prior values use outcomes known at the same reporting timestamp.
+
+Run `npm run test:governance:ui` for isolated role, filtering, pagination, refresh,
+empty/error-state and desktop/mobile checks. No live database writes are needed.
 
 `npm test` includes Hub contract, nullable-mass, measurement provenance, approval,
 permission, privacy and session-revocation checks. `npm run test:hubs:ui` checks

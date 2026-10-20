@@ -96,7 +96,9 @@ export interface ReportDocument {
   period: ReportingPeriod;
   scope: { role: string; aggregateOnly: boolean; canExport: boolean; description: string };
   filters: Array<{ label: string; value: string }>;
-  summary: Array<{ label: string; value: string }>;
+  summary: Array<{ label: string; value: string; description?: string }>;
+  interpretation?: Array<{ label: string; text: string }>;
+  definitions?: Array<{ label: string; text: string }>;
   columns: string[];
   rows: string[][];
   notes: string[];

@@ -18,7 +18,7 @@ import { PageActivity } from './hooks/PageActivity';
 export type PageKey = 'overview' | 'listings' | 'materials' | 'operations' | 'waste' | 'transactions' | 'stakeholders' | 'facilities' | 'geographic' | 'advanced' | 'quality' | 'governance' | 'reports' | 'organizations' | 'users' | 'audit' | 'profile' | 'settings';
 
 const dataPages = new Set<PageKey>(['overview', 'waste', 'transactions', 'stakeholders', 'facilities', 'geographic', 'advanced']);
-const filterablePages = new Set<PageKey>([...dataPages, 'materials', 'operations', 'quality', 'reports']);
+const filterablePages = new Set<PageKey>([...dataPages, 'materials', 'operations', 'quality', 'reports', 'governance']);
 const pageModules = {
   overview: () => import('./pages/Overview'), listings: () => import('./pages/ListingOversight'), materials: () => import('./pages/MaterialRegistry'),
   traceability: () => import('./pages/TraceabilityWorkspace'), operations: () => import('./pages/RecoveryOperations'), waste: () => import('./pages/WasteAnalytics'),
@@ -67,11 +67,11 @@ function App() {
 
 function DashboardWorkspace() {
   const { user, access } = useAuth();
-  const [activePage, setActivePage] = useState<PageKey>('overview');
-  const [visitedPages, setVisitedPages] = useState<Set<PageKey>>(() => new Set(['overview']));
+  const [activePage, setActivePage] = useState<PageKey>(access?.hubOperator ? 'operations' : 'overview');
+  const [visitedPages, setVisitedPages] = useState<Set<PageKey>>(() => new Set([access?.hubOperator ? 'operations' : 'overview']));
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [advancedMode, setAdvancedMode] = useState('Diagnostic');
-  const restricted = !canAccessPage(access, activePage) || Boolean(user?.scope.aggregateOnly && ['listings', 'materials', 'operations'].includes(activePage));
+  const restricted = !canAccessPage(access, activePage) || Boolean(user?.scope.aggregateOnly && ['listings', 'materials'].includes(activePage));
   const currentPage: PageKey = restricted ? 'overview' : activePage;
   const dashboardScopeKey = useMemo(() => JSON.stringify({ id: user?.id, role: user?.role, organizationId: user?.organizationId, scope: user?.scope }), [user]);
   const needsDashboardData = dataPages.has(currentPage);
@@ -104,11 +104,11 @@ function DashboardWorkspace() {
     if (page === 'waste' && data) return <WasteAnalytics data={data} />;
     if (page === 'transactions' && data) return <TraceabilityWorkspace data={data} filters={filters} />;
     if (page === 'stakeholders' && data) return <Stakeholders data={data} />;
-    if (page === 'facilities' && data) return <Facilities data={data} filters={filters} />;
+    if (page === 'facilities' && data) return <Facilities data={data} />;
     if (page === 'geographic' && data) return <Geographic data={data} />;
     if (page === 'advanced' && data) return <AdvancedAnalytics data={data} onModeChange={setAdvancedMode} />;
     if (page === 'quality') return <DataQuality filters={filters} />;
-    if (page === 'governance') return <Governance />;
+    if (page === 'governance') return <Governance filters={filters} onNavigate={openPage} />;
     if (page === 'reports') return <Reports filters={filters} active={currentPage === 'reports'} />;
     if (page === 'organizations') return <OrganizationAdmin />;
     if (page === 'users') return <UserAccounts />;
@@ -121,7 +121,7 @@ function DashboardWorkspace() {
   return (
     <Layout activePage={currentPage} onPageChange={openPage} dataContextLabel={currentPage === 'advanced' && advancedMode === 'Predictive' ? 'Forecast model · Fixed snapshot' : undefined}>
       <div className="space-y-6">
-        {filterablePages.has(currentPage) && (currentPage !== 'advanced' || advancedMode === 'Diagnostic') ? <FilterBar filters={filters} onChange={setFilters} /> : null}
+        {filterablePages.has(currentPage) && (currentPage !== 'advanced' || advancedMode === 'Diagnostic') ? <FilterBar filters={filters} onChange={setFilters} registry={currentPage === 'materials'} /> : null}
         {needsDashboardData && isRefreshing && data ? <p className="flex items-center gap-2 text-xs text-[#66736e]" role="status"><LoaderCircle size={14} className="animate-spin" />Refreshing analytics…</p> : null}
         {needsDashboardData && isLoading && !data ? <LoadingBlock /> : null}
         {needsDashboardData && error && !data ? <ErrorBlock message={error} /> : null}
@@ -138,7 +138,7 @@ function DashboardWorkspace() {
 
 function DashboardAccessBoundary() {
   const { user, logout } = useAuth();
-  const pending = user?.accountStatus === 'Pending verification' || user?.role === 'BalikTela Hub' && !user.organizationVerified;
+  const pending = user?.accountStatus === 'Pending verification' || (user?.role === 'BalikTela Hub' || user?.webHubOperator) && !user.organizationVerified;
   return <AuthLayout><section className="auth-form auth-boundary"><ShieldX size={24} className="text-amber-700" aria-hidden="true" /><h1 className="auth-title mt-5">{pending ? 'Account approval is pending' : 'Dashboard access is not assigned to this role'}</h1><p className="auth-description">{pending ? `${user?.fullName}, your email and password are registered. A system administrator must verify your organization and approve your institutional access.` : `${user?.fullName}, participant exchange, communication, rewards, and engagement activity belongs to the BalikTela mobile application. This web dashboard is reserved for authorized management, monitoring, analytics, governance, and research roles.`}</p><Button className="mt-7 w-full" variant="outline" onClick={logout}>Sign out</Button></section></AuthLayout>;
 }
 

@@ -162,7 +162,7 @@ export function GeographicMap({ regions, metric, onMetricChange, selectedRegion,
       {activeRegion && ready ? <aside className="geo-map-detail" aria-label="Selected region">
         <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm font-semibold">{activeRegion.region}</p><p className="mt-1 text-xs text-[#66736e]">Reference location: {anchors[activeRegion.region]?.city ?? 'Not mapped'}</p></div><Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" title="Close regional detail" aria-label="Close regional detail" onClick={() => onSelectRegion(null)}><X size={15} /></Button></div>
         <p className="mt-4 text-xs text-[#66736e]">{activeMetric.description}</p><p className="mt-1 text-2xl font-semibold tabular-nums">{hasGeographicEvidence(activeRegion, metric) ? formatMass(geographicValue(activeRegion, metric)) : 'Pending evidence'}</p>
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-[#e5eae7] pt-3 text-xs text-[#66736e]"><span>{activeRegion.collectionPoints} collection points</span><span>{activeRegion.recyclers} recyclers</span></div>
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-[#e5eae7] pt-3 text-xs text-[#66736e]"><span>{activeRegion.collectionPoints} registered Hubs</span><span>{activeRegion.recyclers} recyclers</span></div>
       </aside> : null}
       {!regions.length && ready ? <div className="geo-map-message" role="status">No regional activity matches the current filters.</div> : null}
     </div>

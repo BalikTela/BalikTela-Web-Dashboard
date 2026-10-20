@@ -11,6 +11,7 @@ export type Permission =
   | 'hubs.read' | 'hubs.manage' | 'weighing.read';
 
 export interface AccessSummary {
+  hubOperator?: boolean;
   role: StakeholderType;
   permissions: Permission[];
   scope: PlatformUser['scope'];
@@ -26,6 +27,7 @@ export interface AuthSessionSummary {
 }
 
 export interface PlatformUser {
+  webHubOperator?: boolean;
   id: string;
   email: string;
   fullName: string;
@@ -57,6 +59,7 @@ export interface PlatformUser {
 }
 
 export interface BarterListing {
+  recyclability?: import('../shared/materialClassification.js').Recyclability;
   id: string;
   batchId: string;
   ownerId: string;
@@ -187,6 +190,9 @@ export interface OperationsAnalytics {
 }
 
 export interface DashboardAnalytics {
+  hubFacilities?: import('../shared/hubFacilities.js').HubFacilityAnalytics;
+  hubOperations?: import('../shared/hubs.js').HubOperationsMonitoring['summary'];
+  hubDisposal?: Pick<import('../shared/hubs.js').HubDisposalMonitoring, 'available' | 'summary'>;
   materialEvidence?: {
     collectedBatches: number; missingCollectionBatches: number; reuseRecords: number; recyclingRecords: number;
     completedKg: number; completedWithWeight: number; completedMissingWeight: number; completedReportedWeight: number;
@@ -216,6 +222,7 @@ export interface Measurement {
 }
 
 export interface MaterialBatch {
+  recyclability?: import('../shared/materialClassification.js').Recyclability;
   id: string; sourceUserId: string; sourceOrganizationId: string | null; materialCategory: string;
   wasteSource: BarterListing['wasteSource']; wasteForm: BarterListing['wasteForm']; condition: BarterListing['quality']; circularPathway: CircularPathway;
   declaredWeightKg: number | null; currentWeightKg: number | null; weightStatus: WeightStatus | null; secondaryQuantity: number | null; secondaryUnit: string | null;
@@ -252,6 +259,7 @@ export interface PlatformConfiguration {
 }
 
 export interface GovernanceData {
+  monitoring: import('../shared/governance.js').GovernanceMonitoring;
   methodology: { environmentalImpact: string; predictiveAnalytics: string; massAccounting: string; version: string };
   privacy: { role: StakeholderType; aggregateOnly: boolean; exportAllowed: boolean; policy: string };
   policyIndicators: Array<{ label: string; status: string; caveat: string }>;

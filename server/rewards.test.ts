@@ -25,14 +25,26 @@ const entries = [entry('a1', 'a', 12), entry('a2', 'a', -2, 'reversal'), entry('
   entry('b1', 'b', 7), entry('b2', 'b', 3, 'adjustment'), entry('d1', 'd', -4, 'adjustment'),
   ...members.filter(member => member.role !== 'Consumer' || !member.active).map(member => entry(member.id, member.id, 999))];
 
-test('rewards exactly follows Consumer eligibility, signed scoring, zero scores and competition ties', () => {
+test('rewards follows Consumer eligibility, signed scoring, zero scores and dense ties', () => {
   const result = rewardsPage(members, entries, { view: 'leaderboard', page: 1, limit: 20 });
   assert.deepEqual(result.summary, { consumers: 4, consumersWithPoints: 2, accumulatedPoints: 20 });
-  assert.deepEqual(result.leaderboard.map(member => [member.id, member.points, member.rank]), [['b', 10, 1], ['a', 10, 1], ['d', 0, 3], ['c', 0, 3]]);
+  assert.deepEqual(result.leaderboard.map(member => [member.id, member.points, member.rank]), [['b', 10, 1], ['a', 10, 1], ['d', 0, 2], ['c', 0, 2]]);
   const second = rewardsPage(members, entries, { view: 'leaderboard', page: 2, limit: 1 });
   assert.deepEqual(second.leaderboard, [result.leaderboard[1]]); assert.equal(second.leaderboard[0].rank, 1);
   assert.equal(second.total, 4); assert.equal(second.pages, 4);
   assert.equal(rewardsPage(members, entries, { view: 'leaderboard', page: 99, limit: 1 }).page, 4);
+});
+
+test('dense ranks count distinct scores across page boundaries, never resetting per page', () => {
+  const consumers = Array.from({length:6},(_,index)=>({id:String(index),name:`Consumer ${index}`,role:'Consumer',active:true}));
+  const scores = [10,10,5,5,0,0];
+  const activity = scores.map((points,index)=>entry(`ENTRY-${index}`,String(index),points));
+  const all = rewardsPage(consumers,activity,{view:'leaderboard',page:1,limit:20});
+  assert.deepEqual(all.leaderboard.map(member=>member.rank),[1,1,2,2,3,3]);
+  for(let page=1;page<=6;page++) {
+    const result=rewardsPage(consumers,activity,{view:'leaderboard',page,limit:1});
+    assert.deepEqual(result.leaderboard,[all.leaderboard[page-1]]);
+  }
 });
 
 test('activity preserves signed entries, redemptions, current names, deterministic paging and cohort', () => {

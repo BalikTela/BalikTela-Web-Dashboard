@@ -10,6 +10,8 @@ assert.equal(process.env.SUPABASE_URL, parse(readFileSync('.env')).SUPABASE_URL,
 if (!process.env.SUPABASE_DB_URL) throw new Error('Database profile is required.');
 const sql = postgres(process.env.SUPABASE_DB_URL, { max: 1, prepare: false, ssl: 'require', connect_timeout: 20 });
 const migration = readFileSync('supabase/migrations/20261021040000_dashboard_rewards.sql', 'utf8');
+const denseMigration = readFileSync('supabase/migrations/20261022002000_dashboard_rewards_dense_ranking.sql', 'utf8')
+  .replace(/^begin;$/m, '').replace(/^commit;$/m, '');
 const rollback = new Error('Rewards regression rollback');
 const normalize = (value: any) => ({ ...value, activity: value.activity.map((entry: RewardActivity) => ({ ...entry, createdAt: new Date(entry.createdAt).toISOString() })) });
 try {
@@ -18,6 +20,7 @@ try {
   try {
     await sql.begin(async tx => {
       await tx.unsafe(migration);
+      await tx.unsafe(denseMigration);
       const [permissions] = await tx`select has_function_privilege('anon','public.dashboard_rewards(text,integer,integer)','EXECUTE') anon,
         has_function_privilege('authenticated','public.dashboard_rewards(text,integer,integer)','EXECUTE') authenticated,
         has_function_privilege('service_role','public.dashboard_rewards(text,integer,integer)','EXECUTE') service`;
@@ -30,12 +33,14 @@ try {
         const [web] = await tx`select public.dashboard_rewards('leaderboard', ${page}, ${limit}) value`;
         const [mobile] = await tx`select public.mobile_points_leaderboard(${web.value.page}, ${limit}) value`;
         assert.equal(web.value.total, mobile.value.total);
-        assert.deepEqual(web.value.leaderboard, mobile.value.data.map(({ role: _role, ...member }: { role: string }) => member));
+        assert.deepEqual(web.value.leaderboard.map(({rank:_rank,...member}:{rank:number})=>member),
+          mobile.value.data.map(({role:_role,rank:_rank,...member}:{role:string;rank:number})=>member));
         assert.equal(mobile.value.me, null);
       }
       await tx.unsafe('create temporary table reward_members(id text primary key,name text,role text,active boolean) on commit drop');
       await tx.unsafe('create temporary table reward_entries(id text primary key,user_id text,title text,points integer,entry_type text,created_at timestamptz) on commit drop');
-      const fixtureFunction = migration.slice(0, migration.indexOf('REVOKE ALL')).replaceAll('public.dashboard_rewards', 'pg_temp.reward_fixture')
+      const [definition] = await tx`select pg_get_functiondef('public.dashboard_rewards(text,integer,integer)'::regprocedure) source`;
+      const fixtureFunction = definition.source.replaceAll('public.dashboard_rewards', 'pg_temp.reward_fixture')
         .replaceAll('public.users', 'pg_temp.reward_members').replaceAll('public.reward_ledger', 'pg_temp.reward_entries');
       await tx.unsafe(fixtureFunction);
       const members = [
@@ -65,9 +70,9 @@ try {
       throw rollback;
     });
   } catch (error) { if (error !== rollback) throw error; }
-  if (process.argv.includes('--apply')) await sql.begin(tx => tx.unsafe(migration));
+  if (process.argv.includes('--apply')) await sql.begin(async tx => { await tx.unsafe(migration); await tx.unsafe(denseMigration); });
   const afterFunctions = await sql`select oid::text, pg_get_functiondef(oid) definition from pg_proc where oid in (to_regprocedure('public.mobile_award_listing_points()'), to_regprocedure('public.mobile_points_leaderboard(integer,integer)')) order by oid`;
   assert.deepEqual(afterFunctions, originalFunctions);
-  console.log(JSON.stringify({ mobileLeaderboardParity: 'passed', scoringAndPaginationFixtures: 'passed', serviceOnlyAccess: 'passed', mobileFunctionsUnchanged: true,
+  console.log(JSON.stringify({ mobileScoresAndOrderingParity: 'passed', denseRankingAndPagination: 'passed', scoringAndPaginationFixtures: 'passed', serviceOnlyAccess: 'passed', mobileFunctionsUnchanged: true,
     permanentAccountOrRewardWrites: 0, readOnlyAdapterApplied: process.argv.includes('--apply') }, null, 2));
 } finally { await sql.end(); }

@@ -18,7 +18,7 @@ const address = server.address(); assert.ok(address && typeof address !== 'strin
 const browser = await chromium.launch({ headless:true, executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
 const output = '/tmp/baliktela-traceability-ui'; await mkdir(output,{recursive:true});
 try {
-  for (const width of [375,1366,2560]) {
+  for (const width of [320,375,768,1366,2560]) {
     const context = await browser.newContext({viewport:{width,height:900},reducedMotion:'reduce'});
     const page = await context.newPage(); const errors:string[]=[];
     page.on('pageerror',error=>errors.push(error.message));
@@ -53,12 +53,27 @@ try {
     const refresh=()=>page.evaluate(()=>window.dispatchEvent(new CustomEvent('baliktela:records-changed',{detail:'/transfers'})));
     await active.getByRole('button',{name:'TRACEABILITY-OK',exact:true}).waitFor();
     assert.equal(offerRequests,0,'Transfer monitoring must not wait for an unrelated offers lookup.');
-    assert.equal(await active.locator('thead th').first().innerText(),'Requester');
+    assert.equal(await active.locator('thead th').first().innerText(),'Transaction ID');
     await active.getByRole('columnheader',{name:'Transaction ID',exact:true}).waitFor();
-    await active.getByRole('columnheader',{name:'Batch ID',exact:true}).waitFor();
+    assert.equal(await active.getByRole('columnheader',{name:'Batch ID',exact:true}).count(),0);
+    assert.equal(await active.locator('thead th:nth-last-child(2)').innerText(),'Status');
     assert.equal(await active.getByRole('columnheader',{name:'Transfer',exact:true}).count(),0);
     assert.equal(await active.getByRole('columnheader',{name:'Batch',exact:true}).count(),0);
-    await active.locator('tbody').getByText('Metro Textile Review Requester',{exact:true}).waitFor();
+    await active.locator('tbody').getByText('Metro Textile Review Requester').filter({visible:true}).waitFor();
+    const expand=active.getByRole('button',{name:'Expand transaction TRACEABILITY-OK',exact:true});
+    await expand.click();
+    const details=active.getByRole('region',{name:'Transaction details for TRACEABILITY-OK',exact:true});
+    await details.getByText('Batch ID',{exact:true}).waitFor();
+    await details.getByText(seed.transfers[0].batchId,{exact:true}).waitFor();
+    await details.getByText('Reported handover',{exact:true}).waitFor();
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
+    await page.screenshot({path:`${output}/expanded-${width}.png`,fullPage:true});
+    await details.getByRole('button',{name:'View timeline',exact:true}).click();
+    await page.getByRole('dialog').waitFor();
+    await page.getByRole('button',{name:'Close transfer detail',exact:true}).click();
+    const collapse=active.getByRole('button',{name:'Collapse transaction TRACEABILITY-OK',exact:true});
+    await collapse.focus();await page.keyboard.press('Enter');
+    await details.waitFor({state:'hidden'});
     const search=active.getByRole('textbox',{name:'Search transfers',exact:true});
     await search.fill('  METRO TEXTILE  ');
     assert.equal(await active.locator('tbody tr').count(),1,'Requester search should ignore surrounding whitespace and letter case.');
@@ -72,6 +87,12 @@ try {
     await active.getByRole('alert').getByText('Offer service temporarily unavailable.').waitFor();
     offersFail=false;await retry.click();
     await active.locator('tbody').getByText(seed.offers[0].id,{exact:true}).waitFor();
+    await active.getByRole('button',{name:`Expand offer ${seed.offers[0].id}`,exact:true}).click();
+    const offerDetails=active.getByRole('region',{name:`Offer details for ${seed.offers[0].id}`,exact:true});
+    await offerDetails.getByText('Terms',{exact:true}).waitFor();
+    await search.fill('no matching offer');
+    await active.getByText('No offers match these filters.',{exact:true}).waitFor();
+    await search.fill('');
     await active.getByRole('button',{name:'Transfers',exact:true}).last().click();
     await active.getByRole('button',{name:'TRACEABILITY-OK',exact:true}).waitFor();
 
@@ -105,12 +126,12 @@ try {
     assert.equal(await active.locator('tbody tr').count(),1,'Requester search must run before pagination.');
     await search.fill('');
     many=false;missingName=true;await refresh();
-    await active.locator('tbody').getByText('Name unavailable',{exact:true}).waitFor();
+    await active.locator('tbody').getByText('Name unavailable').filter({visible:true}).waitFor();
     await search.fill(seed.transfers[0].recipientId);
     assert.equal(await active.locator('tbody tr').count(),1,'An unavailable account name must not prevent an ID lookup.');
     await search.fill('');
     missingName=false;await refresh();
-    await active.locator('tbody').getByText('Metro Textile Review Requester',{exact:true}).waitFor();
+    await active.locator('tbody').getByText('Metro Textile Review Requester').filter({visible:true}).waitFor();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
     assert.deepEqual(errors,[]);assert.equal(writes,0);
     await page.screenshot({path:`${output}/loaded-${width}.png`});

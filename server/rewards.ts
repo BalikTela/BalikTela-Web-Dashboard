@@ -27,7 +27,11 @@ export function rewardsPage(members: { id: string; name: string; role: string; a
   for (const entry of activity) if (entry.entryType !== 'redemption') points.set(entry.userId, (points.get(entry.userId) ?? 0) + entry.points);
   const leaderboard = [...eligible.values()].map(member => ({ id: member.id, name: member.name, points: Math.max(0, points.get(member.id) ?? 0), rank: 0 }))
     .sort((a, b) => b.points - a.points || a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id));
-  for (let index = 0; index < leaderboard.length; index++) leaderboard[index].rank = index && leaderboard[index - 1].points === leaderboard[index].points ? leaderboard[index - 1].rank : index + 1;
+  let rank = 0;
+  for (let index = 0; index < leaderboard.length; index++) {
+    if (!index || leaderboard[index - 1].points !== leaderboard[index].points) rank++;
+    leaderboard[index].rank = rank;
+  }
   const window = paginationWindow(query.view === 'leaderboard' ? leaderboard.length : activity.length, query.page, query.limit);
   return { view: query.view, summary: { consumers: leaderboard.length, consumersWithPoints: leaderboard.filter(member => member.points > 0).length,
     accumulatedPoints: leaderboard.reduce((sum, member) => sum + member.points, 0) },

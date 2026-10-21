@@ -1,4 +1,5 @@
 export const HUB_STORAGE_THRESHOLD_PERCENT = 90;
+export const HUB_STOCK_ESTIMATE_METHOD = 'Administrative stock estimate';
 export const HUB_SIMULATION_PREFIX = 'SYN-HUBSIM-V1-';
 export const HUB_SIMULATION_PROFILE_NOTE = 'No physical activity. Disabled non-login simulation profile.';
 
@@ -35,6 +36,7 @@ export interface HubStorageRow {
   utilization: number | null; allocatedPercent: number | null; availableToReceiveKg: number | null;
   status: HubStorageStatus; selectable: boolean;
   containsSimulation: boolean; simulationOnly: boolean;
+  estimatedStock?: boolean;
 }
 export interface HubStorageAnalytics {
   illustrativeCapacity: boolean; thresholdPercent: number; asOf: string; aggregateOnly: boolean;

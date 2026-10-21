@@ -1,4 +1,7 @@
-import type { Express } from 'express';
+import type { Express, Response } from 'express';
+import { setImmediate as yieldToIo } from 'node:timers/promises';
+import { AsyncTtlCache, dashboardAnalyticsCacheKey } from './asyncCache.js';
+import { manilaDate } from '../shared/reporting.js';
 import { authorize } from './access-control.js';
 import { requireAuth, type AuthenticatedRequest } from './auth.js';
 import { selectHubCohort, selectAnalyticsCohort, loadDashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
@@ -20,8 +23,8 @@ export function eligibleForWeighing(listing: ListingRecord) {
 }
 function awaiting(listing: ListingRecord) { return listing.quantityKg === null; }
 
-export async function buildHubDirectory(store: Store, actor: UserRecord, query: Record<string, unknown> = {}): Promise<HubDirectory> {
-  const snapshot = await loadDashboardAnalyticsSnapshot(store);
+export async function buildHubDirectory(store: Store, actor: UserRecord, query: Record<string, unknown> = {}, suppliedSnapshot?: DashboardSourceSnapshot): Promise<HubDirectory> {
+  const snapshot = suppliedSnapshot ?? await loadDashboardAnalyticsSnapshot(store);
   const { users, listings: allListings, measurements: allMeasurements, facilities, allBatches: batches, allTransfers: transfers } = snapshot;
   const locked = new Set(transfers.filter(item => !isTerminalTransfer(item.status)).map(item => item.listingId));
   const allowedBatches = new Set(batches.filter(item => inRegionScope(actor, item.region)).map(item => item.id));
@@ -59,9 +62,9 @@ export async function buildHubDirectory(store: Store, actor: UserRecord, query: 
       unassignedFacilities: hubs.filter(item => !item.facilities.length).length } };
 }
 
-export async function buildWeighingMonitoring(store: Store, actor: UserRecord, query: Record<string, unknown>, now = new Date()): Promise<WeighingMonitoring> {
+export async function buildWeighingMonitoring(store: Store, actor: UserRecord, query: Record<string, unknown>, now = new Date(), suppliedSnapshot?: DashboardSourceSnapshot): Promise<WeighingMonitoring> {
   // Read full evidence so provenance survives older compact snapshot projections too.
-  const [snapshot, listings, measurements] = await Promise.all([loadDashboardAnalyticsSnapshot(store), store.all('listings'), store.all('measurements')]);
+  const [snapshot, listings, measurements] = await Promise.all([suppliedSnapshot ?? loadDashboardAnalyticsSnapshot(store), store.all('listings'), store.all('measurements')]);
   const cohort = selectAnalyticsCohort(snapshot, actor, { ...query, dateRange: query.dateRange ?? 'All time' }, now);
   const batches = new Map(cohort.currentBatches.map(item => [item.id, item]));
   const scopedListings = listings.filter(item => batches.has(item.batchId));
@@ -106,17 +109,37 @@ export async function buildWeighingMonitoring(store: Store, actor: UserRecord, q
       unweighedBatches: cohort.currentBatches.filter(item => item.declaredWeightKg === null).length } };
 }
 
-export function registerHubRoutes(app: Express, store: Store) {
+export function registerHubRoutes(app: Express, store: Store,
+  readSnapshot = () => loadDashboardAnalyticsSnapshot(store),
+  responseCache = new AsyncTtlCache<unknown>(30_000, 24)) {
+  async function cached(req: AuthenticatedRequest, res: Response, kind: string,
+    build: (snapshot: DashboardSourceSnapshot, now: Date) => unknown | Promise<unknown>) {
+    const startedAt = performance.now(), now = new Date();
+    const key = `${kind}:${dashboardAnalyticsCacheKey(req.actor!, { ...req.query, reportingDay: manilaDate(now) })}`;
+    const result = await responseCache.getOrCreate(key, async () => {
+      const snapshot = await readSnapshot();
+      await yieldToIo();
+      return build(snapshot, now);
+    });
+    res.setHeader('Server-Timing', `hub;dur=${(performance.now() - startedAt).toFixed(1)}`);
+    res.setHeader('X-BalikTela-Cache', result.status);
+    res.json(result.value);
+  }
   app.use(['/api/hubs', '/api/weighing', '/api/hub-disposals'], (_req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
-  app.get('/api/hubs', requireAuth, authorize(store, 'hubs.read'), async (req: AuthenticatedRequest, res) => res.json(await buildHubDirectory(store, req.actor!, req.query)));
-  app.get('/api/weighing', requireAuth, authorize(store, 'weighing.read'), async (req: AuthenticatedRequest, res) => res.json(await buildWeighingMonitoring(store, req.actor!, req.query)));
-  app.get('/api/hub-disposals', requireAuth, authorize(store, 'hubs.read'), async (req: AuthenticatedRequest, res) => res.json(await buildHubDisposalMonitoring(store, req.actor!, req.query)));
+  app.get('/api/hubs', requireAuth, authorize(store, 'hubs.read'), async (req: AuthenticatedRequest, res) =>
+    cached(req, res, 'directory', snapshot => buildHubDirectory(store, req.actor!, req.query, snapshot)));
+  app.get('/api/weighing', requireAuth, authorize(store, 'weighing.read'), async (req: AuthenticatedRequest, res) =>
+    cached(req, res, 'weighing', (snapshot, now) => buildWeighingMonitoring(store, req.actor!, req.query, now, snapshot)));
+  app.get('/api/hub-disposals', requireAuth, authorize(store, 'hubs.read'), async (req: AuthenticatedRequest, res) =>
+    cached(req, res, 'disposals', (snapshot, now) => buildHubDisposalMonitoring(store, req.actor!, req.query, now, snapshot)));
   app.get('/api/hub-operations', requireAuth, authorize(store, 'hubs.read'), async (req: AuthenticatedRequest, res) => {
     res.setHeader('Cache-Control', 'private, no-store');
     validateReportQuery(req.query);
-    const snapshot = await loadDashboardAnalyticsSnapshot(store), actor = req.actor!, now = new Date();
-    const { period, batches } = selectHubCohort(snapshot, actor, req.query, now);
-    res.json(buildHubOperations(snapshot, batches, actor, period.label, now));
+    return cached(req, res, 'operations', (snapshot, now) => {
+      const actor = req.actor!;
+      const { period, batches } = selectHubCohort(snapshot, actor, req.query, now);
+      return buildHubOperations(snapshot, batches, actor, period.label, now);
+    });
   });
   app.patch('/api/hubs/:id', requireAuth, authorize(store, 'hubs.manage'), async (req: AuthenticatedRequest, res) => {
     const target = await store.findById('users', String(req.params.id));
@@ -142,6 +165,7 @@ export function registerHubRoutes(app: Express, store: Store) {
     }
     if (action === 'revoke') { updated.verification = 'Pending demo review'; updated.canonicalVerification = 'pending'; updated.organizationVerified = false; }
     await saveManagement(store, req.actor!, [{ name: 'users', previous: target, record: updated }], `hub.${action}`, target.id, reason);
+    responseCache.clear();
     const revokedSessions = await store.revokeUserSessions(target.id, new Date().toISOString());
     res.json({ message: action === 'approve' ? 'Hub collection and disposal access approved.' : action === 'revoke' ? 'Hub collection and disposal approval revoked.' : 'Hub facility assignment saved.', revokedSessions });
   });

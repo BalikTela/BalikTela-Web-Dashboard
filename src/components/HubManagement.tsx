@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MapPin, Pencil, RefreshCw, Search, ShieldCheck, UsersRound, UserRoundCheck } from 'lucide-react';
+import { LoaderCircle, MapPin, Pencil, RefreshCw, Search, ShieldCheck, UsersRound, UserRoundCheck } from 'lucide-react';
 import type { HubAccount, HubDirectory } from '../../shared/hubs';
 import type { PlatformFacility } from '../platformTypes';
 import type { Filters } from '../types';
@@ -28,20 +28,36 @@ export function HubManagement({ filters }: { filters: Filters }) {
   const [query, setQuery] = useState('');
   const [state, setState] = useState('All approvals');
   const [editing, setEditing] = useState<HubAccount | null>(null);
+  const [openingEditor, setOpeningEditor] = useState<string | null>(null);
+  const editorVersion = useRef(0);
   const requestVersion = useRef(0);
   const { region, city, organizationId, facilityId } = filters;
   const load = useCallback(async () => {
     const version = ++requestVersion.current;
     setRefreshing(true);
     try {
-      const [directory, assigned] = await Promise.all([platformApi.hubs({ region, city, organizationId, facilityId }), canManage ? platformApi.facilities() : Promise.resolve({ facilities: [] })]);
+      const directory = await platformApi.hubs({ region, city, organizationId, facilityId });
       if (version !== requestVersion.current) return;
       setData(directory);
-      setFacilities(assigned.facilities);
       setError('');
     } catch (reason) { if (version === requestVersion.current) setError(reason instanceof Error ? reason.message : 'Unable to load Hub accounts.'); }
     finally { if (version === requestVersion.current) setRefreshing(false); }
-  }, [canManage, region, city, organizationId, facilityId]);
+  }, [region, city, organizationId, facilityId]);
+  useEffect(() => () => { editorVersion.current++; }, []);
+  const openEditor = async (account: HubAccount) => {
+    if (!canManage) return;
+    const version = ++editorVersion.current;
+    setOpeningEditor(account.id);
+    try {
+      const result = await platformApi.facilities();
+      if (version !== editorVersion.current) return;
+      setFacilities(result.facilities);
+      setEditing(account);
+      setError('');
+    } catch (reason) {
+      if (version === editorVersion.current) setError(reason instanceof Error ? reason.message : 'Unable to load Hub assignments.');
+    } finally { if (version === editorVersion.current) setOpeningEditor(null); }
+  };
   useEffect(() => { void load(); return () => { requestVersion.current++; }; }, [load]);
   useRecordRefresh(load, ['/hubs', '/users', '/facilities']);
   const rows = useMemo(() => data?.hubs.filter(item => (state === 'All approvals' || item.state === state)
@@ -70,7 +86,7 @@ export function HubManagement({ filters }: { filters: Filters }) {
               <td className="pr-4"><Badge variant="outline" className={item.state === 'Approved' ? 'text-emerald-800' : item.state === 'Suspended' ? 'text-red-700' : 'text-amber-800'}>{item.state}</Badge><p className="mt-2 text-xs text-slate-500">{item.emailVerified ? 'Email verified' : 'Email pending'} · {item.passwordInitialized ? 'Password set' : 'Password pending'}</p></td>
               <td className="max-w-64 pr-4"><p className="break-words">{item.location || 'Location not recorded'}</p><p className="mt-1 text-xs text-slate-500">{item.facilities.map(facility => facility.name).join(', ') || 'No assigned Hub'}</p></td>
               <td className="tabular-nums">{item.awaitingCollection ?? '--'}</td><td className="whitespace-nowrap tabular-nums">{formatMass(item.collectedKg,'Pending evidence')}</td><td className="whitespace-nowrap tabular-nums">{formatMass(item.disposedKg,'Feed unavailable')}</td>
-              {canManage ? <td><Button variant="ghost" size="icon" title={`Manage Hub ${item.name}`} aria-label={`Manage Hub ${item.name}`} onClick={() => setEditing(item)}><Pencil size={16} /></Button></td> : null}
+              {canManage ? <td><Button variant="ghost" size="icon" disabled={openingEditor !== null} title={`Manage Hub ${item.name}`} aria-label={`Manage Hub ${item.name}`} onClick={() => void openEditor(item)}>{openingEditor === item.id ? <LoaderCircle size={16} className="animate-spin" /> : <Pencil size={16} />}</Button></td> : null}
             </tr>)}</tbody>
           </table></div>}</PaginatedRecords> : <EmptyBlock label="No Hub accounts match these filters." />}
         </>}

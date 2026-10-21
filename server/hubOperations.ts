@@ -4,7 +4,7 @@ import type { HubOperationsMonitoring } from '../shared/hubs.js';
 import { isHubProfile, isHubWeighingMeasurement } from '../shared/hubs.js';
 import { isTerminalTransfer, listingWorkflowStatus } from '../shared/workflows.js';
 import { identifyHubOperators } from './stakeholders.js';
-import { hubCollectionEvidence } from './hubEvidence.js';
+import { createHubCollectionEvidence } from './hubEvidence.js';
 import { hubDisposalEvidence } from './hubDisposals.js';
 import { hubDisposalBalance } from './hubBalance.js';
 
@@ -19,8 +19,9 @@ export function buildHubOperations(source: DashboardSourceSnapshot, batches: Mat
   const recordedCollection = new Set<string>();
   const balances = new Map<string, ReturnType<typeof hubDisposalBalance>>();
   const records: HubOperationsMonitoring['records'] = [];
+  const collectionFor = createHubCollectionEvidence(source, hubIds, now);
   for (const listing of listings.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))) {
-    const collection = hubCollectionEvidence(source, listing.batchId, hubIds, now);
+    const collection = collectionFor(listing.batchId);
     const disposal = disposals.filter(item => item.listingId === listing.id);
     const assignedId = listing.weighingHubId && hubIds.has(listing.weighingHubId) ? listing.weighingHubId : null;
     const operatorId = assignedId ?? collection?.operatorId ?? disposal[0]?.operatorId;

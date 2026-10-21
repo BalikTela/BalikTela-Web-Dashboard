@@ -3,12 +3,13 @@ import { facilityCapacityStatus } from '../shared/facilityCapacity.js';
 import { isHubProfile } from '../shared/hubs.js';
 import { isStorageSimulationOperator } from '../shared/hubStorage.js';
 import { percentage } from '../shared/metrics.js';
-import { hubCollectionEvidence } from './hubEvidence.js';
+import { createHubCollectionEvidence, hubCollectionEvidence } from './hubEvidence.js';
 import { hubDisposalEvidence } from './hubDisposals.js';
 import { hubDisposalBalance } from './hubBalance.js';
 import { identifyHubOperators } from './stakeholders.js';
 import type { DashboardSourceSnapshot } from './store.js';
 import type { FacilityRecord, MaterialBatchRecord, UserRecord } from './types.js';
+import { groupRecords } from './recordIndex.js';
 
 const round = (value: number) => Number(value.toFixed(6));
 
@@ -72,13 +73,16 @@ export function hubFacilityAttributions(source: DashboardSourceSnapshot, batches
   const operators = source.users.filter(user => hubIds.has(user.id) && (siteTotals || !isHubProfile(actor) || user.id === actor.id));
   const byOperator = new Map(operators.map(user => [user.id, [...new Set(user.scope.facilityIds)]]));
   const ledger = hubDisposalEvidence(source, batches, actor, now, siteTotals);
+  const collectionFor = createHubCollectionEvidence(source, hubIds, now);
+  const listingsByBatch = groupRecords(source.listings, item => item.batchId);
+  const disposalsByBatch = groupRecords(ledger.records, item => item.batchId);
   const relevant = new Map<string, { receipt: ReturnType<typeof hubCollectionEvidence>; operatorIds: Set<string> }>();
   for (const batch of batches) {
-    const receipt = hubCollectionEvidence(source, batch.id, hubIds, now);
+    const receipt = collectionFor(batch.id);
     const operatorIds = new Set([
-      ...source.listings.filter(item => item.batchId === batch.id && Date.parse(item.createdAt) <= now.getTime()
+      ...(listingsByBatch.get(batch.id) ?? []).filter(item => Date.parse(item.createdAt) <= now.getTime()
         && hubIds.has(item.weighingHubId ?? '') && item.deliveryRoute !== 'direct').map(item => item.weighingHubId!),
-      ...ledger.records.filter(item => item.batchId === batch.id).map(item => item.operatorId),
+      ...(disposalsByBatch.get(batch.id) ?? []).map(item => item.operatorId),
       ...(receipt ? [receipt.operatorId] : []),
     ].filter(id => siteTotals || !isHubProfile(actor) || id === actor.id));
     if (operatorIds.size) relevant.set(batch.id, { receipt: receipt && (siteTotals || !isHubProfile(actor) || receipt.operatorId === actor.id) ? receipt : null, operatorIds });

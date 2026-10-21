@@ -4,7 +4,7 @@ import { percentage } from '../shared/metrics.js';
 import type { DashboardSourceSnapshot } from './store.js';
 import type { FacilityRecord, MaterialBatchRecord, TransferRecord, UserRecord } from './types.js';
 import type { aggregateMaterialEvidence } from './materialEvidence.js';
-import { hubCollectionEvidence } from './hubEvidence.js';
+import { createHubCollectionEvidence } from './hubEvidence.js';
 import { hubDisposalEvidence } from './hubDisposals.js';
 
 type Sources = Pick<DashboardSourceSnapshot, 'users' | 'listings' | 'measurements' | 'hubDisposals'>;
@@ -28,7 +28,8 @@ export function buildStakeholderView(batches: MaterialBatchRecord[], transfers: 
   const superseded = new Set(measurements.map(item => item.supersedesMeasurementId).filter(Boolean));
   const latest = new Map<string, typeof history[number]>();
   for (const entry of history) if (!superseded.has(entry.id) && !latest.has(entry.batchId)) latest.set(entry.batchId, entry);
-  const collections = batches.map(batch => ({ batchId: batch.id, evidence: hubCollectionEvidence(source, batch.id, hubIds, now) }));
+  const collectionFor = createHubCollectionEvidence(source, hubIds, now);
+  const collections = batches.map(batch => ({ batchId: batch.id, evidence: collectionFor(batch.id) }));
   const scopedDisposals = hubDisposalEvidence(source, batches, actor, now).records;
   const participants = new Set([...batches.map(item => item.sourceUserId), ...transfers.flatMap(item => [item.providerId, item.recipientId]),
     ...listings.map(item => item.weighingHubId), ...history.map(item => item.recordedBy),

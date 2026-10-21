@@ -1,4 +1,4 @@
-import { hubStorageCapacity, storageAvailability, HUB_STORAGE_THRESHOLD_PERCENT, HUB_SIMULATION_PREFIX, isStorageSimulationOperator, type HubStorageAnalytics, type HubStorageRow } from '../shared/hubStorage.js';
+import { hubStorageCapacity, storageAvailability, HUB_STORAGE_THRESHOLD_PERCENT, HUB_STOCK_ESTIMATE_METHOD, HUB_SIMULATION_PREFIX, isStorageSimulationOperator, type HubStorageAnalytics, type HubStorageRow } from '../shared/hubStorage.js';
 import { isApprovedHub } from '../shared/hubs.js';
 import { listingWorkflowStatus } from '../shared/workflows.js';
 import { hubDisposalBalance } from './hubBalance.js';
@@ -33,6 +33,7 @@ export function buildHubStorageAnalytics(source: DashboardSourceSnapshot, facili
     let storedKg: number | null = ledger.available && !uncertainSites.has(site.id) ? 0 : null;
     let reservedKg: number | null = uncertainSites.has(site.id) ? null : 0;
     let disposedKg = 0;
+    let estimatedStock = false;
     for (const [batchId, evidence] of relevant) {
       if (batchSites.get(batchId) !== site.id) continue;
       const disposals = ledger.records.filter(item => item.batchId === batchId);
@@ -40,6 +41,12 @@ export function buildHubStorageAnalytics(source: DashboardSourceSnapshot, facili
       if (evidence.receipt) {
         const balance = hubDisposalBalance(source, batchId, evidence.receipt, ledger.records, now);
         storedKg = storedKg !== null && balance.awaitingDisposalKg !== null ? storedKg + balance.awaitingDisposalKg : null;
+        continue;
+      }
+      const estimate = currentStockEstimate(source, batchId, site.id, now);
+      if (estimate !== undefined) {
+        storedKg = storedKg === null || estimate === null ? null : storedKg + estimate;
+        estimatedStock = true;
         continue;
       }
       const batch = batchMap.get(batchId)!;
@@ -63,12 +70,35 @@ export function buildHubStorageAnalytics(source: DashboardSourceSnapshot, facili
     const availability = storageAvailability(capacityKg, storedKg, reservedKg, site.status, approved || simulationOnly);
     return { id: site.id, name: site.name, location: site.city, region: site.region, acceptedTypes: site.acceptedMaterials,
       capacityKg, capacitySource, storedKg, reservedKg, disposedKg: ledger.available ? round(disposedKg) : null,
-      ...availability, containsSimulation, simulationOnly,
-      selectable: availability.selectable && !simulationOnly && !containsSimulation };
+      ...availability, containsSimulation, simulationOnly, estimatedStock,
+      selectable: availability.selectable && !simulationOnly && !containsSimulation && !estimatedStock };
   });
   const aggregateOnly = actor.scope.aggregateOnly || actor.role === 'Government';
   return { illustrativeCapacity: rows.some(item => item.capacitySource === 'Illustrative'), thresholdPercent: HUB_STORAGE_THRESHOLD_PERCENT, asOf: now.toISOString(), aggregateOnly,
     rows: aggregateOnly ? aggregateRows(rows) : rows, summary: { unattributedBatches } };
+}
+
+// Estimates establish a dated stock balance, never a physical intake or recovery claim.
+// Subsequent movement requires fresh evidence rather than carrying a stale count forward.
+function currentStockEstimate(source: DashboardSourceSnapshot, batchId: string, facilityId: string, now: Date): number | null | undefined {
+  const measurements = source.measurements.filter(item => item.batchId === batchId && Date.parse(item.timestamp) <= now.getTime());
+  const superseded = new Set(measurements.map(item => item.supersedesMeasurementId).filter(Boolean));
+  if (!measurements.some(item => item.canonicalStage === 'validation' && item.method === HUB_STOCK_ESTIMATE_METHOD)) return undefined;
+  const candidates = [...new Map(measurements.map(item => [item.id, item])).values()].filter(item =>
+    item.canonicalStage === 'validation' && item.method === HUB_STOCK_ESTIMATE_METHOD && item.status === 'Estimated'
+    && item.verifiedBy === null && item.facilityId === facilityId && !superseded.has(item.id)
+    && Number.isFinite(item.weightKg) && item.weightKg >= 0
+    && source.users.some(user => user.id === item.recordedBy && user.role === 'Administrator'));
+  if (candidates.length !== 1 || !source.hubDisposals?.available) return null;
+  const estimate = candidates[0], at = Date.parse(estimate.timestamp);
+  const listingIds = new Set(source.listings.filter(item => item.batchId === batchId).map(item => item.id));
+  if (measurements.some(item => item.id !== estimate.id && Date.parse(item.timestamp) >= at)
+    || source.hubDisposals.records.some(item => listingIds.has(item.listingId) && Date.parse(item.disposedAt) >= at)
+    || source.allTransfers.some(item => item.batchId === batchId && (Date.parse(item.updatedAt) >= at
+      || item.events.some(event => Date.parse(event.timestamp) >= at)))
+    || source.listings.some(item => item.batchId === batchId && Date.parse(item.createdAt) >= at)
+    || source.recoveryRecords.some(item => item.batchId === batchId && Date.parse(item.timestamp) >= at)) return null;
+  return estimate.weightKg;
 }
 
 function aggregateRows(rows: HubStorageRow[]): HubStorageRow[] {
@@ -86,6 +116,7 @@ function aggregateRows(rows: HubStorageRow[]): HubStorageRow[] {
       availableToReceiveKg: sites.every(item => item.availableToReceiveKg !== null)
         ? round(sites.filter(item => item.status === 'Available').reduce((sum, item) => sum + item.availableToReceiveKg!, 0)) : null,
       status: 'Aggregate only', selectable: false, containsSimulation: sites.some(item => item.containsSimulation),
+      estimatedStock: sites.some(item => item.estimatedStock),
       simulationOnly: sites.every(item => item.simulationOnly) };
   });
 }

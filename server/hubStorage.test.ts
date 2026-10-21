@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { hubStorageCapacity, illustrativeStorageCapacityKg, storageAvailability } from '../shared/hubStorage.js';
+import { HUB_STOCK_ESTIMATE_METHOD, hubStorageCapacity, illustrativeStorageCapacityKg, storageAvailability } from '../shared/hubStorage.js';
 import { buildHubStorageAnalytics } from './hubStorage.js';
 import { buildDashboardAnalytics, loadDashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
 import { createSeedData } from './seed.js';
@@ -142,4 +142,42 @@ test('site totals include coworkers and preserve aggregate privacy and ambiguous
   source.measurements[0].facilityId = null;
   coworker.scope = { ...coworker.scope, facilityIds: [site.id, 'OTHER-SITE'] };
   assert.equal(view().rows[0].storedKg, null); assert.equal(view().summary.unattributedBatches, 1);
+});
+
+test('dated administrative estimates fill storage only, once, without qualifying as received material', async () => {
+  const { source, data, admin, view, dispose } = await fixture();
+  const count = { ...source.measurements[0], id: 'STOCK-COUNT', canonicalStage: 'validation' as const, stage: 'Validation' as const,
+    status: 'Estimated' as const, weightKg: 27, method: HUB_STOCK_ESTIMATE_METHOD, recordedBy: admin.id,
+    verifiedBy: null, timestamp: '2026-10-21T03:00:00Z' };
+  source.measurements = [count, { ...count }];
+  dispose(100);
+  let row = view().rows[0];
+  assert.equal(row.storedKg,27); assert.equal(row.reservedKg,0); assert.equal(row.estimatedStock,true);
+  assert.equal(row.status,'Available'); assert.equal(row.disposedKg,100);
+  assert.equal(row.selectable,false,'An assumed stock count cannot authorize live consumer admission.');
+  assert.equal(source.measurements[0].status,'Estimated');
+  const analytics = await buildDashboardAnalytics(new MemoryStore(data), admin, { dateRange: 'All time' }, source, now);
+  assert.equal(analytics.hubStorage.rows[0].storedKg,27);
+  assert.equal(analytics.hubOperations.collectedKg,null);
+  assert.equal(analytics.circularFlow.collectedKg,0);
+  source.measurements[0].weightKg = -1;
+  source.measurements[1].weightKg = -1;
+  assert.equal(view().rows[0].storedKg,null);
+});
+
+test('new movement invalidates an estimate; actual receipts take precedence', async () => {
+  const { source, admin, view } = await fixture();
+  const receipt = source.measurements[0];
+  const estimate = { ...receipt, id: 'STOCK-ESTIMATE', canonicalStage: 'validation' as const, stage: 'Validation' as const,
+    status: 'Estimated' as const, method: HUB_STOCK_ESTIMATE_METHOD, recordedBy: admin.id, weightKg: 27,
+    verifiedBy: null, timestamp: '2026-10-21T03:00:00Z' };
+  source.measurements = [estimate];
+  assert.equal(view().rows[0].storedKg,27);
+  source.measurements.push({ ...receipt, id: 'NEW-LISTING-WEIGHT', canonicalStage:'listing',
+    timestamp:'2026-10-21T03:30:00Z' });
+  assert.equal(view().rows[0].storedKg,null); assert.equal(view().rows[0].selectable,false);
+  source.measurements = [estimate,receipt];
+  assert.equal(view().rows[0].storedKg,900); assert.equal(view().rows[0].estimatedStock,false);
+  source.measurements = [{ ...estimate, timestamp:'2026-10-22T03:00:00Z' }];
+  assert.equal(view().rows[0].estimatedStock,false);
 });

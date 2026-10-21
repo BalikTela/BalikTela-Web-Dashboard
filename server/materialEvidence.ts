@@ -3,6 +3,7 @@ import { isCompletedTransfer, isTerminalTransfer } from '../shared/workflows.js'
 import type { ListingRecord, MaterialBatchRecord, MeasurementRecord, RecoveryRecord, TransferRecord } from './types.js';
 import { textileRecyclability } from '../shared/materialClassification.js';
 import { recoveryMassBalance } from '../shared/recovery.js';
+import { groupRecords } from './recordIndex.js';
 
 const validMass = (value: number | null | undefined): value is number => value != null && Number.isFinite(value) && value >= 0;
 const round = (value: number) => Number(value.toFixed(6));
@@ -20,6 +21,10 @@ export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transf
   const measurements = unique(context.measurements ?? []);
   const superseded = new Set(measurements.map(item => item.supersedesMeasurementId).filter(Boolean));
   const listings = context.listings ?? [];
+  const recordsByBatch = groupRecords(records, item => item.batchId);
+  const transfersByBatch = groupRecords(linked, item => item.batchId);
+  const measurementsByBatch = groupRecords(measurements, item => item.batchId);
+  const measurementsByTransfer = groupRecords(measurements.filter(item => item.transferId !== null), item => item.transferId!);
   // Cross-batch remainders need a root-lot allocation contract before they can be added as new material.
   const remainderBatches = new Set(listings.filter(item => item.remainderOfId).map(item => item.batchId));
   let generatedKg = 0, collectedKg = 0, sortedKg = 0, reusedKg = 0, recycledKg = 0;
@@ -32,8 +37,8 @@ export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transf
 
   for (const batch of selected) {
     generatedKg += validMass(batch.declaredWeightKg) ? batch.declaredWeightKg : 0;
-    const batchRecords = records.filter(item => item.batchId === batch.id);
-    const batchTransfers = linked.filter(item => item.batchId === batch.id);
+    const batchRecords = recordsByBatch.get(batch.id) ?? [];
+    const batchTransfers = transfersByBatch.get(batch.id) ?? [];
     const collection = batchRecords.filter(item => item.stage === 'Collection');
     let intake: number | null = null;
     if (collection.length === 1 && !remainderBatches.has(batch.id)) {
@@ -44,7 +49,7 @@ export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transf
     else if (collection.length > 1 || remainderBatches.has(batch.id)) collectionConflicts++;
     else {
       // A verified receipt proves physical intake; a declaration, listing weighing or completion flag does not.
-      const receipts = measurements.filter(item => item.batchId === batch.id && !superseded.has(item.id)
+      const receipts = (measurementsByBatch.get(batch.id) ?? []).filter(item => !superseded.has(item.id)
         && (item.stage === 'Receipt' || item.canonicalStage === 'collection')
         && item.status === 'Verified' && item.verifiedBy && validMass(item.weightKg)
         && batchTransfers.some(transfer => transfer.id === item.transferId
@@ -114,7 +119,7 @@ export function aggregateMaterialEvidence(batches: MaterialBatchRecord[], transf
     } else unlinkedOutcomeKg += output;
   }
   const approvedWeight = (transfer: TransferRecord) => {
-    const readings = measurements.filter(item => item.transferId === transfer.id && item.batchId === transfer.batchId
+    const readings = (measurementsByTransfer.get(transfer.id) ?? []).filter(item => item.batchId === transfer.batchId
       && item.stage === 'Validation' && !superseded.has(item.id));
     const reading = readings.length === 1 ? readings[0] : null;
     return reading?.status === 'Verified' && reading.verifiedBy && validMass(reading.weightKg) ? reading.weightKg : null;

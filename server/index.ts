@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
+import { setImmediate as yieldToIo } from 'node:timers/promises';
 import bcrypt from 'bcryptjs';
 import express, { type Response } from 'express';
 import { installSecurity, securityErrorHandler } from './security.js';
@@ -30,6 +31,7 @@ import { canActOnTransfer } from './access-control.js';
 import { registerReportRoutes } from './reports.js';
 import { buildDashboardAnalytics, filterBatches, loadDashboardAnalyticsSnapshot, selectAnalyticsCohort, type DashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
 import { AsyncTtlCache, dashboardAnalyticsCacheKey } from './asyncCache.js';
+import { installRuntimeMonitoring } from './runtimeMonitoring.js';
 import { SupabaseIdentity } from './supabaseIdentity.js';
 import { createPasswordSetupGrant, registerSetupRoutes } from './authSetup.js';
 import { provisionedUserMutation } from './provisioning.js';
@@ -54,19 +56,28 @@ const loginLockSeconds = positiveEnv('AUTH_LOGIN_LOCK_SECONDS', 15 * 60);
 const challengeRequestWindowSeconds = positiveEnv('AUTH_CHALLENGE_REQUEST_WINDOW_SECONDS', 60 * 60);
 const challengeRequestLimit = positiveEnv('AUTH_CHALLENGE_REQUEST_LIMIT', 3);
 const dashboardCacheTtlMs = positiveEnv('DASHBOARD_CACHE_TTL_SECONDS', 30) * 1_000;
-const dashboardSnapshotTtlMs = positiveEnv('DASHBOARD_SNAPSHOT_TTL_SECONDS', 15) * 1_000;
+const dashboardSnapshotTtlMs = positiveEnv('DASHBOARD_SNAPSHOT_TTL_SECONDS', 60) * 1_000;
 const demoDelivery = process.env.NODE_ENV !== 'production' || process.env.AUTH_DEMO_DELIVERY === 'true';
 const app = express();
 const permit = (permission: Permission) => authorize(store, permission);
 type DashboardAnalytics = Awaited<ReturnType<typeof buildDashboardAnalytics>>;
-const dashboardAnalyticsCache = new AsyncTtlCache<DashboardAnalytics>(dashboardCacheTtlMs, 200);
+const dashboardAnalyticsCache = new AsyncTtlCache<DashboardAnalytics>(dashboardCacheTtlMs, 24);
+const hubResponseCache = new AsyncTtlCache<unknown>(dashboardCacheTtlMs, 24);
 const dashboardSnapshotCache = new AsyncTtlCache<DashboardAnalyticsSnapshot>(dashboardSnapshotTtlMs, 1);
 async function readDashboardSnapshot() {
   return (await dashboardSnapshotCache.getOrCreate('current', () => loadDashboardAnalyticsSnapshot(store))).value;
 }
-const dashboardMutationPrefixes = ['/api/users', '/api/organizations', '/api/barter', '/api/facilities', '/api/material-batches', '/api/transfers', '/api/recovery-records', '/api/configuration', '/api/hubs', '/api/imports/commit'];
+function readDashboardAnalytics(actor: UserRecord, query: Record<string, unknown>, now = new Date()) {
+  return dashboardAnalyticsCache.getOrCreate(dashboardAnalyticsCacheKey(actor, { ...query, reportingDay: manilaDate(now) }), async () => {
+    const snapshot = await readDashboardSnapshot();
+    await yieldToIo();
+    return buildDashboardAnalytics(store, actor, query, snapshot, now);
+  });
+}
+const dashboardMutationPrefixes = ['/api/users', '/api/organizations', '/api/barter', '/api/facilities', '/api/material-batches', '/api/transfers', '/api/recovery-records', '/api/configuration', '/api/hubs', '/api/hub-disposals', '/api/imports/commit'];
 
 installSecurity(app);
+const stopRuntimeMonitoring = installRuntimeMonitoring(app);
 app.use('/api/auth', (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Pragma', 'no-cache');
@@ -98,9 +109,10 @@ app.use((req, res, next) => {
     res.on('finish', () => {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         dashboardAnalyticsCache.clear();
+        hubResponseCache.clear();
         if (mutatesDashboardData) {
           dashboardSnapshotCache.clear();
-          void warmDashboardSnapshot();
+          if (process.env.DASHBOARD_PREWARM === 'true') void warmDashboardSnapshot();
         }
       }
     });
@@ -110,7 +122,7 @@ app.use((req, res, next) => {
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 registerSetupRoutes(app, { store, identity, enabled: usesSupabaseAuth });
-registerHubRoutes(app, store);
+registerHubRoutes(app, store, readDashboardSnapshot, hubResponseCache);
 registerRewardRoutes(app, store);
 
 app.post('/api/auth/login', async (req, res) => {
@@ -838,8 +850,8 @@ app.post('/api/recovery-records', requireAuth, permit('recovery.create'), async 
 
 app.get('/api/analytics/operations', requireAuth, permit('analytics.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
-  const data = await buildDashboardAnalytics(store, actor, req.query, await readDashboardSnapshot());
-  res.json(data.operations);
+  const result = await readDashboardAnalytics(actor, req.query);
+  res.json(result.value.operations);
 });
 
 app.get('/api/analytics/dashboard', requireAuth, permit('analytics.read'), async (req: AuthenticatedRequest, res) => {
@@ -847,9 +859,7 @@ app.get('/api/analytics/dashboard', requireAuth, permit('analytics.read'), async
   const startedAt = performance.now();
   const now = new Date();
   resolveReportingPeriod(req.query, now);
-  const result = await dashboardAnalyticsCache.getOrCreate(dashboardAnalyticsCacheKey(actor, { ...req.query, reportingDay: manilaDate(now) }), async () => {
-    return buildDashboardAnalytics(store, actor, req.query, await readDashboardSnapshot(), now);
-  });
+  const result = await readDashboardAnalytics(actor, req.query, now);
   const durationMs = performance.now() - startedAt;
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('Server-Timing', `dashboard;dur=${durationMs.toFixed(1)}`);
@@ -933,8 +943,9 @@ app.use(securityErrorHandler);
 app.use((_req, res) => res.status(404).json({ message: 'API route not found.' }));
 const httpServer = app.listen(port, '0.0.0.0', () => {
   console.log(`BalikTela API listening on http://localhost:${port} (${store.mode})`);
-  if (process.env.DASHBOARD_PREWARM !== 'false') void warmDashboardSnapshot();
+  if (process.env.DASHBOARD_PREWARM === 'true') void warmDashboardSnapshot();
 });
+httpServer.once('close', stopRuntimeMonitoring);
 httpServer.requestTimeout = 30_000;
 httpServer.headersTimeout = 15_000;
 httpServer.setTimeout(60_000);

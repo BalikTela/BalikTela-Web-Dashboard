@@ -20,3 +20,9 @@ services:
         sync: false
       - key: AUTH_DEMO_DELIVERY
         value: "false"
+      - key: DASHBOARD_PREWARM
+        value: "false"
+      - key: DASHBOARD_SNAPSHOT_TTL_SECONDS
+        value: "60"
+      - key: DASHBOARD_CACHE_TTL_SECONDS
+        value: "30"

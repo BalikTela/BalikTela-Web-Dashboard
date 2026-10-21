@@ -9,6 +9,7 @@ type CacheEntry = { data: DashboardData; cachedAt: number };
 
 const clientCache = createSessionCache<string, CacheEntry>();
 const freshForMs = 30_000;
+const refreshIntervalMs = 15 * 60 * 1_000;
 const maximumEntries = 24;
 
 function cacheKey(filters: Filters, scopeKey: string) {
@@ -41,7 +42,7 @@ export function useDashboardData(filters: Filters, scopeKey: string, enabled = t
       const cached = clientCache.get(key);
       if (!cached || Date.now() - cached.cachedAt >= freshForMs) setRevision(value => value + 1);
     };
-    const timer = window.setInterval(refresh, freshForMs);
+    const timer = window.setInterval(refresh, refreshIntervalMs);
     window.addEventListener('focus', refresh);
     window.addEventListener('online', refresh);
     document.addEventListener('visibilitychange', refresh);

@@ -22,14 +22,16 @@ import { inReportingWindow, manilaDate, resolveReportingPeriod, type ReportingWi
 const mapCoordinates: Record<string, [number, number]> = { 'Metro Manila': [51, 31], 'Central Visayas': [56, 58], 'Western Visayas': [45, 60], 'Davao Region': [67, 78] };
 
 export async function loadDashboardAnalyticsSnapshot(store: Store): Promise<DashboardSourceSnapshot> {
+  const stockConfirmations = store.loadHubStockConfirmations ? await store.loadHubStockConfirmations()
+    : (await store.all('auditRecords')).filter(item => item.action === 'hub.stock.confirmed');
   const optimizedSnapshot = await store.loadDashboardSnapshot?.();
   if (optimizedSnapshot) return store.loadHubDisposals && !optimizedSnapshot.hubDisposals
-    ? { ...optimizedSnapshot, hubDisposals: await store.loadHubDisposals() } : optimizedSnapshot;
+    ? { ...optimizedSnapshot, stockConfirmations, hubDisposals: await store.loadHubDisposals() } : { ...optimizedSnapshot, stockConfirmations };
   const [allBatches, allTransfers, measurements, recoveryRecords, listings, offers, users, organizations, facilities, walletEntries, interactions] = await Promise.all([
     store.all('materialBatches'), store.all('transfers'), store.all('measurements'), store.all('recoveryRecords'), store.all('listings'), store.all('offers'),
     store.all('users'), store.all('organizations'), store.all('facilities'), store.all('walletEntries'), store.all('systemInteractions'),
   ]);
-  return { allBatches, allTransfers, measurements, recoveryRecords, listings, offers, users, organizations, facilities, walletEntries, interactions,
+  return { allBatches, allTransfers, measurements, recoveryRecords, listings, offers, users, organizations, facilities, walletEntries, interactions, stockConfirmations,
     ...(store.loadHubDisposals ? { hubDisposals: await store.loadHubDisposals() } : {}) };
 }
 

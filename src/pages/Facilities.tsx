@@ -1,4 +1,10 @@
-import { Activity, Factory, Gauge, PackageCheck } from 'lucide-react';
+import { Activity, ClipboardCheck, Factory, Gauge, PackageCheck } from 'lucide-react';
+import { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { RecordEditor } from '../components/RecordEditor';
+import { Button } from '../components/ui/button';
+import { platformApi } from '../services/platformApi';
+import type { HubStorageRow } from '../../shared/hubStorage';
 import { formatMass, percentage } from '../../shared/metrics';
 import { PaginatedRecords } from '../components/PaginatedRecords';
 import { SectionHeader } from '../components/SectionHeader';
@@ -10,6 +16,9 @@ import { SummaryCard } from '../components/SummaryCard';
 import type { DashboardAnalytics } from '../platformTypes';
 
 export function Facilities({ data }: { data: DashboardAnalytics }) {
+  const { user } = useAuth();
+  const [editor, setEditor] = useState<{ hub: HubStorageRow; countedAt: string } | null>(null);
+  const [notice, setNotice] = useState('');
   const storage = data.hubStorage;
   const rows = storage?.rows ?? [];
   const capacity = rows.reduce((sum, item) => sum + item.capacityKg, 0);
@@ -27,24 +36,37 @@ export function Facilities({ data }: { data: DashboardAnalytics }) {
       <SummaryCard label="Storage headroom" value={formatMass(available, 'Not established')} detail="Below 90%; includes labeled simulations" icon={PackageCheck} tone="emerald" />
     </section>
     {storage?.summary.unattributedBatches ? <p role="status" className="border-l-2 border-amber-500 pl-3 text-xs text-amber-900">{storage.summary.unattributedBatches} batches have ambiguous Hub assignments. Affected Hubs remain unavailable until the records are reconciled.</p> : null}
+    {notice ? <p role="status" className="text-sm text-emerald-800">{notice}</p> : null}
     <Panel>
       <SectionHeader title="Hub Facilities" eyebrow="Storage, incoming reservations, and availability" />
       {rows.length ? <PaginatedRecords rows={rows} resetKey={JSON.stringify(rows.map(item => item.id))} label="Hub facilities">{pageRows => <div className="overflow-x-auto scrollbar-thin">
-        <table className="w-full min-w-[1200px] text-left text-sm" aria-label="Hub facility analytics">
-          <thead><tr><th>Hub</th><th>Location</th><th>Accepted textiles</th><th>Storage capacity</th><th>Stock held</th><th>Incoming reservations</th><th>Utilization</th><th>Recorded disposal</th><th className="sticky right-0 z-10 min-w-40 border-l border-slate-200 bg-white pl-3">Status</th></tr></thead>
+        <table className="w-full min-w-[1400px] text-left text-sm" aria-label="Hub facility analytics">
+          <thead><tr><th>Hub</th><th>Location</th><th>Accepted textiles</th><th>Storage capacity</th><th>Stock held</th><th>Incoming reservations</th><th>Utilization</th><th className="min-w-32">Recorded disposal</th><th className="sticky right-0 z-10 min-w-56 border-l border-slate-200 bg-white pl-3">Status</th></tr></thead>
           <tbody className="divide-y divide-textile-thread">{pageRows.map(item => <tr key={item.id} className="data-row">
             <td className="min-w-40 py-4 pr-4 font-semibold"><span>{item.name}</span>{item.containsSimulation ? <p className="mt-1 text-xs font-normal text-amber-800">Includes synthetic simulation</p> : null}</td>
             <td className="pr-4">{item.location}</td><td className="max-w-44 pr-4">{item.acceptedTypes.join(', ') || 'Not configured'}</td>
             <td className="whitespace-nowrap pr-4 tabular-nums">{item.capacityKg>0?formatMass(item.capacityKg):'Not configured'}{item.capacityKg>0?<p className="mt-1 text-xs text-slate-500">{formatMass(item.capacityKg * (storage?.thresholdPercent ?? 90) / 100)} intake cutoff</p>:null}{item.capacitySource==='Illustrative'?<p className="mt-1 text-xs text-amber-800">Illustrative limit</p>:null}</td>
-            <td className="pr-4 tabular-nums">{formatMass(item.storedKg, 'Not established')}{item.estimatedStock ? <p className="mt-1 text-xs text-slate-500">Estimated</p> : null}{item.storedKg !== null && item.capacityKg>0 && item.storedKg > item.capacityKg ? <p className="mt-1 text-xs text-red-700">Exceeds storage limit</p> : null}</td>
+            <td className="pr-4 tabular-nums">{formatMass(item.storedKg, 'Not established')}{item.estimatedStock ? <p className="mt-1 text-xs text-slate-500">Estimated</p> : null}{item.stockConfirmation ? <p className="mt-1 text-xs text-slate-500">{item.stockNeedsReview ? 'Count needs review' : 'Admin-confirmed count'}{item.stockConfirmation.countedAt ? <span className="mt-1 block">{new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.stockConfirmation.countedAt))}</span> : null}</p> : null}{item.storedKg !== null && item.capacityKg>0 && item.storedKg > item.capacityKg ? <p className="mt-1 text-xs text-red-700">Exceeds storage limit</p> : null}</td>
             <td className="pr-4 tabular-nums">{formatMass(item.reservedKg, 'Not established')}<p className="mt-1 text-xs text-slate-500">{formatMass(item.availableToReceiveKg, 'Unknown')} headroom</p></td>
             <td className="pr-4">{item.utilization !== null ? <div className="flex items-center gap-2"><Progress value={Math.min(100, item.utilization)} className="w-24" indicatorClassName={item.status === 'Intake paused' ? 'bg-amber-500' : undefined} /><span className="tabular-nums">{item.utilization}%</span></div> : 'Not available'}{item.allocatedPercent !== null ? <p className="mt-1 text-xs text-slate-500">{item.allocatedPercent}% with reservations</p> : null}</td>
             <td className="whitespace-nowrap pr-4 tabular-nums">{formatMass(item.disposedKg, 'Not available')}</td>
-            <td className="sticky right-0 border-l border-slate-200 bg-white pl-3"><StatusBadge status={item.status} />{item.simulationOnly ? <p className="mt-1 text-xs text-amber-800">Simulation only</p> : null}</td>
+            <td className="sticky right-0 border-l border-slate-200 bg-white pl-3"><div className="flex items-center justify-between gap-2"><StatusBadge status={item.status} />{user?.role === 'Administrator' && !storage?.aggregateOnly && !item.containsSimulation && !item.simulationOnly && item.capacitySource !== 'Illustrative' ? <Button variant="ghost" size="icon" aria-label={`Confirm current stock for ${item.name}`} title="Confirm current stock" onClick={() => {
+              const now = new Date();
+              setEditor({ hub: item, countedAt: new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0,19) });
+            }}><ClipboardCheck size={17} /></Button> : null}</div>{item.simulationOnly ? <p className="mt-1 text-xs text-amber-800">Simulation only</p> : null}</td>
           </tr>)}</tbody>
         </table>
       </div>}</PaginatedRecords> : <EmptyBlock label="Storage analytics are unavailable or no Hubs match these filters." />}
-      <p className="mt-4 border-t border-slate-200 pt-3 text-xs leading-5 text-slate-500">Stock held = recorded physical intake minus unique disposal records and evidenced outbound movements. Pending consumer submissions reserve declared weight once per batch. Intake pauses when stock plus reservations reaches 90% of storage capacity; a new submission must fit within that limit. Supported mobile disposal records, monitored in Recovery Monitoring, release space on refresh. Missing or conflicting balances cannot establish availability; maintenance, inactive and unapproved Hubs remain unavailable.</p>
+      <p className="mt-4 border-t border-slate-200 pt-3 text-xs leading-5 text-slate-500">Stock held uses recorded intake and outgoing movements, or the latest Admin-confirmed stock count adjusted for later movements. Earlier disposals are not deducted from that count again. Incoming reservations still use space within the 90% intake cutoff. Missing or conflicting later records require review; maintenance, inactive and unapproved Hubs remain unavailable.</p>
     </Panel>
+    {editor ? <RecordEditor title={`Confirm current stock: ${editor.hub.name}`} initial={{ stockKg: '', countedAt: editor.countedAt, reason: '', confirmed: false }} fields={[
+      { key: 'stockKg', label: 'Actual stock remaining (t)', type: 'number', unit: 't', min: 0, required: true },
+      { key: 'countedAt', label: 'Stock count date and time', type: 'datetime-local', required: true },
+      { key: 'reason', label: 'Reason for this stock confirmation', type: 'textarea', required: true },
+      { key: 'confirmed', label: 'I checked the actual stock held at this Hub.', type: 'checkbox', required: true },
+    ]} onClose={() => setEditor(null)} onSave={async values => {
+      const result = await platformApi.confirmHubStock(editor.hub.id, { ...values, countedAt: new Date(String(values.countedAt)).toISOString(), previousConfirmationId: editor.hub.stockConfirmation?.id ?? null });
+      setNotice(`Stock confirmation saved for ${editor.hub.name}.${result.row.stockNeedsReview ? ' Later records need review before availability can be established.' : ''}`);
+    }} /> : null}
   </div>;
 }

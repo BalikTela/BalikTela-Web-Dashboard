@@ -33,6 +33,7 @@
     "test:governance:ui": "node --import tsx scripts/test-governance-ui.ts",
     "test:hubs:ui": "node --import tsx scripts/test-hubs-ui.ts",
     "test:hubs:policy:ui": "node --import tsx scripts/test-hub-policy-ui.ts",
+    "test:hubs:stock:ui": "node --import tsx scripts/test-hub-stock-ui.ts",
     "test:hubs:integration": "node --import tsx scripts/test-hub-integration.ts --rollback-only",
     "audit:mobile-web": "node --import tsx scripts/audit-mobile-web.ts",
     "test:mobile-alignment:ui": "node --import tsx scripts/test-mobile-alignment-ui.ts",

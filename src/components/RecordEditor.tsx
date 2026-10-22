@@ -7,7 +7,7 @@ import { Select } from './ui/select';
 import { toKilograms, toTons } from '../../shared/metrics';
 
 export interface EditorField {
-  key: string; label: string; type?: 'text' | 'number' | 'email' | 'textarea' | 'list' | 'select' | 'checkbox';
+  key: string; label: string; type?: 'text' | 'number' | 'email' | 'datetime-local' | 'textarea' | 'list' | 'select' | 'checkbox';
   options?: Array<string | {value:string;label:string}>; required?: boolean; min?: number; disabled?: boolean; unit?: 't';
   when?: (values: Record<string, unknown>) => boolean;
 }
@@ -33,12 +33,12 @@ export function RecordEditor({ title, initial, fields, onSave, onClose }: {
       try {await onSave(payload);onClose();} catch(reason) {setError(reason instanceof Error?reason.message:'Unable to save this record.');} finally {setBusy(false);}
     }}>
       <header className="mb-5 flex items-start justify-between gap-3"><h2 className="text-base font-semibold">{title}</h2><Button type="button" variant="ghost" size="icon" aria-label="Close editor" disabled={busy} onClick={onClose}><X size={17}/></Button></header>
-      <div className="grid gap-4 sm:grid-cols-2">{fields.filter(field=>!field.when || field.when(values)).map(field=><label key={field.key} className={field.type==='textarea'?'sm:col-span-2':''}>
-        <span className="mb-1.5 block text-xs font-medium text-[#66736e]">{field.label}</span>
+      <div className="grid gap-4 sm:grid-cols-2">{fields.filter(field=>!field.when || field.when(values)).map(field=><label key={field.key} className={field.type==='checkbox'?'flex items-start gap-2 sm:col-span-2':field.type==='textarea'?'sm:col-span-2':''}>
+        <span className={`${field.type==='checkbox'?'order-2':'mb-1.5'} block text-xs font-medium text-[#66736e]`}>{field.label}</span>
         {field.type==='select'?<Select aria-label={field.label} disabled={busy || field.disabled} required={field.required} value={String(values[field.key] ?? '')} onChange={e=>setValues({...values,[field.key]:e.target.value})}>{field.options?.map(option=>{const value=typeof option==='string'?option:option.value;return <option key={value} value={value}>{typeof option==='string'?option:option.label}</option>;})}</Select>:
-        field.type==='checkbox'?<input aria-label={field.label} type="checkbox" disabled={busy || field.disabled} checked={Boolean(values[field.key])} onChange={e=>setValues({...values,[field.key]:e.target.checked})}/>:
+        field.type==='checkbox'?<input aria-label={field.label} className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-700" type="checkbox" required={field.required} disabled={busy || field.disabled} checked={Boolean(values[field.key])} onChange={e=>setValues({...values,[field.key]:e.target.checked})}/>:
         field.type==='textarea'?<textarea aria-label={field.label} className="min-h-24 w-full rounded-md border border-input bg-white px-3 py-2 text-sm" required={field.required} disabled={busy || field.disabled} value={String(values[field.key] ?? '')} onChange={e=>setValues({...values,[field.key]:e.target.value})}/>:
-        <Input aria-label={field.label} type={field.type==='number'?'number':field.type==='email'?'email':'text'} step={field.type==='number'?(field.unit==='t'?'0.000001':'0.001'):undefined} min={field.min == null ? undefined : field.unit==='t'?toTons(field.min):field.min} required={field.required} disabled={busy || field.disabled} value={String(values[field.key] ?? '')} onChange={e=>setValues({...values,[field.key]:e.target.value})}/>}
+        <Input aria-label={field.label} type={field.type==='number'?'number':field.type==='email'?'email':field.type==='datetime-local'?'datetime-local':'text'} step={field.type==='datetime-local'?1:field.type==='number'?(field.unit==='t'?'0.000001':'0.001'):undefined} min={field.min == null ? undefined : field.unit==='t'?toTons(field.min):field.min} required={field.required} disabled={busy || field.disabled} value={String(values[field.key] ?? '')} onChange={e=>setValues({...values,[field.key]:e.target.value})}/>}
       </label>)}</div>
       {error?<p className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>:null}
       <footer className="mt-6 flex justify-end gap-2"><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Cancel</Button><Button disabled={busy}><Save size={15}/>{busy?'Saving...':'Save changes'}</Button></footer>

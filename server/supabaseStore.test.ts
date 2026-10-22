@@ -32,6 +32,22 @@ test('a failed export-audit page cannot masquerade as a complete partial total',
   await assert.rejects(store.loadReportExportEvents('2026-08-01T00:00:00Z', '2026-10-20T00:00:00Z'), DatabaseOperationError);
 });
 
+test('stock confirmations read only their paginated audit action and fail closed on a partial feed', async () => {
+  const requests: URL[] = [];
+  const store = new SupabaseStore('https://example.supabase.co', 'test-secret', async input => {
+    const url = new URL(String(input)); requests.push(url);
+    assert.equal(url.pathname.split('/').at(-1), 'activity_logs');
+    assert.equal(url.searchParams.get('action'), 'eq.hub.stock.confirmed');
+    assert.equal(url.searchParams.get('limit'), '500');
+    return Response.json(requests.length === 1 ? [{ id: 'HSC-A', actor_id: 'ADMIN', action: 'hub.stock.confirmed',
+      entity_type: 'facilities', entity_id: 'HUB', details: { stockKg: 0 }, occurred_at: '2026-10-23T01:00:00Z' }] : []);
+  });
+  assert.equal((await store.loadHubStockConfirmations())[0].id, 'HSC-A');
+  assert.equal(requests[1].searchParams.get('id'), 'gt.HSC-A');
+  const denied = new SupabaseStore('https://example.supabase.co', 'test-secret', async () => Response.json({ code: '42501', message: 'Denied' }, { status: 403 }));
+  await assert.rejects(denied.loadHubStockConfirmations(), DatabaseOperationError);
+});
+
 test('legacy Hub authorization uses bounded read-only evidence queries, not full dashboard reads', async () => {
   for (const evidence of ['listings', 'measurements', 'hub_disposals', 'none']) {
     const paths: string[] = [];

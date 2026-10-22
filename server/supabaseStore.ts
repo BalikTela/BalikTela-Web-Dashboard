@@ -112,6 +112,25 @@ export class SupabaseStore implements Store {
     return records;
   }
 
+  async loadHubStockConfirmations() {
+    const records: DatabaseShape['auditRecords'] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      let query = this.client.from('activity_logs').select('id,actor_id,action,entity_type,entity_id,details,occurred_at')
+        .eq('action', 'hub.stock.confirmed').order('id').limit(500);
+      if (cursor !== undefined) query = query.gt('id', cursor);
+      const { data, error } = await query;
+      if (error) throw databaseError('read Hub stock confirmations', error);
+      const page = (data ?? []) as Row[];
+      if (!page.length) break;
+      records.push(...page.map(row => decodeRecord('auditRecords', toDocument(row))));
+      const last = page[page.length - 1].id;
+      if (last === cursor) throw databaseError('read Hub stock confirmations', { message: 'Pagination did not advance.' });
+      cursor = last;
+    }
+    return records;
+  }
+
   async all<K extends CollectionName>(name: K) {
     const rows: Row[] = [];
     const pageSize = 1_000;

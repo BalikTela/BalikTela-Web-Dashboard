@@ -15,6 +15,7 @@ import {
 import { createSeedData } from './seed.js';
 import { registerPredictiveRoutes } from './analytics/routes.js';
 import { registerHubRoutes } from './hubs.js';
+import { registerHubStockRoutes } from './hubStockRoutes.js';
 import { registerRewardRoutes } from './rewards.js';
 import { isHubCandidate, isHubProfile } from '../shared/hubs.js';
 import { isWebDashboardRole, WEB_ACCESS_MESSAGE, WEB_DASHBOARD_ROLES } from '../shared/webAccess.js';
@@ -125,6 +126,7 @@ app.use((req, res, next) => {
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 registerSetupRoutes(app, { store, identity, enabled: usesSupabaseAuth });
 registerHubRoutes(app, store, readDashboardSnapshot, hubResponseCache);
+registerHubStockRoutes(app, store);
 registerRewardRoutes(app, store);
 
 app.post('/api/auth/login', async (req, res) => {

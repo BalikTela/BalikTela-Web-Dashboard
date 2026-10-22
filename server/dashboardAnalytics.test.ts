@@ -12,10 +12,11 @@ test('dashboard snapshot uses the optimized persistence adapter when available',
   let legacyReads = 0;
   const store = {
     loadDashboardSnapshot: async () => emptySnapshot,
+    loadHubStockConfirmations: async () => [],
     all: async () => { legacyReads += 1; return []; },
   } as unknown as Store;
 
-  assert.equal(await loadDashboardAnalyticsSnapshot(store), emptySnapshot);
+  assert.deepEqual(await loadDashboardAnalyticsSnapshot(store), { ...emptySnapshot, stockConfirmations: [] });
   assert.equal(legacyReads, 0);
 });
 
@@ -26,6 +27,6 @@ test('dashboard snapshot falls back to canonical collection reads', async () => 
     all: async () => { legacyReads += 1; return []; },
   } as unknown as Store;
 
-  assert.deepEqual(await loadDashboardAnalyticsSnapshot(store), emptySnapshot);
-  assert.equal(legacyReads, 11);
+  assert.deepEqual(await loadDashboardAnalyticsSnapshot(store), { ...emptySnapshot, stockConfirmations: [] });
+  assert.equal(legacyReads, 12);
 });

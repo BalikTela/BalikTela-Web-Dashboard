@@ -3,6 +3,7 @@ import { isApprovedHub } from '../shared/hubs.js';
 import { listingWorkflowStatus } from '../shared/workflows.js';
 import { hubDisposalBalance } from './hubBalance.js';
 import { hubFacilityAttributions } from './hubFacilities.js';
+import { confirmedStock } from './hubStockConfirmation.js';
 import type { DashboardSourceSnapshot } from './store.js';
 import type { FacilityRecord, UserRecord } from './types.js';
 
@@ -64,6 +65,11 @@ export function buildHubStorageAnalytics(source: DashboardSourceSnapshot, facili
       if (active.length) reservedKg = reservedKg !== null && batch.declaredWeightKg !== null && Number.isFinite(batch.declaredWeightKg) && batch.declaredWeightKg >= 0
         ? reservedKg + batch.declaredWeightKg : null;
     }
+    const confirmation = confirmedStock(source, actor, site.id, now);
+    if (confirmation) {
+      storedKg = uncertainSites.has(site.id) ? null : confirmation.storedKg;
+      estimatedStock = false;
+    }
     storedKg = storedKg === null ? null : round(storedKg);
     reservedKg = reservedKg === null ? null : round(reservedKg);
     const { capacityKg, capacitySource } = hubStorageCapacity(site);
@@ -71,6 +77,8 @@ export function buildHubStorageAnalytics(source: DashboardSourceSnapshot, facili
     return { id: site.id, name: site.name, location: site.city, region: site.region, acceptedTypes: site.acceptedMaterials,
       capacityKg, capacitySource, storedKg, reservedKg, disposedKg: ledger.available ? round(disposedKg) : null,
       ...availability, containsSimulation, simulationOnly, estimatedStock,
+      ...(confirmation ? { stockConfirmation: { id: confirmation.record.id, countedAt: confirmation.countedAt ?? '',
+        recordedAt: confirmation.record.timestamp, reason: confirmation.reason ?? '' }, stockNeedsReview: storedKg === null } : {}),
       selectable: availability.selectable && !simulationOnly && !containsSimulation && !estimatedStock };
   });
   const aggregateOnly = actor.scope.aggregateOnly || actor.role === 'Government' || actor.role === 'Researcher';

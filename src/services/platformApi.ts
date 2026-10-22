@@ -158,6 +158,7 @@ export const platformApi = {
   createMaterialBatch: (body: Record<string, unknown>) => request<{batch:MaterialBatch}>('/material-batches',{method:'POST',body:JSON.stringify(body)}),
   updateMaterialBatch: (id: string, body: Record<string, unknown>) => request<{batch:MaterialBatch}>(`/material-batches/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(body)}),
   facilities: (filters?: Record<string, unknown>) => request<{ facilities: PlatformFacility[] }>(`/facilities${queryString(filters)}`),
+  confirmHubStock: (id: string, body: Record<string, unknown>) => request<{ row: import('../../shared/hubStorage').HubStorageRow }>(`/facilities/${encodeURIComponent(id)}/stock-confirmations`, { method: 'POST', body: JSON.stringify(body) }),
   hubs: (filters?: Record<string, unknown>) => request<HubDirectory>(`/hubs${queryString(filters)}`),
   updateHub: (id: string, body: Record<string, unknown>) => request<{ message: string; revokedSessions: number }>(`/hubs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   weighing: (filters?: Record<string, unknown>) => request<WeighingMonitoring>(`/weighing${queryString(filters)}`),

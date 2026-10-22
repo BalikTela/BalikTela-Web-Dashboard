@@ -12,6 +12,7 @@ type RecordFor<K extends CollectionName> = DatabaseShape[K][number];
 interface CanonicalDocument extends Document { _id: string }
 
 export interface DashboardSourceSnapshot {
+  stockConfirmations?: DatabaseShape['auditRecords'];
   hubDisposals?: { available: boolean; records: import('../shared/hubs.js').HubDisposalRecord[] };
   allBatches: DatabaseShape['materialBatches'];
   allTransfers: DatabaseShape['transfers'];
@@ -51,6 +52,7 @@ export interface Store {
   lookupImportRecords?(lookups: ImportRecordLookup[]): Promise<ImportExistingRecord[]>;
   loadHubDisposals?(): Promise<{ available: boolean; records: import('../shared/hubs.js').HubDisposalRecord[] }>;
   loadReportExportEvents?(start: string, endExclusive: string): Promise<DatabaseShape['auditRecords']>;
+  loadHubStockConfirmations?(): Promise<DatabaseShape['auditRecords']>;
   hasHubActivity?(userId: string): Promise<boolean>;
   close(): Promise<void>;
 }
@@ -191,6 +193,11 @@ export class MemoryStore implements Store {
 class MongoStore implements Store {
   mode = 'mongodb' as const;
   constructor(private db: Db, private client: MongoClient) {}
+
+  async loadHubStockConfirmations() {
+    const rows = await this.collection('auditRecords').find({ action: 'hub.stock.confirmed' }).toArray();
+    return rows.map(row => decodeRecord('auditRecords', row));
+  }
 
   async loadReportExportEvents(start: string, endExclusive: string) {
     const rows = await this.collection('auditRecords').find({ action: 'report.exported',

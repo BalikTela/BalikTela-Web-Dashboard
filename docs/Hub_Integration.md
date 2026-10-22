@@ -1,5 +1,38 @@
 # Hub Collection and Disposal Integration
 
+## Admin Stock Confirmation (23 October 2026)
+
+Only Admin may use **Confirm current stock** in Hub Facilities. Enter the actual
+remaining weight in metric tons, the local count date/time, and a reason, then
+affirm that the stock was checked. The weight starts blank; zero must be entered
+explicitly. Never use the action to assume an empty Hub from a disposal alone.
+
+The API persists an append-only `hub.stock.confirmed` activity-log checkpoint,
+including the Admin, count, date, reason and previous confirmation reference.
+Existing receipts, measurements, batches and disposals are not rewritten. No new
+schema migration is required. Counts do not qualify as intake, recycling, or
+recovery evidence. Government and Researcher retain regional summaries without
+the private count metadata and cannot save confirmations.
+
+Storage starts from the latest count and applies only later unique supported
+receipts, disposals and outbound handovers. Existing movements covered by the
+count are not applied again. Reservations still count toward the 90% cutoff;
+maintenance, onboarding, inactive, missing-capacity and operator-approval gates
+remain in force. Overfilled actual counts remain visible rather than being
+clamped. Missing feeds, ambiguous attribution, changed/deleted historical
+evidence, late backdated movements, unsupported later handling, or a negative
+balance withhold availability and flag the count for review. Record a fresh
+physical count after investigating those changes.
+
+Concurrent/repeated saves from the same previous confirmation share a unique
+successor ID: only one can be inserted. A stale editor must reload before trying
+again. Successful saves invalidate the dashboard analytics and snapshot caches;
+the browser refreshes through the existing record-change event.
+
+This is a web-side stock-reconciliation action, not a replacement for mobile
+intake recording or consumer Hub-selection enforcement. No operational balances
+are automatically filled or reset as part of deploying this feature.
+
 ## Current Web Policy: Collection and Disposal (19 October 2026)
 
 This section supersedes the older weighing-oriented role description below.

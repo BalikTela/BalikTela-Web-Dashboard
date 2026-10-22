@@ -9,11 +9,15 @@ import { buildDashboardAnalytics, loadDashboardAnalyticsSnapshot } from '../serv
 import { buildHubDirectory } from '../server/hubs.js';
 import { buildHubOperations } from '../server/hubOperations.js';
 import { serveWebApp } from '../server/webApp.js';
+import { HUB_SIMULATION_PREFIX, HUB_SIMULATION_PROFILE_NOTE } from '../shared/hubStorage.js';
 
 const data=await createSeedData(),admin=data.users[0];
 const operator={...structuredClone(data.users.find(user=>user.role==='Recycler')!),id:'HUB-LOADING-TEST',
   role:'BalikTela Hub' as const,fullName:'Hub loading check',scope:{...admin.scope,facilityIds:[data.facilities[0].id]}};
 data.users.push(operator);
+data.users.push({...structuredClone(operator),id:`${HUB_SIMULATION_PREFIX}OP-UI-HIDDEN`,role:'Recycler',stakeholder:'BalikTela Hub',
+  fullName:'Hidden simulation operator',email:'hidden@simulation.baliktela.invalid',authUserId:null,passwordHash:null,
+  accountStatus:'Deactivated',profile:{...operator.profile,recyclingPractices:HUB_SIMULATION_PROFILE_NOTE}});
 const store=new MemoryStore(data),source=await loadDashboardAnalyticsSnapshot(store);
 source.hubDisposals={available:true,records:[]};
 const app=express();serveWebApp(app);
@@ -49,6 +53,7 @@ try {
     await page.getByRole('button',{name:'Hub Management',exact:true}).click();
     const manage=page.getByRole('button',{name:'Manage Hub Hub loading check',exact:true});
     await manage.waitFor();assert.equal(facilityReads,0,'Directory loading must not request assignment details.');
+    assert.equal(await page.getByText('Hidden simulation operator',{exact:true}).count(),0,'Simulation-only profiles must not appear in Hub Management.');
     if(failFacilities) {
       await manage.click();await page.getByRole('alert').getByText('Assignment lookup unavailable.').waitFor();
       assert.equal(await page.getByRole('dialog').count(),0);assert.ok(await manage.isEnabled());

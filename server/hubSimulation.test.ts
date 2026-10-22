@@ -7,7 +7,7 @@ import { MemoryStore } from './store.js';
 import { loadDashboardAnalyticsSnapshot, buildDashboardAnalytics } from './dashboardAnalytics.js';
 import { buildHubStorageAnalytics } from './hubStorage.js';
 import { buildHubOperations } from './hubOperations.js';
-import { buildHubDisposalMonitoring } from './hubs.js';
+import { buildHubDirectory, buildHubDisposalMonitoring } from './hubs.js';
 import { isApprovedHub } from '../shared/hubs.js';
 import { hasPermission } from './access-control.js';
 import { HUB_SIMULATION_PREFIX, isStorageSimulationOperator } from '../shared/hubStorage.js';
@@ -46,6 +46,41 @@ test('small Hub fixture connects seven existing Hubs without login accounts, pub
     assert.equal(row.simulationOnly, true); assert.equal(row.selectable, false);
     assert.equal(row.status, expected.heldKg + expected.reservedKg >= expected.capacityKg * .9 ? 'Intake paused' : 'Available');
   }
+});
+
+test('Hub Management excludes disabled simulation-only profiles and counts without deleting historical evidence', async () => {
+  const { source, actor, store } = await simulationFixture();
+  const before=JSON.stringify(source);
+  const hidden=await buildHubDirectory(store,actor,{},source);
+  assert.deepEqual(hidden.hubs,[]);
+  assert.deepEqual(hidden.regions,[]);
+  assert.equal(hidden.summary.operators,0);
+  assert.equal(hidden.summary.suspended,0);
+  assert.equal(hidden.summary.unassignedFacilities,0);
+  assert.equal(JSON.stringify(source),before,'Directory filtering must not change the source records or linked history.');
+
+  const real={...structuredClone(actor),id:'REGISTERED-HUB',role:'BalikTela Hub' as const,authUserId:'registered-auth-id',
+    fullName:'Registered Hub operator',email:'registered@example.test',organizationVerified:true,accountStatus:'Active' as const,
+    scope:{...actor.scope,facilityIds:['FAC-001']}};
+  source.users.push(real,
+    {...structuredClone(real),id:'PENDING-HUB',organizationVerified:false,accountStatus:'Pending verification'},
+    {...structuredClone(real),id:'SUSPENDED-HUB',accountStatus:'Suspended'},
+    {...structuredClone(real),id:'REJECTED-HUB',organizationVerified:false,canonicalVerification:'rejected'});
+  // A real identity must not be hidden merely because an old simulation identifier remains.
+  const linked={...structuredClone(source.users.find(isStorageSimulationOperator)!),id:`${HUB_SIMULATION_PREFIX}OP-LINKED`,authUserId:'actual-auth-link'};
+  source.users.push(linked);
+  const result=await buildHubDirectory(store,actor,{},source);
+  assert.deepEqual(new Set(result.hubs.map(item=>item.id)),new Set([real.id,'PENDING-HUB','SUSPENDED-HUB','REJECTED-HUB',linked.id]));
+  assert.equal(result.summary.operators,5);
+  assert.equal(result.summary.approved,1);
+  assert.equal(result.summary.pending,1);
+  assert.equal(result.summary.suspended,2);
+  const government={...actor,role:'Government' as const,scope:{...actor.scope,aggregateOnly:true}};
+  const regional=await buildHubDirectory(store,government,{},source);
+  assert.deepEqual(regional.hubs,[]);
+  assert.equal(regional.summary.operators,5);
+  assert.equal(regional.regions.reduce((sum,row)=>sum+row.operators,0),5);
+  assert.equal((await buildHubDirectory(store,actor,{region:'Central Visayas'},source)).summary.operators,0);
 });
 
 test('one complete synthetic lifecycle reserves, receives, pauses, partially disposes and reopens using the production calculators', async () => {

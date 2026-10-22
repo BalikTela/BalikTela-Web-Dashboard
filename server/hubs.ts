@@ -14,6 +14,7 @@ import { identifyHubOperators } from './stakeholders.js';
 import { buildHubOperations } from './hubOperations.js';
 import { validateReportQuery } from './reports.js';
 import { aggregateHubDisposals } from './hubDisposals.js';
+import { isStorageSimulationOperator } from '../shared/hubStorage.js';
 
 const aggregateOnly = (actor: UserRecord) => actor.scope.aggregateOnly || actor.role === 'Government';
 const inRegionScope = (actor: UserRecord, region: string) => actor.role === 'Administrator' || !actor.scope.regions.length || actor.scope.regions.includes(region);
@@ -32,7 +33,7 @@ export async function buildHubDirectory(store: Store, actor: UserRecord, query: 
   const measurements = allMeasurements.filter(item => allowedBatches.has(item.batchId));
   const selected = (key: string, all: string, actual: string | null) => !query[key] || query[key] === all || query[key] === actual;
   const hubIds = identifyHubOperators(snapshot);
-  const hubs = users.filter(user => hubIds.has(user.id)).filter(user => ['Administrator', 'Government', 'Researcher'].includes(actor.role) || user.id === actor.id).filter(user => inRegionScope(actor, user.region)
+  const hubs = users.filter(user => hubIds.has(user.id) && !isStorageSimulationOperator(user)).filter(user => ['Administrator', 'Government', 'Researcher'].includes(actor.role) || user.id === actor.id).filter(user => inRegionScope(actor, user.region)
     && selected('region', 'All regions', user.region) && selected('city', 'All cities', user.city)
     && selected('organizationId', 'All organizations', user.organizationId)
     && (!query.facilityId || query.facilityId === 'All facilities' || user.scope.facilityIds.includes(String(query.facilityId)))).map(user => {

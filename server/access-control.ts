@@ -3,6 +3,7 @@ import type { AuthenticatedRequest } from './auth.js';
 import type { Store } from './store.js';
 import type { FacilityRecord, ListingRecord, MaterialBatchRecord, MeasurementRecord, OrganizationRecord, RecoveryRecord, TransferRecord, UserRecord, UserRole } from './types.js';
 import { isApprovedHub, isHubProfile, isHubWeighingMeasurement } from '../shared/hubs.js';
+import { isWebDashboardRole, WEB_ACCESS_MESSAGE } from '../shared/webAccess.js';
 
 export const PERMISSIONS = [
   'profile.read', 'profile.update',
@@ -24,47 +25,29 @@ export const PERMISSIONS = [
 export type Permission = typeof PERMISSIONS[number];
 
 const profile: Permission[] = ['profile.read', 'profile.update'];
-const discovery: Permission[] = ['listings.read', 'listings.create', 'listings.match', 'offers.read', 'offers.create', 'offers.manage', 'batches.read', 'facilities.read', 'transfers.read', 'transfers.manage', 'configuration.read', 'messages.read', 'messages.create', 'wallet.read'];
-const organizationMonitoring: Permission[] = ['organizations.read', 'analytics.read', 'reports.read', 'reports.export', 'governance.read', 'weighing.read'];
 
 export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   Administrator: PERMISSIONS,
-  Government: [...profile, 'organizations.read', 'facilities.read', 'analytics.read', 'analytics.predictive.read', 'audit.read', 'configuration.read', 'governance.read', 'reports.read', 'reports.export', 'hubs.read', 'weighing.read'],
+  Government: [...profile, 'organizations.read', 'facilities.read', 'analytics.read', 'configuration.read', 'governance.read', 'reports.read', 'reports.export', 'hubs.read', 'weighing.read'],
   Researcher: [...profile, 'organizations.read', 'listings.read', 'batches.read', 'facilities.read', 'transfers.read', 'recovery.read', 'analytics.read', 'analytics.predictive.read', 'dataQuality.read', 'configuration.read', 'governance.read', 'reports.read', 'reports.export', 'hubs.read', 'weighing.read'],
-  Producer: [...profile, ...discovery.filter(permission => !['offers.create', 'listings.match'].includes(permission)), ...organizationMonitoring, 'recovery.read'],
-  Recycler: [...profile, ...discovery, ...organizationMonitoring, 'facilities.manage', 'recovery.read', 'recovery.create', 'hubs.read'],
-  Upcycler: [...profile, ...discovery, ...organizationMonitoring, 'facilities.manage', 'recovery.read', 'recovery.create'],
-  'LGU/Collection Point': [...profile, ...discovery, 'organizations.read', 'facilities.manage', 'analytics.read', 'reports.read', 'recovery.read', 'recovery.create'],
-  NGO: [...profile, ...discovery, 'organizations.read', 'analytics.read', 'reports.read', 'recovery.read'],
-  Consumer: [...profile, ...discovery.filter(permission => !['listings.create', 'batches.read'].includes(permission))],
-  'BalikTela Hub': [...profile, 'analytics.read', 'listings.read', 'batches.read', 'facilities.read', 'transfers.read', 'hubs.read'],
+  Producer: [], Recycler: [], Upcycler: [], 'LGU/Collection Point': [], NGO: [], Consumer: [], 'BalikTela Hub': [],
 };
 
 const pendingAccountPermissions = new Set<Permission>(profile);
-const hubPermissions = new Set<Permission>(['profile.read', 'profile.update', 'analytics.read', 'listings.read', 'batches.read', 'facilities.read', 'transfers.read', 'hubs.read']);
 
-export async function resolveWebActor(store: Store, user: UserRecord): Promise<UserRecord> {
-  if (user.role !== 'Recycler' || isHubProfile(user)) return user;
-  let hub: boolean;
-  if (store.hasHubActivity) hub = await store.hasHubActivity(user.id);
-  else {
-    const [listings, measurements, disposals] = await Promise.all([store.all('listings'), store.all('measurements'), store.loadHubDisposals?.()]);
-    const now = Date.now();
-    hub = listings.some(item => item.weighingHubId === user.id && Date.parse(item.createdAt) <= now) || measurements.some(item => item.recordedBy === user.id && isHubWeighingMeasurement(item) && Date.parse(item.timestamp) <= now)
-      || Boolean(disposals?.records.some(item => item.operatorId === user.id && Date.parse(item.disposedAt) <= now));
-  }
-  return hub ? { ...user, webHubOperator: true } : user;
+export async function resolveWebActor(_store: Store, user: UserRecord): Promise<UserRecord> {
+  return webActor(user);
+}
+
+export function webActor(user: UserRecord): UserRecord {
+  return user.role === 'Government' ? { ...user, scope: { ...user.scope, aggregateOnly: true } } : user;
 }
 
 export function hasPermission(user: UserRecord, permission: Permission) {
+  if (!isWebDashboardRole(user.role)) return false;
   if (['Suspended', 'Deactivated'].includes(user.accountStatus)) return false;
   if ((!user.emailVerifiedAt || !user.passwordChangedAt) && !pendingAccountPermissions.has(permission)) return false;
   if (user.accountStatus === 'Pending verification' && !pendingAccountPermissions.has(permission)) return false;
-  if (isHubProfile(user)) {
-    if (!hubPermissions.has(permission)) return false;
-    if (!isApprovedHub(user) && !pendingAccountPermissions.has(permission)) return false;
-    return true;
-  }
   if (!Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, user.role) || !ROLE_PERMISSIONS[user.role].includes(permission)) return false;
   if (permission === 'reports.export') return user.role === 'Administrator' || user.scope.canExport;
   return true;
@@ -101,11 +84,16 @@ export function authorize(store: Store, permission: Permission) {
       if (!session.revokedAt) await store.revokeSession(session.id, actor.id, new Date().toISOString());
       return res.status(401).json({ code: 'ACCOUNT_CHANGED', message: 'Your account role has changed. Sign in again to load your current access.' });
     }
+    if (!isWebDashboardRole(actor.role)) return res.status(403).json({ code: 'WEB_ACCESS_DENIED', message: WEB_ACCESS_MESSAGE });
     const sessionEnded = Boolean(session.revokedAt) || new Date(session.expiresAt).getTime() <= Date.now();
     if (['Suspended', 'Deactivated'].includes(actor.accountStatus)) return res.status(sessionEnded ? 401 : 403).json({ code: 'ACCOUNT_UNAVAILABLE', message: 'This account is suspended or deactivated. Contact a BalikTela administrator.' });
     if (sessionEnded) {
       return res.status(401).json({ code: session.revokedAt ? 'SESSION_REVOKED' : 'SESSION_EXPIRED', message: 'Your database session is invalid, revoked, or expired.' });
     }
+    if (actor.role !== 'Administrator' && ['producer', 'recycler', 'facilityId', 'organizationId'].some(key => {
+      const value = req.query[key];
+      return value !== undefined && value !== '' && !String(value).startsWith('All ');
+    })) return res.status(403).json({ message: 'Named participant, organization, and Hub filters are restricted to administrators.' });
     if (!hasPermission(actor, permission)) {
       const message = actor.accountStatus === 'Pending verification'
         ? 'This account must be verified before using this function.'

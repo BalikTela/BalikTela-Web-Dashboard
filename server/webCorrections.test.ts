@@ -45,13 +45,13 @@ test('completed mobile activity never substitutes an agreed quantity when its fi
   assert.equal(view.transactions[0].weightKg,null);assert.equal(view.transactions[0].weightEvidence,'Final weight missing');
 });
 
-test('Producer and Consumer cannot cross supply, request or verification roles, even for an owned historical transfer',async()=>{
+test('Producer and Consumer cannot use web exchange endpoints even for an owned historical transfer',async()=>{
   const seed=await createSeedData(),producer=seed.users.find(user=>user.role==='Producer')!,consumer=seed.users.find(user=>user.role==='Consumer')!;
-  assert.equal(hasPermission(producer,'listings.create'),true);assert.equal(hasPermission(producer,'offers.create'),false);
-  assert.equal(hasPermission(consumer,'offers.create'),true);assert.equal(hasPermission(consumer,'listings.create'),false);
+  assert.equal(hasPermission(producer,'listings.create'),false);assert.equal(hasPermission(producer,'offers.create'),false);
+  assert.equal(hasPermission(consumer,'offers.create'),false);assert.equal(hasPermission(consumer,'listings.create'),false);
   assert.equal(hasPermission(consumer,'analytics.read'),false);assert.equal(hasPermission(consumer,'batches.manage'),false);
   const transfer={providerId:producer.id,recipientId:consumer.id};
-  assert.equal(canActOnTransfer(producer,transfer,'handover'),true);assert.equal(canActOnTransfer(consumer,transfer,'receipt'),true);
+  assert.equal(canActOnTransfer(producer,transfer,'handover'),false);assert.equal(canActOnTransfer(consumer,transfer,'receipt'),false);
   for(const action of ['validate','complete']){assert.equal(canActOnTransfer(consumer,transfer,action),false);assert.equal(canActOnTransfer(producer,{...transfer,recipientId:producer.id},action),false);}
   assert.equal(canActOnTransfer(consumer,{...transfer,providerId:consumer.id},'handover'),false);
   assert.equal(canActOnTransfer(producer,{...transfer,recipientId:producer.id},'receipt'),false);

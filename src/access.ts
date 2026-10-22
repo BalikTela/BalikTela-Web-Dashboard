@@ -1,5 +1,6 @@
 import type { PageKey } from './App';
 import type { AccessSummary, Permission } from './platformTypes';
+import { isWebDashboardRole } from '../shared/webAccess';
 
 const PAGE_PERMISSIONS: Record<PageKey, readonly Permission[]> = {
   overview: ['analytics.read'],
@@ -24,6 +25,5 @@ const PAGE_PERMISSIONS: Record<PageKey, readonly Permission[]> = {
 };
 
 export function canAccessPage(access: AccessSummary | null, page: PageKey) {
-  if (access?.hubOperator && !['overview', 'listings', 'materials', 'transactions', 'operations', 'facilities', 'profile'].includes(page)) return false;
-  return Boolean(access && PAGE_PERMISSIONS[page].some((permission) => access.permissions.includes(permission)));
+  return Boolean(access && isWebDashboardRole(access.role) && PAGE_PERMISSIONS[page].every((permission) => access.permissions.includes(permission)));
 }

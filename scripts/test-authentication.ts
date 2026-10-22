@@ -95,27 +95,21 @@ try {
     await call('/analytics/dashboard?dateRange=Custom%20range', undefined, adminLogin.accessToken, 400);
     checks.push('shared live reporting periods, report/dashboard/operations reconciliation, invalid period and report rejection');
     const recycler = seed.users.find(user => user.role === 'Recycler')!;
-    const hubLogin = await signIn(recycler.email, initial);
-    const ownHubDirectory = (await call('/hubs', undefined, hubLogin.accessToken)).data;
-    assert.deepEqual(ownHubDirectory.hubs.map((hub: { id: string }) => hub.id), [recycler.id]);
+    const deniedHub = await signIn(recycler.email, initial, 'api', 403);
+    assert.equal(deniedHub.code, 'WEB_ACCESS_DENIED');
+    await call(`/users/${recycler.id}`, { role: 'BalikTela Hub', reason: 'Assign an explicit Hub identity in the isolated fixture.' }, adminLogin.accessToken, 200, 'PATCH');
     await call('/weighing?dateRange=All%20time', undefined, adminLogin.accessToken);
     await call(`/hubs/${recycler.id}`, { action: 'approve', reason: 'Isolated Hub approval acceptance.' }, adminLogin.accessToken, 200, 'PATCH');
-    await call('/auth/me', undefined, hubLogin.accessToken, 401);
-    const approvedHub = await signIn(recycler.email, initial);
-    assert.equal(approvedHub.user.organizationVerified, true);
+    assert.equal((await signIn(recycler.email, initial, 'web', 403)).code, 'WEB_ACCESS_DENIED');
     await call(`/hubs/${recycler.id}`, { action: 'revoke', reason: 'Isolated Hub revocation acceptance.' }, adminLogin.accessToken, 200, 'PATCH');
-    await call('/auth/me', undefined, approvedHub.accessToken, 401);
     const edited = await call(`/users/${recycler.id}`, { fullName: recycler.fullName, accountStatus: 'Active', approve: true, reason: 'Profile edit must not restore weighing.' }, adminLogin.accessToken, 200, 'PATCH');
     assert.equal(edited.data.user.organizationVerified, false);
     assert.equal(edited.data.user.accountStatus, 'Active');
     const nativeHub = await call(`/users/${recycler.id}`, { role: 'BalikTela Hub', reason: 'Explicit Hub assignment requires new approval.' }, adminLogin.accessToken, 200, 'PATCH');
     assert.equal(nativeHub.data.user.organizationVerified, false);
     await call(`/hubs/${recycler.id}`, { action: 'approve', reason: 'Restore isolated fixture approval.' }, adminLogin.accessToken, 200, 'PATCH');
-    const nativeHubLogin = await signIn(recycler.email, initial);
-    assert.equal(nativeHubLogin.user.role, 'BalikTela Hub');
-    assert.ok(nativeHubLogin.access.permissions.includes('weighing.read'));
-    assert.ok(!nativeHubLogin.access.permissions.includes('users.manage'));
-    checks.push('Hub authority, approval/revocation, stale-session denial, role preservation and scoped native Hub access');
+    assert.equal((await signIn(recycler.email, initial, 'api', 403)).code, 'WEB_ACCESS_DENIED');
+    checks.push('administrator Hub management preserves mobile approval and roles but never grants Hub web access');
   }
   if (live) {
     const backupEmail = `baliktela.backup-audit.${suffix}@example.test`;
@@ -157,20 +151,19 @@ try {
   await call('/auth/login', { email: administrator.email, password: 'BalikTelaDemo2026!' }, undefined, live ? 401 : 200);
   checks.push(`administrator sign-in, secret stripping, invalid/missing/expired JWT rejection${live ? ', production demo password disabled' : ''}`);
 
-  await call('/auth/register', { email: `no-send-${suffix}@example.test`, password: 'weak', fullName: 'No-send test', consent: true }, undefined, 400);
-  await call('/auth/register', { email: `no-send-${suffix}@example.test`, password, fullName: 'No-send test', consent: false }, undefined, 400);
+  await call('/auth/register', { email: `no-send-${suffix}@example.test`, password: 'weak', fullName: 'No-send test', consent: true }, undefined, 403);
+  await call('/auth/register', { email: `no-send-${suffix}@example.test`, password, fullName: 'No-send test', consent: false }, undefined, 403);
   if (!live) {
-    const registered = (await call('/auth/register', { email: `signup-${suffix}@example.test`, password, fullName: 'Participant audit (demo)', role: 'Administrator', consent: true }, undefined, 201)).data;
-    assert.equal(registered.user.role, 'Consumer');
-    await call('/users', undefined, registered.accessToken, 403);
-    await call('/auth/email/verify', { token: registered.demoEmailVerificationToken });
-    await call('/auth/email/verify', { token: registered.demoEmailVerificationToken }, undefined, 400);
+    const registered = (await call('/auth/register', { email: `signup-${suffix}@example.test`, password, fullName: 'Participant audit (demo)', role: 'Administrator', consent: true }, undefined, 403)).data;
+    assert.equal(registered.user, undefined); assert.equal(registered.accessToken, undefined);
   }
-  const member = await signIn(consumer.email, initial);
+  assert.equal((await signIn(consumer.email, initial, 'web', 403)).code, 'WEB_ACCESS_DENIED');
+  const memberAccount = live ? await provision('Government') : seed.users.find(user => user.role === 'Government')!;
+  const member = await signIn(memberAccount.email, initial);
   await call('/users', undefined, member.accessToken, 403);
   await call('/users/me', { role: 'Administrator', accountStatus: 'Active' }, member.accessToken, 200, 'PATCH');
-  assert.equal((await call('/auth/me', undefined, member.accessToken)).data.user.role, 'Consumer');
-  checks.push('registration policy/consent, participant role enforcement, profile mass-assignment protection');
+  assert.equal((await call('/auth/me', undefined, member.accessToken)).data.user.role, 'Government');
+  checks.push('web registration rejection, participant login denial, profile mass-assignment protection');
 
   if (!live) await call(`/users/${researcher.id}`, { accountStatus: 'Pending verification', reason: 'Audit pending access' }, adminLogin.accessToken, 200, 'PATCH');
   let research = await signIn(researcher.email, initial);
@@ -287,8 +280,8 @@ try {
     assert.equal((await store!.findById('users', consumer.id))?.role, 'Consumer');
     await nativeConsumer.auth.signOut();
     checks.push('live RLS protects credential/session tables and both direct/mobile-RPC role escalation are denied');
-    const expires = await signIn(consumer.email, password);
-    const expired = await admin!.from('sessions').update({ expires_at: new Date(Date.now() - 60_000).toISOString() }).eq('id', expires.session.id).eq('user_id', consumer.id);
+    const expires = await signIn(researcher.email, externalPassword);
+    const expired = await admin!.from('sessions').update({ expires_at: new Date(Date.now() - 60_000).toISOString() }).eq('id', expires.session.id).eq('user_id', researcher.id);
     if (expired.error) throw new Error('Could not expire the isolated test session.');
     await call('/auth/me', undefined, expires.accessToken, 401);
     await call('/auth/refresh', { refreshToken: expires.refreshToken }, undefined, 401);

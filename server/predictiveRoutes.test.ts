@@ -11,7 +11,8 @@ test('predictive API enforces sessions, role/export permissions and region scope
   const seed = await createSeedData();
   for (const user of seed.users) { user.scope.regions = []; user.scope.canExport = false; }
   const government = seed.users.find(user => user.role === 'Government')!;
-  government.scope.regions = ['Central Visayas'];
+  const researcher = seed.users.find(user => user.role === 'Researcher')!;
+  researcher.scope.regions = ['Central Visayas'];
   const store = new MemoryStore(seed);
   const before = JSON.stringify({ batches: seed.materialBatches, listings: seed.listings, transfers: seed.transfers });
   const tokens = new Map<UserRole, string>();
@@ -40,13 +41,16 @@ test('predictive API enforces sessions, role/export permissions and region scope
     assert.equal(shortHistory.body.history.length, 13);
     assert.deepEqual(shortHistory.body.models, admin.body.models);
     assert.deepEqual(shortHistory.body.forecast, admin.body.forecast);
-    const restricted = await get('', 'Government');
+    assert.equal((await get('', 'Government')).status, 403);
+    const restricted = await get('', 'Researcher');
     assert.equal(restricted.status, 200); assert.equal(restricted.body.scope.records, 2400);
     assert.deepEqual(restricted.body.regions, ['Central Visayas']);
-    assert.equal((await get('?region=Metro%20Manila', 'Government')).status, 403);
-    assert.equal((await get('/dataset', 'Government')).status, 403);
+    assert.equal((await get('?region=Metro%20Manila', 'Researcher')).status, 403);
+    assert.equal((await get('/dataset', 'Researcher')).status, 403);
     government.scope.canExport = true;
-    const exported = await get('/dataset', 'Government');
+    assert.equal((await get('/dataset', 'Government')).status, 403);
+    researcher.scope.canExport = true;
+    const exported = await get('/dataset', 'Researcher');
     assert.equal(exported.status, 200); assert.equal(exported.body.records, 2400);
     assert.equal(exported.body.csv.trim().split('\n').length, 2401);
     assert.ok(!exported.body.csv.includes('Metro Manila'));
@@ -57,7 +61,6 @@ test('predictive API enforces sessions, role/export permissions and region scope
     const fullCsv = await get('/dataset', 'Administrator');
     assert.equal(fullCsv.body.records, 9600);
     assert.equal(fullCsv.body.isSynthetic, true);
-    const researcher = seed.users.find(user => user.role === 'Researcher')!;
     researcher.accountStatus = 'Pending verification';
     assert.equal((await get('', 'Researcher')).status, 403);
     researcher.accountStatus = 'Active'; researcher.passwordChangedAt = null;

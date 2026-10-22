@@ -11,17 +11,24 @@ Supabase Auth is the credential authority. The public `users` table stores the a
 
 ## Account creation
 
+### Web dashboard access
+
+Only `Administrator` (displayed as Admin), `Government`, and `Researcher` may sign in to the web dashboard. Login, refresh, and protected API routes enforce this rule regardless of a supplied client type. Previously issued participant tokens cannot access dashboard APIs. Mobile authentication, roles, approvals, and operational history are unchanged.
+
+- Admin has full administration, including all account groups, approvals, Hub assignments, operational changes, settings, and security logs. Self-demotion and removal of the last active administrator remain blocked.
+- Government is always summary-only within its assigned regions, regardless of its stored aggregate flag. It cannot read individual material/transfer records, edit operational data, view security logs, or use predictive models. Authorized summary report downloads remain separately controlled.
+- Researcher has read-only analytics and research access. Listing, batch, measurement, facility, recovery, and transaction views replace identifiers with researcher-specific coded references and withhold names, contact details, addresses, and free-text notes. Summary-only research accounts remain more restricted. Hub performance and report downloads use regional/de-identified summaries; export permission is separate.
+- Named participant, organization, and Hub-ID filters are restricted to Admin. Non-admin report exports use the same privacy boundaries as previews.
+
+User Accounts groups existing accounts as **Admin**, **Government**, **Researcher**, **Producer / Consumer**, and **Recycler / Hub**. The latter two are mobile-only groups, not merged roles. Legacy NGO, Upcycler, and collection-point accounts remain manageable in the appropriate participant group without converting their source roles. Web invitations offer only the three dashboard roles.
+
 ### Participant registration
 
-1. A participant selects **Create participant account**.
-2. The API always assigns the `Consumer` role.
-3. Supabase sends an email-confirmation link.
-4. After confirmation, the participant signs in.
-5. Consumer activity remains in the participant/mobile experience; dashboard permissions are not assigned automatically.
+Participants register and sign in through mobile. The dashboard's `/api/auth/register` endpoint rejects participant creation and does not create a user or session. Admin can still manage existing participant accounts in User Accounts.
 
 ### Institutional invitation
 
-1. An administrator selects **Institutional account** in User Accounts.
+1. An administrator selects **Dashboard account** in User Accounts.
 2. The administrator assigns the intended role and organization.
 3. Supabase sends an invitation with a one-time setup code; the administrator never creates or sees the password.
 4. The recipient opens the dashboard's `/?auth=setup` page and enters their email and code. This screen is displayed even if another user is already signed into that browser.
@@ -30,7 +37,7 @@ Supabase Auth is the credential authority. The public `users` table stores the a
 7. The profile remains `Pending verification` until an administrator verifies it.
 8. Approval activates the centrally defined role and scope. The User Accounts security column distinguishes email verification from password initialization.
 
-Government and Researcher accounts default to aggregate-only access. Administrator creation is restricted to an existing administrator, and the last active administrator cannot be removed.
+Government accounts use summary-only access. New Researcher invitations support de-identified records, and Admin can further restrict them to summaries. Administrator creation is restricted to an existing administrator, and the last active administrator cannot be removed.
 
 Existing callbacks still support standard Supabase fragment credentials and token-hash email templates. Credentials are removed from the address bar and verified through the API. For password setup, the server verifies recent native OTP/invite/recovery claims, signs out the provider session, and returns only a single-use setup authorization. Ordinary Supabase password-login sessions cannot authorize password reset, and the same provider session cannot mint another setup authorization. A bare `?auth=complete` is not proof of confirmation. Expired invitations can be recovered through **Request a new code** or **Forgot password** using the invited email; do not delete/recreate the account.
 
@@ -65,6 +72,7 @@ Install the **Invite user** and **Reset password** templates from `supabase/temp
 SUPABASE_SCHEMA_APPLY=true npm run db:supabase:apply
 npm run test:auth
 npm run test:auth:ui
+npm run test:web-access
 DOTENV_CONFIG_PATH=.env.supabase AUTH_ACCEPTANCE_TEST=true npm run test:auth:supabase
 npm run test:invitation:ui
 npm run test:invitation:sql

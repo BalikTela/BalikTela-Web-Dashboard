@@ -15,6 +15,7 @@ import { buildHubFacilityAnalytics, hubFacilityAttributions } from './hubFacilit
 import { buildHubStorageAnalytics } from './hubStorage.js';
 import { isHubSimulationBatch } from '../shared/hubStorage.js';
 import { recoveryMassBalance } from '../shared/recovery.js';
+import { summaryActor } from './webPrivacy.js';
 import { changeDescription, formatMass, MATERIAL_METRIC_LABELS, percentage as percent } from '../shared/metrics.js';
 import { inReportingWindow, manilaDate, resolveReportingPeriod, type ReportingWindow } from '../shared/reporting.js';
 
@@ -72,6 +73,7 @@ export function selectAnalyticsCohort(snapshot: DashboardAnalyticsSnapshot, acto
 }
 
 export async function buildDashboardAnalytics(store: Store, actor: UserRecord, query: Record<string, unknown>, suppliedSnapshot?: DashboardAnalyticsSnapshot, now = new Date()) {
+  actor = summaryActor(actor);
   const snapshot = suppliedSnapshot ?? await loadDashboardAnalyticsSnapshot(store);
   const hubIds = identifyHubOperators(snapshot, now);
   if (hubIds.has(actor.id)) actor = { ...actor, webHubOperator: true };

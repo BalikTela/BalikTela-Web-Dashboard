@@ -88,7 +88,7 @@ export function buildHubOperations(source: DashboardSourceSnapshot, batches: Mat
   };
   const measured = source.measurements.filter(item => batchIds.has(item.batchId) && isHubWeighingMeasurement(item) && Date.parse(item.timestamp) <= now.getTime()
     && (!isHubProfile(actor) || item.recordedBy === actor.id));
-  const aggregateOnly = actor.scope.aggregateOnly || actor.role === 'Government';
+  const aggregateOnly = actor.scope.aggregateOnly || actor.role === 'Government' || actor.role === 'Researcher';
   return { aggregateOnly, periodLabel, disposalFeedAvailable: source.hubDisposals?.available ?? false,
     summary: { assigned: records.length, awaitingCollection: records.filter(item => item.state === 'Awaiting collection').length,
       collectedBatches: records.filter(item => item.collectionKg !== null).length,

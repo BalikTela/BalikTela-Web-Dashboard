@@ -73,7 +73,7 @@ export function buildHubStorageAnalytics(source: DashboardSourceSnapshot, facili
       ...availability, containsSimulation, simulationOnly, estimatedStock,
       selectable: availability.selectable && !simulationOnly && !containsSimulation && !estimatedStock };
   });
-  const aggregateOnly = actor.scope.aggregateOnly || actor.role === 'Government';
+  const aggregateOnly = actor.scope.aggregateOnly || actor.role === 'Government' || actor.role === 'Researcher';
   return { illustrativeCapacity: rows.some(item => item.capacitySource === 'Illustrative'), thresholdPercent: HUB_STORAGE_THRESHOLD_PERCENT, asOf: now.toISOString(), aggregateOnly,
     rows: aggregateOnly ? aggregateRows(rows) : rows, summary: { unattributedBatches } };
 }

@@ -28,26 +28,27 @@ test('government is aggregate-only and cannot access operational exchange functi
   assert.equal(isWithinOperationalScope(government, { organizationIds: ['ORG-1'] }), false);
 });
 
-test('export permission remains separate from authorized government audit access', () => {
+test('government exports require authorization and security logs remain administrator-only', () => {
   const government = user('Government');
   assert.equal(hasPermission(government, 'reports.export'), false);
-  assert.equal(hasPermission(government, 'audit.read'), true);
+  assert.equal(hasPermission(government, 'audit.read'), false);
   const authorized = user('Government', { scope: { ...government.scope, canExport: true } });
   assert.equal(hasPermission(authorized, 'reports.export'), true);
-  assert.equal(hasPermission(authorized, 'audit.read'), true);
+  assert.equal(hasPermission(authorized, 'audit.read'), false);
+  assert.equal(hasPermission(authorized, 'analytics.predictive.read'), false);
 });
 
 test('pending institutional accounts are restricted to their own profile', () => {
-  const producer = user('Producer', { accountStatus: 'Pending verification' });
+  const producer = user('Researcher', { accountStatus: 'Pending verification' });
   assert.equal(hasPermission(producer, 'profile.read'), true);
   assert.equal(hasPermission(producer, 'analytics.read'), false);
   assert.equal(hasPermission(producer, 'listings.create'), false);
 });
 
 test('unverified email or temporary password restricts account permissions', () => {
-  assert.equal(hasPermission(user('Producer', { emailVerifiedAt: null }), 'listings.read'), false);
-  assert.equal(hasPermission(user('Producer', { passwordChangedAt: null }), 'analytics.read'), false);
-  assert.equal(hasPermission(user('Producer', { emailVerifiedAt: null }), 'profile.update'), true);
+  assert.equal(hasPermission(user('Researcher', { emailVerifiedAt: null }), 'listings.read'), false);
+  assert.equal(hasPermission(user('Researcher', { passwordChangedAt: null }), 'analytics.read'), false);
+  assert.equal(hasPermission(user('Researcher', { emailVerifiedAt: null }), 'profile.update'), true);
 });
 
 test('organization scope prevents cross-organization batch access', () => {
@@ -60,10 +61,13 @@ test('organization scope prevents cross-organization batch access', () => {
   assert.equal(isWithinOperationalScope(producer, { organizationIds: ['ORG-2'] }), false);
 });
 
-test('recovery creation is limited to approved operational roles', () => {
-  assert.equal(hasPermission(user('Recycler'), 'recovery.create'), true);
-  assert.equal(hasPermission(user('Upcycler'), 'recovery.create'), true);
-  assert.equal(hasPermission(user('LGU/Collection Point'), 'recovery.create'), true);
+test('web operational changes are administrator-only and participant roles have no dashboard permissions', () => {
+  assert.equal(hasPermission(user('Administrator'), 'recovery.create'), true);
+  assert.equal(hasPermission(user('Recycler'), 'recovery.create'), false);
+  assert.equal(hasPermission(user('Upcycler'), 'recovery.create'), false);
+  assert.equal(hasPermission(user('LGU/Collection Point'), 'recovery.create'), false);
   assert.equal(hasPermission(user('Producer'), 'recovery.create'), false);
   assert.equal(hasPermission(user('Consumer'), 'recovery.create'), false);
+  for (const role of ['Producer', 'Consumer', 'Recycler', 'BalikTela Hub', 'NGO', 'LGU/Collection Point', 'Upcycler'] as UserRole[]) assert.deepEqual(permissionsFor(user(role)), []);
+  for (const role of ['Government', 'Researcher'] as const) for (const permission of ['users.manage', 'organizations.manage', 'facilities.manage', 'listings.manage', 'transfers.manage', 'recovery.create', 'configuration.manage', 'audit.read'] as const) assert.equal(hasPermission(user(role), permission), false);
 });

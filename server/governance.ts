@@ -14,7 +14,7 @@ import type { DashboardSourceSnapshot, Store } from './store.js';
 import type { ConfigurationRecord, MaterialBatchRecord, UserRecord } from './types.js';
 
 export function buildGovernance(actor: UserRecord, configuration: ConfigurationRecord | null) {
-  const aggregateOnly = actor.role === 'Government' || actor.scope.aggregateOnly;
+  const aggregateOnly = actor.role === 'Government' || actor.role === 'Researcher' || actor.scope.aggregateOnly;
   return {
     methodology: {
       massAccounting: 'Total Textiles Declared sums reported batch weights entered into the platform. Textiles Physically Received is separately supported physical intake. Confirmed recovery share = matched validated final reuse and recycling output / physically received weight in the same registration cohort, not declared weight. Transfers and stage weights are not additive.',

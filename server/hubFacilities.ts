@@ -58,7 +58,7 @@ export function buildHubFacilityAnalytics(source: DashboardSourceSnapshot, facil
       status: operating ? facilityCapacityStatus(0, capacityKg, site.status) : !linked ? 'No operator assigned'
         : receivedKg === null ? 'Intake incomplete' : facilityCapacityStatus(utilization ?? 0, capacityKg, site.status) };
   });
-  const aggregateOnly = actor.scope.aggregateOnly || actor.role === 'Government';
+  const aggregateOnly = actor.scope.aggregateOnly || actor.role === 'Government' || actor.role === 'Researcher';
   return { aggregateOnly, rows: aggregateOnly ? aggregateRows(rows) : rows,
     summary: { hubs: rows.length, unassignedOperators: operators.filter(user => !user.scope.facilityIds.length
       && (['Administrator','Government','Researcher'].includes(actor.role) || user.id === actor.id

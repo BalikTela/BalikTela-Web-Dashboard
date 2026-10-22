@@ -16,7 +16,7 @@ import { validateReportQuery } from './reports.js';
 import { aggregateHubDisposals } from './hubDisposals.js';
 import { isStorageSimulationOperator } from '../shared/hubStorage.js';
 
-const aggregateOnly = (actor: UserRecord) => actor.scope.aggregateOnly || actor.role === 'Government';
+const aggregateOnly = (actor: UserRecord) => actor.scope.aggregateOnly || actor.role === 'Government' || actor.role === 'Researcher';
 const inRegionScope = (actor: UserRecord, region: string) => actor.role === 'Administrator' || !actor.scope.regions.length || actor.scope.regions.includes(region);
 export function eligibleForWeighing(listing: ListingRecord) {
   return !listing.disposedAt && !(listing.disposedWeightKg ?? 0) && !listing.remainderPending && !(listing.reservedKg ?? 0)
@@ -126,7 +126,7 @@ export function registerHubRoutes(app: Express, store: Store,
     res.setHeader('X-BalikTela-Cache', result.status);
     res.json(result.value);
   }
-  app.use(['/api/hubs', '/api/weighing', '/api/hub-disposals'], (_req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
+  app.use(['/api/hubs', '/api/weighing', '/api/hub-disposals', '/api/hub-operations'], (_req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
   app.get('/api/hubs', requireAuth, authorize(store, 'hubs.read'), async (req: AuthenticatedRequest, res) =>
     cached(req, res, 'directory', snapshot => buildHubDirectory(store, req.actor!, req.query, snapshot)));
   app.get('/api/weighing', requireAuth, authorize(store, 'weighing.read'), async (req: AuthenticatedRequest, res) =>

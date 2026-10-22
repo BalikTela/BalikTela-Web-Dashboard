@@ -9,6 +9,7 @@ import { Button } from './components/ui/button';
 import { LoaderCircle, ShieldX } from 'lucide-react';
 import type { Filters } from './types';
 import { canAccessPage } from './access';
+import { isWebDashboardRole, WEB_ACCESS_MESSAGE } from '../shared/webAccess';
 import { readAuthLink } from './lib/authLinks';
 import { AuthLayout } from './components/AuthLayout';
 import { MotionPage } from './lib/motion';
@@ -63,14 +64,14 @@ function App() {
   if (authLoading) return <AuthLayout><div className="auth-session-status" role="status"><LoaderCircle size={20} className="animate-spin" aria-hidden="true" />Restoring secure session…</div></AuthLayout>;
   if (!user) return <AuthPage />;
 
-  const isDashboardUser = access?.permissions.includes('analytics.read');
+  const isDashboardUser = Boolean(user && isWebDashboardRole(user.role) && access?.permissions.includes('analytics.read'));
   return isDashboardUser ? <DashboardWorkspace /> : <DashboardAccessBoundary />;
 }
 
 function DashboardWorkspace() {
   const { user, access } = useAuth();
-  const [activePage, setActivePage] = useState<PageKey>(access?.hubOperator ? 'operations' : 'overview');
-  const [visitedPages, setVisitedPages] = useState<Set<PageKey>>(() => new Set([access?.hubOperator ? 'operations' : 'overview']));
+  const [activePage, setActivePage] = useState<PageKey>('overview');
+  const [visitedPages, setVisitedPages] = useState<Set<PageKey>>(() => new Set(['overview']));
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [advancedMode, setAdvancedMode] = useState('Diagnostic');
   const restricted = !canAccessPage(access, activePage) || Boolean(user?.scope.aggregateOnly && ['listings', 'materials'].includes(activePage));
@@ -141,8 +142,8 @@ function DashboardWorkspace() {
 
 function DashboardAccessBoundary() {
   const { user, logout } = useAuth();
-  const pending = user?.accountStatus === 'Pending verification' || (user?.role === 'BalikTela Hub' || user?.webHubOperator) && !user.organizationVerified;
-  return <AuthLayout><section className="auth-form auth-boundary"><ShieldX size={24} className="text-amber-700" aria-hidden="true" /><h1 className="auth-title mt-5">{pending ? 'Account approval is pending' : 'Dashboard access is not assigned to this role'}</h1><p className="auth-description">{pending ? `${user?.fullName}, your email and password are registered. A system administrator must verify your organization and approve your institutional access.` : `${user?.fullName}, participant exchange, communication, rewards, and engagement activity belongs to the BalikTela mobile application. This web dashboard is reserved for authorized management, monitoring, analytics, governance, and research roles.`}</p><Button className="mt-7 w-full" variant="outline" onClick={logout}>Sign out</Button></section></AuthLayout>;
+  const pending = Boolean(user && isWebDashboardRole(user.role) && (user.accountStatus === 'Pending verification' || !user.emailVerifiedAt || !user.passwordChangedAt));
+  return <AuthLayout><section className="auth-form auth-boundary"><ShieldX size={24} className="text-amber-700" aria-hidden="true" /><h1 className="auth-title mt-5">{pending ? 'Account approval is pending' : 'Dashboard access is not assigned to this role'}</h1><p className="auth-description">{pending ? `${user?.fullName}, your email and password are registered. A system administrator must verify your organization and approve your institutional access.` : WEB_ACCESS_MESSAGE}</p><Button className="mt-7 w-full" variant="outline" onClick={logout}>Sign out</Button></section></AuthLayout>;
 }
 
 export default function DashboardApp() { return <AuthProvider><App /></AuthProvider>; }

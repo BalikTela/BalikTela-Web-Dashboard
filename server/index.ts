@@ -17,6 +17,8 @@ import { registerPredictiveRoutes } from './analytics/routes.js';
 import { registerHubRoutes } from './hubs.js';
 import { registerRewardRoutes } from './rewards.js';
 import { isHubCandidate, isHubProfile } from '../shared/hubs.js';
+import { isWebDashboardRole, WEB_ACCESS_MESSAGE, WEB_DASHBOARD_ROLES } from '../shared/webAccess.js';
+import { researchBatch, researchFacility, researchListing, researchMeasurement, researchRecovery, researchTransfer, summaryActor } from './webPrivacy.js';
 import { textileRecyclability } from '../shared/materialClassification.js';
 import { recoveryMassBalance } from '../shared/recovery.js';
 import { availableStockKg, isTerminalTransfer } from '../shared/workflows.js';
@@ -147,6 +149,10 @@ app.post('/api/auth/login', async (req, res) => {
     }
     return res.status(401).json({ message: 'Incorrect email or password.', remainingAttempts: Math.max(0, loginMaxAttempts - failed.attempts) });
   }
+  if (!isWebDashboardRole(user.role)) {
+    clearRefreshCookie(res);
+    return res.status(403).json({ code: 'WEB_ACCESS_DENIED', message: WEB_ACCESS_MESSAGE });
+  }
   if (authenticatedIdentity) {
     if (user.authUserId && user.authUserId !== authenticatedIdentity.authUserId) return res.status(403).json({ message: 'This profile is linked to a different authentication identity.' });
     const emailVerifiedAt = authenticatedIdentity.emailConfirmedAt ?? user.emailVerifiedAt;
@@ -163,41 +169,8 @@ app.post('/api/auth/login', async (req, res) => {
   res.json(await authenticationPayload(user, authentication));
 });
 
-app.post('/api/auth/register', async (req, res) => {
-  const email = String(req.body.email ?? '').trim().toLowerCase();
-  const password = String(req.body.password ?? '');
-  const passwordError = passwordPolicyError(password);
-  if (!email.includes('@') || !String(req.body.fullName ?? '').trim()) return res.status(400).json({ message: 'Name and a valid email are required.' });
-  if (passwordError) return res.status(400).json({ message: passwordError });
-  if (req.body.consent !== true) return res.status(400).json({ message: 'Data Privacy Act consent is required for registration.' });
-  if (await store.findOne('users', (record) => record.email === email)) return res.status(409).json({ message: 'An account already exists for this email.' });
-  const now = new Date().toISOString();
-  const userId = id('USR');
-  const authIdentity = usesSupabaseAuth ? await identity.registerConsumer(email, password, userId, String(req.body.fullName).trim()) : null;
-  const user: UserRecord = {
-    id: userId, authUserId: authIdentity?.authUserId ?? null, email, passwordHash: usesSupabaseAuth ? null : await bcrypt.hash(password, 10), fullName: String(req.body.fullName).trim(), role: 'Consumer',
-    organizationId: null, organization: 'Individual participant', city: String(req.body.city ?? '').trim(), region: String(req.body.region ?? '').trim(),
-    joinedAt: now, consentAt: now, emailVerifiedAt: authIdentity?.emailConfirmedAt ?? null, passwordChangedAt: now, verification: 'Pending demo review', accountStatus: authIdentity?.emailConfirmedAt ? 'Active' : 'Pending verification',
-    scope: { organizationIds: [], facilityIds: [], regions: [String(req.body.region ?? '').trim()].filter(Boolean), canExport: false, aggregateOnly: false },
-    trustPlaceholder: 50,
-    profile: { ageGroup: '', organizationSize: 'Individual', productionVolumeKg: 0, recyclingPractices: '', acceptedTextiles: [], sustainabilityInterests: [] },
-  };
-  try {
-    const mutation = await provisionedUserMutation(store, user);
-    Object.assign(user, mutation.record);
-    await saveManagement(store,user,[mutation],'user.registered',user.id,'Participant registration with privacy consent.');
-  }
-  catch (error) { if (authIdentity) await identity.deleteUser(authIdentity.authUserId).catch(() => undefined); throw error; }
-  await audit(user.id, 'consumer.registered', 'User', user.id, 'Consumer self-registration with privacy consent.');
-  if (usesSupabaseAuth && !user.emailVerifiedAt) {
-    return res.status(201).json({ message: 'Account created. Check your email to confirm ownership before signing in.', requiresEmailVerification: true, user: publicUser(user) });
-  }
-  const verificationChallenge = await issueAuthChallenge(user, 'email_verification', req.body.client);
-  const authentication = await startSession(user, req.body.client);
-  const { session } = authentication;
-  if (session.client === 'web') setRefreshCookie(res, authentication.refreshToken, session.expiresAt);
-  await audit(user.id, 'auth.login', 'Session', session.id, `${session.client} session created after registration.`);
-  res.status(201).json({ ...await authenticationPayload(user, authentication), demoEmailVerificationToken: demoDelivery ? verificationChallenge.token : undefined });
+app.post('/api/auth/register', (_req, res) => {
+  res.status(403).json({ code: 'WEB_ACCESS_DENIED', message: 'Participant registration belongs in the mobile application. Dashboard accounts are invited by an administrator.' });
 });
 
 app.post('/api/auth/password/forgot', async (req, res) => {
@@ -376,6 +349,11 @@ app.post('/api/auth/refresh', async (req, res) => {
     return res.status(403).json({ code: 'ACCOUNT_UNAVAILABLE', message: 'The account linked to this session is unavailable.' });
   }
 
+  if (!isWebDashboardRole(user.role)) {
+    if (session.client === 'web') await store.revokeSession(session.id, user.id, new Date().toISOString());
+    clearRefreshCookie(res);
+    return res.status(403).json({ code: 'WEB_ACCESS_DENIED', message: WEB_ACCESS_MESSAGE });
+  }
   const nextRefreshToken = createRefreshToken(session.id);
   const nextCsrfToken = createCsrfToken();
   const rotated = await store.rotateSessionToken(session.id, presentedHash, hashSessionToken(nextRefreshToken), hashSessionToken(nextCsrfToken), new Date().toISOString());
@@ -474,10 +452,10 @@ app.post('/api/users', requireAuth, permit('users.manage'), async (req: Authenti
   const email = String(req.body.email ?? '').trim().toLowerCase();
   const organizationId = String(req.body.organizationId ?? '').trim();
   const organization = await store.findOne('organizations', (item) => item.id === organizationId);
-  if (!email.includes('@') || !String(req.body.fullName ?? '').trim() || !organization || !(['Administrator', 'Government', 'Researcher', 'Producer', 'Recycler', 'BalikTela Hub', 'NGO', 'LGU/Collection Point', 'Upcycler'] as UserRole[]).includes(role)) return res.status(400).json({ message: 'A valid institutional role, organization, name, and email are required.' });
+  if (!email.includes('@') || !String(req.body.fullName ?? '').trim() || !organization || !(WEB_DASHBOARD_ROLES as readonly string[]).includes(role)) return res.status(400).json({ message: 'Select Admin, Government, or Researcher and provide an organization, name, and email. Participant accounts register through mobile.' });
   if (await store.findOne('users', (item) => item.email === email)) return res.status(409).json({ message: 'An account already exists for this email.' });
   const now = new Date().toISOString();
-  const aggregateOnly = role === 'Government' || role === 'Researcher';
+  const aggregateOnly = role === 'Government';
   const userId = id('USR');
   const invitation = usesSupabaseAuth ? await identity.inviteInstitutionalUser(email, userId, role, String(req.body.fullName).trim()) : null;
   const password = usesSupabaseAuth ? null : String(req.body.temporaryPassword ?? 'BalikTelaDemo2026!');
@@ -502,7 +480,7 @@ app.patch('/api/users/:id', requireAuth, permit('users.manage'), async (req: Aut
   if (!roles.includes(role)) return res.status(400).json({ message: 'Select a valid account role.' });
   const organizationId = req.body.organizationId === undefined ? target.organizationId : String(req.body.organizationId || '') || null;
   const organization = organizationId ? await store.findOne('organizations', (item) => item.id === organizationId) : null;
-  const aggregateOnly = req.body.aggregateOnly === undefined ? target.scope.aggregateOnly : Boolean(req.body.aggregateOnly);
+  const aggregateOnly = role === 'Government' || (req.body.aggregateOnly === undefined ? target.scope.aggregateOnly : Boolean(req.body.aggregateOnly));
   const accountStatus = managementChoice(req.body.accountStatus ?? target.accountStatus,['Active','Pending verification','Suspended','Deactivated'],'Account status');
   if (target.id === req.auth!.userId && (role !== target.role || accountStatus !== 'Active')) return res.status(409).json({ message: 'Use another administrator account to change your own role or account status.' });
   if (target.role === 'Administrator' && (role !== 'Administrator' || accountStatus !== 'Active')) {
@@ -533,7 +511,7 @@ app.patch('/api/users/:id', requireAuth, permit('users.manage'), async (req: Aut
 app.get('/api/organizations', requireAuth, permit('organizations.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
   const organizations = scopeOrganizations(actor, await store.all('organizations'));
-  res.json({ organizations: actor.scope.aggregateOnly ? [] : organizations });
+  res.json({ organizations: actor.role !== 'Administrator' || actor.scope.aggregateOnly ? [] : organizations });
 });
 
 app.post('/api/organizations', requireAuth, permit('organizations.manage'), async (req: AuthenticatedRequest, res) => {
@@ -559,9 +537,11 @@ app.patch('/api/organizations/:id', requireAuth, permit('organizations.manage'),
 
 app.get('/api/barter/listings', requireAuth, permit('listings.read'), async (req: AuthenticatedRequest, res) => {
   const actor = await currentUser(req, res); if (!actor) return;
+  const sources = await store.all('users');
   const query = String(req.query.q ?? '').toLowerCase();
   const textileType = String(req.query.textileType ?? 'All textiles');
-  let listings = (await store.all('listings'))
+  let listings = (await store.all('listings')).map(item => ({ ...(actor.role === 'Researcher' ? researchListing(actor, item) : item),
+    recyclability: textileRecyclability({ id: item.batchId, condition: item.quality, sourceUserId: item.ownerId }, { users: sources, listings: [item] }) }))
     .filter((item) => !query || [item.title, item.description, item.ownerName, item.city, item.region, item.batchId].join(' ').toLowerCase().includes(query))
     .filter((item) => textileType === 'All textiles' || item.textileType === textileType)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -570,8 +550,7 @@ app.get('/api/barter/listings', requireAuth, permit('listings.read'), async (req
     const history = new Set((await store.all('measurements')).filter(item => item.recordedBy === actor.id).map(item => item.batchId));
     listings = listings.filter(item => item.ownerId === actor.id || isHubProfile(actor) && (item.weighingHubId === actor.id || history.has(item.batchId)));
   } else if (actor.role === 'Researcher' && actor.scope.regions.length) listings = listings.filter(item => actor.scope.regions.includes(item.region));
-  const sources = await store.all('users');
-  res.json({ listings: listings.map(item => ({ ...item, recyclability: textileRecyclability({ id: item.batchId, condition: item.quality, sourceUserId: item.ownerId }, { users: sources, listings: [item] }) })) });
+  res.json({ listings });
 });
 
 app.post('/api/barter/listings', requireAuth, permit('listings.create'), async (req: AuthenticatedRequest, res) => {
@@ -610,7 +589,7 @@ app.get('/api/material-batches', requireAuth, permit('batches.read'), async (req
   const period = resolveReportingPeriod({ ...req.query, dateRange: req.query.dateRange ?? 'All time' }, new Date(), scoped.map(item => item.createdAt).sort()[0]);
   const batches = filterBatches(scoped, period, req.query, { transfers: snapshot.allTransfers, recoveryRecords: snapshot.recoveryRecords.filter(item => item.status !== 'Reversed'), users: snapshot.users, organizations: snapshot.organizations });
   const measurements = snapshot.measurements;
-  res.json({ batches: batches.map((batch) => ({ ...batch, recyclability: textileRecyclability(batch, snapshot), measurements: measurements.filter((measurement) => measurement.batchId === batch.id) })) });
+  res.json({ batches: (actor.scope.aggregateOnly ? [] : batches).map((batch) => ({ ...(actor.role === 'Researcher' ? researchBatch(actor, batch) : batch), recyclability: textileRecyclability(batch, snapshot), measurements: measurements.filter((measurement) => measurement.batchId === batch.id).map(item => actor.role === 'Researcher' ? researchMeasurement(actor, item) : item) })) });
 });
 
 app.get('/api/facilities', requireAuth, permit('facilities.read'), async (req: AuthenticatedRequest, res) => {
@@ -619,7 +598,7 @@ app.get('/api/facilities', requireAuth, permit('facilities.read'), async (req: A
   let facilities = scopeFacilities(actor, await store.all('facilities'));
   const region = String(req.query.region ?? 'All regions'); const material = String(req.query.materialCategory ?? 'All textiles');
   facilities = facilities.filter((item) => (region === 'All regions' || item.region === region) && (material === 'All textiles' || item.acceptedMaterials.includes(material)));
-  res.json({ facilities });
+  res.json({ facilities: facilities.map(item => actor.role === 'Researcher' ? researchFacility(actor, item) : item) });
 });
 
 app.post('/api/facilities', requireAuth, permit('facilities.manage'), async (req: AuthenticatedRequest, res) => {
@@ -733,7 +712,7 @@ app.get('/api/transfers', requireAuth, permit('transfers.read'), async (req: Aut
   const transfers = actor.scope.aggregateOnly ? [] : ['BalikTela Hub', 'Researcher'].includes(actor.role) ? selected : scopeTransfers(actor, selected, snapshot);
   const requesterNames = new Map(snapshot.users.map(user => [user.id, user.fullName?.trim() || null]));
   const categories = new Map(snapshot.allBatches.map(batch => [batch.id, batch.materialCategory]));
-  res.json({ transfers: transfers.map(transfer => ({ ...transfer,
+  res.json({ transfers: transfers.map(transfer => actor.role === 'Researcher' ? researchTransfer(actor, transfer) : ({ ...transfer,
     requesterName: requesterNames.get(transfer.recipientId) ?? null,
     materialCategory: transfer.materialCategory || categories.get(transfer.batchId) || 'Not recorded',
   })).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) });
@@ -825,7 +804,7 @@ app.get('/api/recovery-records', requireAuth, permit('recovery.read'), async (re
   let records = (actor.role === 'Researcher' && !actor.scope.aggregateOnly ? snapshot.recoveryRecords : scopeRecoveryRecords(actor, snapshot.recoveryRecords, snapshot)).filter(item => currentBatchIds.has(item.batchId) && Date.parse(item.timestamp) <= now);
   const facilityId = String(req.query.facilityId ?? 'All facilities');
   records = records.filter((item) => facilityId === 'All facilities' || item.facilityId === facilityId);
-  res.json({ records: records.sort((a, b) => b.timestamp.localeCompare(a.timestamp)) });
+  res.json({ records: records.sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map(item => actor.role === 'Researcher' ? researchRecovery(actor, item) : item) });
 });
 
 app.post('/api/recovery-records', requireAuth, permit('recovery.create'), async (req: AuthenticatedRequest, res) => {
@@ -873,7 +852,7 @@ app.get('/api/data-quality', requireAuth, permit('dataQuality.read'), async (req
   const now = new Date();
   const { currentBatches: batches, currentTransfers: transfers } = selectAnalyticsCohort(snapshot, actor, req.query, now);
   const threshold = (await store.findOne('configurations', item => item.id === 'platform'))?.discrepancyThresholdPercent ?? 5;
-  res.json(buildDataQuality(actor, batches, transfers, threshold, now, snapshot));
+  res.json(buildDataQuality(summaryActor(actor), batches, transfers, threshold, now, snapshot));
 });
 
 app.get('/api/audit-records', requireAuth, permit('audit.read'), async (req: AuthenticatedRequest, res) => {
@@ -883,8 +862,9 @@ app.get('/api/audit-records', requireAuth, permit('audit.read'), async (req: Aut
   res.json({ records: actor.scope.aggregateOnly ? records.map((item) => ({ ...item, actorId: 'Authorized actor', entityId: 'Restricted identifier', details:'Administrative activity recorded. Record-level details are restricted.' })) : records });
 });
 
-app.get('/api/configuration', requireAuth, permit('configuration.read'), async (_req, res) => {
-  const configuration = await store.findOne('configurations', (item) => item.id === 'platform'); res.json({ configuration });
+app.get('/api/configuration', requireAuth, permit('configuration.read'), async (req: AuthenticatedRequest, res) => {
+  const configuration = await store.findOne('configurations', (item) => item.id === 'platform');
+  res.json({ configuration: configuration && req.actor!.role !== 'Administrator' ? { ...configuration, updatedBy: 'Restricted' } : configuration });
 });
 
 app.patch('/api/configuration', requireAuth, permit('configuration.manage'), async (req: AuthenticatedRequest, res) => {

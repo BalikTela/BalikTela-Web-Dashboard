@@ -1,6 +1,7 @@
 export const SESSION_CHECK_INTERVAL_MS = 15_000;
 
 export const REAUTHENTICATION_MESSAGES = {
+  WEB_ACCESS_DENIED: 'Web dashboard access is limited to Admin, Government, and Researcher accounts. Use the mobile application for participant and Hub activities.',
   ACCOUNT_CHANGED: 'Your role, permissions, or account settings have changed. You have been signed out. Sign in again to load your current access.',
   ACCOUNT_UNAVAILABLE: 'Your account is no longer available or has been suspended. You have been signed out. Contact a BalikTela administrator before signing in again.',
   SESSION_REVOKED: 'Your session was ended because of an account or security change, or a sign-out request. Sign in again to load your current access.',

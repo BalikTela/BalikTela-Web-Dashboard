@@ -41,6 +41,6 @@ export function hubDisposalEvidence(source: DashboardSourceSnapshot, selected: M
 
 export function aggregateHubDisposals(source: DashboardSourceSnapshot, selected: MaterialBatchRecord[], actor: UserRecord, now = new Date()): HubDisposalMonitoring {
   const ledger = hubDisposalEvidence(source, selected.filter(item => !isHubSimulationBatch(item)), actor, now);
-  const aggregateOnly = actor.scope.aggregateOnly || actor.role === 'Government';
+  const aggregateOnly = actor.scope.aggregateOnly || actor.role === 'Government' || actor.role === 'Researcher';
   return { ...ledger, aggregateOnly, landfillAvoidedKg: null, records: aggregateOnly ? [] : ledger.records };
 }

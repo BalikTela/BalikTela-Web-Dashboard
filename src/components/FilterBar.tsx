@@ -8,6 +8,7 @@ import { Select as SelectControl } from './ui/select';
 import { DEFAULT_REPORTING_RANGE, manilaDate } from '../../shared/reporting';
 import { CIRCULAR_PATHWAYS, MATERIAL_CATEGORIES, TRANSFER_STATUSES } from '../../shared/workflows';
 import { REGISTRY_WEIGHT_STATUSES, registryWeightFilter } from '../../shared/registryWeights';
+import { useAuth } from '../context/AuthContext';
 
 const initialFilters: Filters = {
   dateRange: DEFAULT_REPORTING_RANGE, startDate: '', endDate: '', region: 'All regions', city: '', textileType: 'All textiles',
@@ -18,6 +19,8 @@ const initialFilters: Filters = {
 export { initialFilters };
 
 export function FilterBar({ filters, onChange, registry = false }: { filters: Filters; onChange: (filters: Filters) => void; registry?: boolean }) {
+  const { user } = useAuth();
+  const identifiers = user?.role === 'Administrator';
   const [expanded, setExpanded] = useState(false);
   const update = <K extends keyof Filters>(key: K, value: Filters[K]) => onChange({ ...filters, [key]: value });
   const activeCount = Object.entries(filters).filter(([key, value]) => (registry && key === 'weightStatus' ? registryWeightFilter(value) : value) !== initialFilters[key as keyof Filters]).length;
@@ -49,11 +52,11 @@ export function FilterBar({ filters, onChange, registry = false }: { filters: Fi
           <Select label="Waste source" value={filters.wasteSource} onChange={(value) => update('wasteSource', value as Filters['wasteSource'])} options={['All sources', 'Pre-consumer', 'Post-consumer', 'Obsolete inventory', 'Household', 'Institutional', 'Unknown']} />
           <Select label="Circular pathway" value={filters.circularPathway} onChange={(value) => update('circularPathway', value as Filters['circularPathway'])} options={['All pathways', ...CIRCULAR_PATHWAYS]} />
           <Select label="Weight status" value={registry ? registryWeightFilter(filters.weightStatus) : filters.weightStatus} onChange={(value) => update('weightStatus', value as Filters['weightStatus'])} options={registry ? ['All weight statuses', ...REGISTRY_WEIGHT_STATUSES] : ['All weight statuses', 'Awaiting weighing', 'Estimated', 'Measured', 'Verified']} />
-          <Text label="Hub" value={filters.facilityId === 'All facilities' ? '' : filters.facilityId} placeholder="Hub ID" onChange={(value) => update('facilityId', value || 'All facilities')} />
-          <Text label="Organization" value={filters.organizationId === 'All organizations' ? '' : filters.organizationId} placeholder="Organization ID" onChange={(value) => update('organizationId', value || 'All organizations')} />
+          {identifiers ? <Text label="Hub" value={filters.facilityId === 'All facilities' ? '' : filters.facilityId} placeholder="Hub ID" onChange={(value) => update('facilityId', value || 'All facilities')} /> : null}
+          {identifiers ? <Text label="Organization" value={filters.organizationId === 'All organizations' ? '' : filters.organizationId} placeholder="Organization ID" onChange={(value) => update('organizationId', value || 'All organizations')} /> : null}
           <Select label="Workflow status" value={filters.transactionStatus} onChange={(value) => update('transactionStatus', value)} options={['All statuses', ...Object.values(TRANSFER_STATUSES), 'Recorded', 'Flagged']} />
-          <Text label="Producer" value={filters.producer} placeholder="Search producer" onChange={(value) => update('producer', value)} />
-          <Text label="Recycler" value={filters.recycler} placeholder="Search recycler" onChange={(value) => update('recycler', value)} />
+          {identifiers ? <Text label="Producer" value={filters.producer} placeholder="Search producer" onChange={(value) => update('producer', value)} /> : null}
+          {identifiers ? <Text label="Recycler" value={filters.recycler} placeholder="Search recycler" onChange={(value) => update('recycler', value)} /> : null}
         </div>
       ) : null}
     </section>

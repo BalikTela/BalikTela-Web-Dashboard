@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isCompletedTransfer } from '../shared/workflows.js';
 import type { Express, Response } from 'express';
+import { summaryActor } from './webPrivacy.js';
 import { authorize, hasPermission } from './access-control.js';
 import { requireAuth, type AuthenticatedRequest } from './auth.js';
 import { aggregate, buildDashboardAnalytics, loadDashboardAnalyticsSnapshot, selectAnalyticsCohort, type DashboardAnalyticsSnapshot } from './dashboardAnalytics.js';
@@ -16,6 +17,7 @@ export const REPORT_DEFINITIONS = [
   { id: 'organizations', name: 'Organization Participation', description: 'Source and recipient participation, with de-identified regional summaries for aggregate-only accounts.', formats: ['CSV', 'Print / PDF'], available: true },
 ];
 export function reportScope(actor: UserRecord) {
+  actor = summaryActor(actor);
   return { role: actor.role, aggregateOnly: actor.scope.aggregateOnly, canExport: hasPermission(actor, 'reports.export'), description: actor.scope.aggregateOnly ? `Aggregate/de-identified; ${actor.scope.regions.join(', ') || 'all authorized regions'}` : actor.role === 'Administrator' ? 'All authorized platform records' : 'Assigned organization, facility and individual scope' };
 }
 const filterNames: Record<string, string> = { dateRange: 'Date range', startDate: 'Custom start', endDate: 'Custom end', region: 'Region', city: 'City', textileType: 'Textile type', materialCategory: 'Material category', transactionType: 'Transaction type', stakeholderType: 'Stakeholder', producer: 'Producer search', recycler: 'Recycler search', wasteSource: 'Waste source', circularPathway: 'Circular pathway', weightStatus: 'Weight evidence', facilityId: 'Hub', organizationId: 'Organization', transactionStatus: 'Workflow status' };
@@ -27,6 +29,7 @@ const tons = (kg: number) => String(Number(toTons(kg).toFixed(6)));
 const count = (value: number) => value.toLocaleString('en-PH');
 
 export async function buildReport(store: Store, actor: UserRecord, id: string, query: Record<string, unknown>, snapshot?: DashboardAnalyticsSnapshot, now = new Date()): Promise<ReportDocument> {
+  actor = summaryActor(actor);
   const definition = REPORT_DEFINITIONS.find(item => item.id === id);
   if (!definition) throw Object.assign(new Error('Report not found.'), { status: 404 });
   validateReportQuery(query);

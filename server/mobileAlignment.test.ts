@@ -66,13 +66,13 @@ test('available stock subtracts reservations and a partial disposal locks reweig
   assert.equal(eligibleForWeighing({ ...seed.listings[0], disposedAt: null, disposedWeightKg: 1 }), false);
 });
 
-test('native Hub roles are approval-gated, scoped and never receive administrator permissions', async () => {
+test('native Hub accounts remain scoped for historical calculations but cannot access the web dashboard', async () => {
   const seed = await createSeedData();
   const hub = { ...seed.users[0], role: 'BalikTela Hub' as const, organizationId: null, organizationVerified: true,
     scope: { organizationIds: [], facilityIds: [], regions: [], canExport: false, aggregateOnly: false } };
   assert.equal(isApprovedHub(hub), true);
   assert.equal(isApprovedHub({ ...hub, organizationVerified: false }), false);
-  assert.equal(hasPermission(hub, 'analytics.read'), true);
+  assert.equal(hasPermission(hub, 'analytics.read'), false);
   assert.equal(hasPermission(hub, 'users.manage'), false);
   assert.equal(hasPermission(hub, 'hubs.manage'), false);
   assert.equal(hasPermission({ ...hub, organizationVerified: false }, 'analytics.read'), false);

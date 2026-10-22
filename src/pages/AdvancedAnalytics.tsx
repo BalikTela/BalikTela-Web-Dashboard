@@ -7,12 +7,15 @@ import type { getDashboardData } from '../services/dashboardService';
 import { Panel } from '../components/Panel';
 import { cn } from '../lib/utils';
 import { PredictiveAnalytics } from '../components/PredictiveAnalytics';
+import { useAuth } from '../context/AuthContext';
 
 type Data = Awaited<ReturnType<typeof getDashboardData>>;
 type Tab = 'Diagnostic' | 'Predictive';
 
 export function AdvancedAnalytics({ data, onModeChange }: { data: Data; onModeChange?: (mode: Tab) => void }) {
   const [tab, setTab] = useState<Tab>('Diagnostic');
+  const { access } = useAuth();
+  const predictive = access?.permissions.includes('analytics.predictive.read');
   return (
     <Panel>
       <SectionHeader
@@ -20,14 +23,14 @@ export function AdvancedAnalytics({ data, onModeChange }: { data: Data; onModeCh
         eyebrow="Diagnostic and predictive views"
         actions={
           <div className="flex flex-wrap rounded-md bg-slate-100 p-1">
-            {(['Diagnostic', 'Predictive'] as Tab[]).map((item) => (
+            {(predictive ? ['Diagnostic', 'Predictive'] as Tab[] : ['Diagnostic'] as Tab[]).map((item) => (
               <button key={item} type="button" aria-pressed={tab === item} onClick={() => { setTab(item); onModeChange?.(item); }} className={cn('h-8 rounded px-3 text-sm font-medium transition-colors', tab === item ? 'bg-white text-slate-950 ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-900')}>{item}</button>
             ))}
           </div>
         }
       />
       {tab === 'Diagnostic' ? <Diagnostic data={data} /> : null}
-      {tab === 'Predictive' ? <PredictiveAnalytics /> : null}
+      {tab === 'Predictive' && predictive ? <PredictiveAnalytics /> : null}
     </Panel>
   );
 }

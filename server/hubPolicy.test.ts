@@ -30,20 +30,21 @@ async function fixture() {
   return { source, hub, batch, listing, consumer, admin: data.users[0], measurement: data.measurements[0], recovery: data.recoveryRecords[0] };
 }
 
-test('Hub permission boundary excludes exchange, processing and weighing writes while ordinary recyclers retain their role', async () => {
+test('Hub and Recycler web access is denied without rewriting their mobile roles or approvals', async () => {
   const { source, hub } = await fixture();
   const stored = { ...hub, role: 'Recycler' as const, stakeholder: undefined };
   const resolved = await resolveWebActor({ all: async (name: string) => name === 'listings' ? source.listings : [] } as never, stored);
-  assert.equal(resolved.role, 'Recycler'); assert.equal(resolved.webHubOperator, true); assert.equal(stored.webHubOperator, undefined);
+  assert.equal(resolved.role, 'Recycler'); assert.equal(resolved.webHubOperator, undefined); assert.equal(stored.webHubOperator, undefined);
+  assert.equal(resolved.organizationVerified, stored.organizationVerified);
   for (const actor of [hub, resolved, { ...stored, stakeholder: 'Collection personnel' }]) {
     for (const permission of ['offers.create', 'transfers.manage', 'recovery.create', 'recovery.manage', 'facilities.manage', 'analytics.predictive.read', 'weighing.read'] as const)
       assert.equal(hasPermission(actor, permission), false, permission);
-    assert.equal(hasPermission(actor, 'hubs.read'), true);
+    assert.equal(hasPermission(actor, 'hubs.read'), false);
     assert.equal(hasPermission({ ...actor, organizationVerified: false }, 'hubs.read'), false);
     assert.equal(hasPermission({ ...actor, accountStatus: 'Suspended' }, 'profile.read'), false);
   }
-  assert.ok(permissionsFor(stored).includes('recovery.create'));
-  assert.ok(permissionsFor({ ...stored, stakeholder: 'Recycler / Upcycler' }).includes('recovery.create'), 'Generic Recycler metadata does not prove a Hub role.');
+  assert.deepEqual(permissionsFor(stored), []);
+  assert.deepEqual(permissionsFor({ ...stored, stakeholder: 'Recycler / Upcycler' }), []);
 });
 
 test('consumer recyclability assumption requires a posted own listing and does not manufacture intake or outcomes', async () => {
@@ -169,7 +170,7 @@ test('Hub sent totals respect operator scope and withhold ambiguous multi-Hub ba
   assert.equal(conflict.records[0].sentWeightBasis,'Hub assignment needs review');
 });
 
-test('Hub operations API enforces current legacy identity, private scoping and server-side processing denial', async () => {
+test('Hub operations API denies legacy Recycler sessions independently of client type and preserves mobile identity', async () => {
   const { source, hub, batch } = await fixture(), data = await createSeedData();
   const legacy = { ...hub, role: 'Recycler' as const };
   const store = new MemoryStore({ ...data, users: [...data.users, legacy], materialBatches: source.allBatches, listings: source.listings,
@@ -187,9 +188,9 @@ test('Hub operations API enforces current legacy identity, private scoping and s
   try {
     assert.equal((await fetch(`${base}/api/hub-operations`)).status, 401);
     const response = await fetch(`${base}/api/hub-operations?dateRange=All%20time`, { headers });
-    assert.equal(response.status, 200); assert.match(response.headers.get('cache-control')!, /private, no-store/);
-    const body = await response.json(); assert.deepEqual(body.records.map((item: { batchId: string }) => item.batchId), [batch.id]);
-    assert.equal((await fetch(`${base}/api/hub-operations?region[]=private`, { headers })).status, 400);
+    assert.equal(response.status, 403); assert.match(response.headers.get('cache-control')!, /private, no-store/);
+    const body = await response.json(); assert.equal(body.code, 'WEB_ACCESS_DENIED'); assert.equal(body.records, undefined);
+    assert.equal((await fetch(`${base}/api/hub-operations?region[]=private`, { headers })).status, 403);
     assert.equal((await fetch(`${base}/api/processing-test`, { method: 'POST', headers })).status, 403);
     assert.equal((await fetch(`${base}/api/weighing`, { headers })).status, 403);
     assert.equal((await store.findById('users', hub.id))?.role, 'Recycler');

@@ -22,6 +22,7 @@
     "typecheck:api": "tsc -p tsconfig.server.json",
     "test": "tsx --test server/*.test.ts server/database/*.test.ts",
     "test:auth": "npm run build:render && tsx scripts/test-authentication.ts",
+    "test:web-access": "npm run build:render && node --import tsx scripts/test-web-role-policy.ts",
     "test:auth:ui": "node scripts/test-auth-ui.mjs",
     "test:auth:branding": "node scripts/test-auth-branding.mjs",
     "test:dashboard:ui": "node --import tsx scripts/test-dashboard-ui.ts",

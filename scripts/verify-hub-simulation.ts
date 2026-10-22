@@ -37,7 +37,10 @@ try {
     assert.equal(row.selectable, false);
   }
   const operations = buildHubOperations(own, own.allBatches, actor, 'Synthetic simulation only', now);
-  assert.equal(operations.summary.sentKg, 20500); assert.equal(operations.summary.collectedKg, 17250); assert.equal(operations.summary.disposedKg, 2900);
+  assert.equal(operations.summary.sentKg,0);assert.equal(operations.summary.collectedKg,null);assert.equal(operations.summary.disposedKg,0);
+  assert.deepEqual(operations.records,[]);
+  assert.equal(own.measurements.filter(item=>item.canonicalStage==='collection').reduce((sum,item)=>sum+item.weightKg,0),17250);
+  assert.equal(own.hubDisposals.records.reduce((sum,item)=>sum+item.weightKg,0),2900);
   const analytics = await buildDashboardAnalytics(store, actor, {}, source, now);
   const stages = [ ['Empty Hub', '00:30'], ['Consumer submits; space reserved', '01:30'], ['Hub receives; intake paused', '02:30'],
     ['First disposal; space released', '04:30'], ['Final disposal; cleared Hub reopens', '06:30'] ];
@@ -53,7 +56,7 @@ try {
   });
   const report = { verifiedAt: now.toISOString(), dataset: P, actualMobileClicks: false, verificationWrites: 0,
     totalsKg: { declared: 20500, received: 17250, disposed: 2900, held: 14350, reserved: 3250 },
-    scenarioRows: onlyStorage.rows, combinedRows: analytics.hubStorage.rows, timeline,
+    scenarioRows: onlyStorage.rows, combinedRows: analytics.hubStorage.rows, timeline, activeHubMonitoring: operations.summary,
     unknownCombinedHubs: analytics.hubStorage.rows.filter(item => item.storedKg === null).map(item => item.name) };
   await mkdir(output, { recursive: true });
   await writeFile(`${output}/verification.json`, JSON.stringify(report, null, 2));
@@ -91,11 +94,11 @@ try {
       await navigate('Material Registry'); await active().getByLabel('Search batch records', { exact: true }).fill(P);
       await page.waitForFunction(() => document.querySelectorAll('main [aria-hidden="false"] tbody tr').length === 7);
       await navigate('Recovery Monitoring'); await active().getByLabel('Search Hub materials', { exact: true }).fill(P);
-      await page.waitForFunction(() => document.querySelectorAll('main [aria-hidden="false"] tbody tr').length === 7);
+      await active().getByText('No assigned or handled Hub materials match these filters.',{exact:true}).waitFor();
       await page.screenshot({ path: `${output}/recovery-${width}.png`, fullPage: true });
       await active().getByRole('button', { name: 'Hub Disposals', exact: true }).click();
       await active().getByLabel('Search disposal records', { exact: true }).fill(P);
-      await page.waitForFunction(() => document.querySelectorAll('main [aria-hidden="false"] tbody tr').length === 4);
+      await active().getByText('No disposal records match this search.',{exact:true}).waitFor();
       assert.deepEqual(errors, []); assert.equal(writes, 0); await context.close();
     } } finally { await browser.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
   }

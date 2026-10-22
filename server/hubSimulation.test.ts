@@ -4,13 +4,14 @@ import { buildHubSimulation, HUB_SIMULATION_AT } from './analytics/hubSimulation
 import { buildOperationalDemo } from './analytics/operationalDemo.js';
 import { createSeedData } from './seed.js';
 import { MemoryStore } from './store.js';
-import { loadDashboardAnalyticsSnapshot, buildDashboardAnalytics } from './dashboardAnalytics.js';
+import { loadDashboardAnalyticsSnapshot, buildDashboardAnalytics, selectHubCohort } from './dashboardAnalytics.js';
 import { buildHubStorageAnalytics } from './hubStorage.js';
 import { buildHubOperations } from './hubOperations.js';
 import { buildHubDirectory, buildHubDisposalMonitoring } from './hubs.js';
+import { aggregateHubDisposals, hubDisposalEvidence } from './hubDisposals.js';
 import { isApprovedHub } from '../shared/hubs.js';
 import { hasPermission } from './access-control.js';
-import { HUB_SIMULATION_PREFIX, isStorageSimulationOperator } from '../shared/hubStorage.js';
+import { HUB_SIMULATION_PREFIX, isStorageSimulationOperator, isHubSimulationBatch } from '../shared/hubStorage.js';
 
 export async function simulationFixture() {
   const data = await createSeedData();
@@ -106,18 +107,65 @@ test('compact snapshot simulation starts empty without using missing stakeholder
   assert.ok(result.rows.every(row => row.simulationOnly && row.status === 'Available' && row.storedKg === 0 && !row.selectable));
 });
 
-test('Overview, Registry source, Recovery Monitoring and storage reconcile the same simulation masses without invented transactions', async () => {
+test('historical simulation remains stored but is excluded from active Hub collection and disposal summaries', async () => {
   const { simulation, source, actor, store, now } = await simulationFixture();
+  const before=JSON.stringify(source);
   const data = await buildDashboardAnalytics(store, actor, {}, source, now);
   assert.equal(data.kpis[0].value, '20.5 t');
   const operations = buildHubOperations(source, source.allBatches, actor, 'Simulation', now);
-  assert.equal(operations.summary.sentKg, 20500); assert.equal(operations.summary.collectedKg, 17250);
-  assert.equal(operations.summary.disposedKg, 2900);
+  assert.deepEqual(operations.records,[]);assert.deepEqual(operations.regions,[]);
+  assert.equal(operations.summary.assigned,0);assert.equal(operations.summary.sentBatches,0);
+  assert.equal(operations.summary.sentKg,0);assert.equal(operations.summary.collectedKg,null);
+  assert.equal(operations.summary.disposedKg,0);assert.equal(operations.summary.disposalRecords,0);
+  assert.equal(operations.summary.legacyWeighings,0);
   const ledger = await buildHubDisposalMonitoring(store, actor, {}, now, source);
-  assert.equal(ledger.summary.disposedKg, 2900);
+  assert.deepEqual(ledger.records,[]);assert.equal(ledger.summary.records,0);assert.equal(ledger.summary.disposedKg,0);
+  assert.equal(ledger.handling?.sentKg,0);
+  assert.equal(data.hubOperations.sentKg,0);assert.equal(data.hubDisposal.summary.disposedKg,0);
+  assert.equal(data.kpis.find(item=>item.label==='Recorded Hub Disposal')?.value,'0 t');
+  assert.deepEqual(selectHubCohort(source,actor,{dateRange:'All time'},now).batches,[]);
+  assert.equal(hubDisposalEvidence(source,source.allBatches,actor,now).summary.disposedKg,2900,'Original ledger evidence remains intact for historical verification.');
+  assert.equal(JSON.stringify(source),before,'Filtering must not mutate stored source records.');
   assert.equal(data.hubStorage.rows.reduce((sum, row) => sum + row.storedKg!, 0), 14350);
   assert.equal(data.hubStorage.rows.reduce((sum, row) => sum + row.reservedKg!, 0), 3250);
   assert.equal(data.sharedActivity.completedTransfers, 0);
   assert.ok(data.engagementMetrics.registeredAccounts <= 1, 'Non-login fixtures must not inflate registered account counts.');
   assert.ok(simulation.materialBatches.every(item => simulation.listings.some(listing => listing.batchId === item.id)));
+});
+
+test('Hub simulation filtering keeps real and unrelated historical batches, counts and regional scope aligned', async () => {
+  const {source,actor,store,now}=await simulationFixture();
+  const hub={...structuredClone(source.users.find(isStorageSimulationOperator)!),id:'REAL-COLLECTION-HUB',role:'BalikTela Hub' as const,
+    fullName:'Registered collection operator',accountStatus:'Active' as const,authUserId:'real-hub-auth',email:'hub@example.test'};
+  const owner={...structuredClone(source.users.find(item=>item.role==='Consumer')!),id:'REAL-CONSUMER',fullName:'Registered consumer'};
+  const batch={...source.allBatches[0],id:'REAL-COLLECTION-BATCH',isDemo:false,sourceUserId:owner.id,currentCustodianId:hub.id,
+    declaredWeightKg:100,currentWeightKg:90};
+  const listing={...source.listings[0],id:'REAL-COLLECTION-LISTING',batchId:batch.id,ownerId:owner.id,ownerName:owner.fullName,weighingHubId:hub.id,
+    title:'Hub simulation words in a real listing title',quantityKg:100,availableWeightKg:90,disposedWeightKg:10,disposedAt:null};
+  const receipt={...source.measurements.find(item=>item.canonicalStage==='collection')!,id:'REAL-COLLECTION-RECEIPT',batchId:batch.id,recordedBy:hub.id,weightKg:100};
+  const disposal={...source.hubDisposals!.records[0],id:'REAL-DISPOSAL',listingId:listing.id,listingTitle:listing.title,operatorId:hub.id,weightKg:10};
+  source.users.push(hub,owner);source.allBatches.push(batch);source.listings.push(listing);source.measurements.push(receipt);source.hubDisposals!.records.push(disposal);
+  assert.equal(isHubSimulationBatch({...batch,id:`${HUB_SIMULATION_PREFIX}BAT-REAL`,isDemo:false}),false);
+  assert.equal(isHubSimulationBatch({...batch,id:'OTHER-DEMO-BATCH',isDemo:true}),false);
+  const before=JSON.stringify(source),query={dateRange:'All time'};
+  const cohort=selectHubCohort(source,actor,query,now);
+  assert.deepEqual(cohort.batches.map(item=>item.id),[batch.id]);
+  const operations=buildHubOperations(source,source.allBatches,actor,'All time',now);
+  assert.deepEqual(operations.records.map(item=>item.listingId),[listing.id]);
+  assert.equal(operations.summary.sentKg,100);assert.equal(operations.summary.sentBatches,1);
+  assert.equal(operations.summary.collectedKg,100);assert.equal(operations.summary.disposedKg,10);
+  assert.equal(operations.summary.disposalRecords,1);
+  assert.equal(operations.regions.reduce((sum,row)=>sum+(row.sentKg??0),0),100);
+  assert.equal(operations.regions.reduce((sum,row)=>sum+row.disposedKg,0),10);
+  assert.equal(aggregateHubDisposals(source,source.allBatches,actor,now).summary.disposedKg,10);
+  const ledger=await buildHubDisposalMonitoring(store,actor,query,now,source);
+  assert.deepEqual(ledger.records.map(item=>item.id),[disposal.id]);assert.equal(ledger.handling?.sentKg,100);
+  const dashboard=await buildDashboardAnalytics(store,actor,query,source,now);
+  assert.equal(dashboard.hubOperations.sentKg,100);assert.equal(dashboard.hubDisposal.summary.disposedKg,10);
+  const government={...actor,role:'Government' as const,scope:{...actor.scope,aggregateOnly:true}};
+  const regional=buildHubOperations(source,source.allBatches,government,'All time',now);
+  assert.deepEqual(regional.records,[]);assert.equal(regional.summary.sentKg,100);assert.equal(regional.summary.disposedKg,10);
+  assert.equal((await buildHubDisposalMonitoring(store,government,query,now,source)).summary.disposedKg,10);
+  assert.equal(selectHubCohort(source,actor,{...query,region:'Central Visayas'},now).batches.length,0);
+  assert.equal(JSON.stringify(source),before);
 });

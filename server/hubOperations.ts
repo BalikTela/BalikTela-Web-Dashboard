@@ -7,8 +7,10 @@ import { identifyHubOperators } from './stakeholders.js';
 import { createHubCollectionEvidence } from './hubEvidence.js';
 import { hubDisposalEvidence } from './hubDisposals.js';
 import { hubDisposalBalance } from './hubBalance.js';
+import { isHubSimulationBatch } from '../shared/hubStorage.js';
 
 export function buildHubOperations(source: DashboardSourceSnapshot, batches: MaterialBatchRecord[], actor: UserRecord, periodLabel: string, now = new Date()): HubOperationsMonitoring {
+  batches = batches.filter(item => !isHubSimulationBatch(item));
   const hubIds = identifyHubOperators(source, now), batchIds = new Set(batches.map(item => item.id));
   const users = new Map(source.users.map(item => [item.id, item]));
   const batchById = new Map(batches.map(item => [item.id,item]));

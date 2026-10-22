@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { isHubProfile, type HubDisposalMonitoring, type HubDisposalRecord } from '../shared/hubs.js';
 import type { DashboardSourceSnapshot } from './store.js';
 import type { MaterialBatchRecord, UserRecord } from './types.js';
+import { isHubSimulationBatch } from '../shared/hubStorage.js';
 
 export function hubDisposalEvidence(source: DashboardSourceSnapshot, selected: MaterialBatchRecord[], actor: UserRecord, now = new Date(), siteTotals = false) {
   const available = source.hubDisposals?.available ?? false;
@@ -39,7 +40,7 @@ export function hubDisposalEvidence(source: DashboardSourceSnapshot, selected: M
 }
 
 export function aggregateHubDisposals(source: DashboardSourceSnapshot, selected: MaterialBatchRecord[], actor: UserRecord, now = new Date()): HubDisposalMonitoring {
-  const ledger = hubDisposalEvidence(source, selected, actor, now);
+  const ledger = hubDisposalEvidence(source, selected.filter(item => !isHubSimulationBatch(item)), actor, now);
   const aggregateOnly = actor.scope.aggregateOnly || actor.role === 'Government';
   return { ...ledger, aggregateOnly, landfillAvoidedKg: null, records: aggregateOnly ? [] : ledger.records };
 }

@@ -3,6 +3,10 @@ export const HUB_STOCK_ESTIMATE_METHOD = 'Administrative stock estimate';
 export const HUB_SIMULATION_PREFIX = 'SYN-HUBSIM-V1-';
 export const HUB_SIMULATION_PROFILE_NOTE = 'No physical activity. Disabled non-login simulation profile.';
 
+export function isHubSimulationBatch(batch: { id: string; isDemo: boolean }) {
+  return batch.isDemo && batch.id.startsWith(`${HUB_SIMULATION_PREFIX}BAT-`);
+}
+
 export function isStorageSimulationOperator(user: { id: string; authUserId: string | null; passwordHash: string | null; email: string; accountStatus: string; role: string; profile: { recyclingPractices: string } }) {
   return user.id.startsWith(`${HUB_SIMULATION_PREFIX}OP-`) && user.authUserId === null && user.passwordHash === null
     && user.accountStatus === 'Deactivated' && user.role === 'Recycler' && user.profile.recyclingPractices === HUB_SIMULATION_PROFILE_NOTE

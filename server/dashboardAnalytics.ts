@@ -13,6 +13,7 @@ import { buildPlatformActivity } from './platformActivity.js';
 import { facilityCapacityStatus } from '../shared/facilityCapacity.js';
 import { buildHubFacilityAnalytics, hubFacilityAttributions } from './hubFacilities.js';
 import { buildHubStorageAnalytics } from './hubStorage.js';
+import { isHubSimulationBatch } from '../shared/hubStorage.js';
 import { recoveryMassBalance } from '../shared/recovery.js';
 import { changeDescription, formatMass, MATERIAL_METRIC_LABELS, percentage as percent } from '../shared/metrics.js';
 import { inReportingWindow, manilaDate, resolveReportingPeriod, type ReportingWindow } from '../shared/reporting.js';
@@ -36,9 +37,9 @@ export type DashboardAnalyticsSnapshot = DashboardSourceSnapshot;
 export function selectHubCohort(snapshot: DashboardSourceSnapshot, actor: UserRecord, query: Record<string, unknown>, now = new Date()) {
   const hubIds = identifyHubOperators(snapshot, now);
   if (hubIds.has(actor.id)) actor = { ...actor, webHubOperator: true };
-  const scoped = ['Administrator', 'Government', 'Researcher'].includes(actor.role)
+  const scoped = (['Administrator', 'Government', 'Researcher'].includes(actor.role)
     ? snapshot.allBatches.filter(item => actor.role === 'Administrator' || !actor.scope.regions.length || actor.scope.regions.includes(item.region))
-    : scopeBatches(actor, snapshot.allBatches, snapshot);
+    : scopeBatches(actor, snapshot.allBatches, snapshot)).filter(item => !isHubSimulationBatch(item));
   const period = resolveReportingPeriod(query, now, scoped.map(item => item.createdAt).sort()[0]);
   const hubBatchIds = new Set([...snapshot.listings.filter(item => hubIds.has(item.weighingHubId ?? '')).map(item => item.batchId),
     ...hubDisposalEvidence(snapshot, scoped, actor, now).records.map(item => item.batchId),
